@@ -155,6 +155,25 @@
       "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH4: dead-book persistence (a venue|coin suppressed on >= 24 of exactly 28 dates), split from book_liveness_ceiling. The first adopter of send_telegram.sh page-on-change: the canary sends ALERT_KEYS=dead:<VENUE>|<COIN> for the whole dead set on EVERY run, or --clear for an empty one; the wrapper pages only a key outside its ack ($STATE_DIR/book_liveness_dead_book.ack.json). Bootstrapped once at install with --acknowledge from the post-admission dead set (recorded in the wave audit). From 2026-12-30 it pages on the LEVEL again until re-decided. OPS-ALARM-OWNER-DERIVATION-W1 CH2: ALERT_KEYS is now the ACTIONABLE subset only — VENUE_OFF ∪ ADAPTER_CONTRADICTION ∪ STATUS_UNKNOWN, each key classed by the app's own admission step (docker exec … node dist/scripts/admission-verdict.js → classifyDeadBook); THIN_LIVE dead books print DEAD_BOOKS_THIN_LIVE=<n> and never page; a failed verdict script makes every key STATUS_UNKNOWN (pages); an empty actionable set --clears, which prunes the bootstrap acks. The result record's dead_keys stays the FULL dead set; dead_key_class and paged_keys ride beside it."
     },
     {
+      "alert_id": "book_liveness_defect",
+      "owner": "ops/monitoring/book-liveness-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2027-02-10",
+        "decided_by": "architect — OPS-BOOK-LIVENESS-W2 spec",
+        "decided_at": "2026-11-12",
+        "reason": "Each key is an ENTITY that stays wrong until someone fixes it: sentinel:<VENUE> (that venue's adapter reads a live book as not trading) or miss:<signals.id> (the gate let through a call its own predicate withholds). Entry into the set is the actionable event; re-paging the same known entity every cooldown is noise."
+      },
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_defect-W{NEXT}",
+      "notes": "OPS-BOOK-LIVENESS-W2 CH2: replaces the pins of book_liveness_ceiling with two questions asked of the app itself, through `docker exec … node dist/scripts/book-liveness-probe.js` (its adapters and assessBookLiveness, k of N read live). Leg S: one known-live book per active venue (ADMISSION_SOURCES kind != retired; BTC or the highest-volume admitted book), 24 x 1h through the adapter — FROZEN pages sentinel:<VENUE>, UNREADABLE is INDETERMINATE. Leg G: every S2 row (pfe = mae = 0) of the last 3 d, its bars before entry at its own timeframe — GATE_MISS pages miss:<id> only while the gate ENFORCES; FROZE_AFTER and UNVERIFIABLE are counted per venue and never page. The canary sends the page keys on a FAIL run and --clear on a PASS run; an INDETERMINATE run neither fires nor clears (it must not prune an acknowledged key). recommended_wave in the body: OPS-BOOK-LIVENESS-W{NEXT}."
+    },
+    {
       "alert_id": "CANDLE_BASIS_FLIP_READY",
       "owner": "ops/monitoring/decision-gate-orphan-canary.py",
       "hosts": [

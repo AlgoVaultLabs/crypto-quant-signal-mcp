@@ -21,6 +21,13 @@ so a skipped check can never read like a passing one:
      FLOOR_PROMOTION. Catches an adapter parse defect (a string/null volume read as "not
      traded") that would strangle a healthy venue, with no window dependency.
 
+  4. SENTINEL (leg S, OPS-BOOK-LIVENESS-W2).  One known-live book per active venue read through the
+     adapter and judged by the gate's own predicate — a positive control for adapter blindness.
+
+  5. GATE MISS (leg G, OPS-BOOK-LIVENESS-W2).  Each S2 row in the lookback, its bars before entry
+     judged by the gate's own predicate: did the gate let through a call it should have withheld?
+     Legs S and G page under `book_liveness_defect` — see BOOK_LIVENESS_DEFECT below.
+
 CONTRACT (CLAUDE.md ## Automation-first recovery + ## Verification gate patterns):
   - Operator-action-required only. Delegates ALL gating to send_telegram.sh — cooldown,
     severity, DRY_RUN_TG. This script MUST NOT re-implement any of them inline.
@@ -130,6 +137,42 @@ ADMISSION_TIMEOUT_S = 240      # one universe fetch per venue + one 24-bar read 
 THIN_LIVE_LINE = ("DEAD_BOOKS_THIN_LIVE=%d (not paged: the venue lists them tradeable; the emit gate is "
                   "suppressing correctly)")
 REASON_MAX_CHARS = 140         # per-key reason in the page body; the full reason is in the run log
+
+# -- BOOK_LIVENESS_DEFECT — a positive control and the gate's own predicate (OPS-BOOK-LIVENESS-W2 CH2) -------
+#
+# The floor (a per-venue suppression COUNT pinned at 3 x a September maximum) and the frozen-row RATE both
+# paged on the gate's CORRECT work. OPS-BOOK-LIVENESS-W1 measured 10 of 10 floor-breach books as equities
+# the venue had paused or thinned (19 of 19 decisions CORRECT_SUPPRESSION) and 30 of 30 frozen rows as books
+# that read live at entry and closed afterwards. Two questions replace them, each asked of the app itself
+# through `book-liveness-probe.js` in the app container — its adapters and its `assessBookLiveness`:
+#   * leg S, SENTINEL — one known-live book per active venue (BTC, or the highest-volume admitted book),
+#     24 x 1h through the adapter. FROZEN = the adapter reads a live book as not trading: the runaway
+#     volume-parse defect the floor was meant to catch, caught on the first bad night whatever the day of the
+#     week. Key `sentinel:<VENUE>`. UNREADABLE (a short or refused read) never pages: it is INDETERMINATE.
+#   * leg G, GATE MISS — every S2 row in LOOKBACK_DAYS, its bars before entry at its own timeframe. GATE_MISS
+#     = the gate's own predicate would have withheld it. Key `miss:<signals.id>`. FROZE_AFTER (live at entry,
+#     closed after — what k of N is built to allow) and UNVERIFIABLE are counted per venue and never page. A
+#     miss is a page key only while the gate ENFORCES (ruling R3): in shadow the gate withholds nothing by
+#     design, so the would-be misses are recorded beside the mode, unpaged.
+# Neither leg holds a pin, a rate or a calendar: the venue set and k/N are the app's, read at run time.
+# Verdict for the two legs: FAIL on any page key; else INDETERMINATE if a sentinel is UNREADABLE, a probe call
+# failed, or S2 rows exist and every one is UNVERIFIABLE (that run verified nothing); else PASS — zero S2 rows
+# is a fact, reported as PASS. INDETERMINATE neither fires nor clears the id: "could not judge" must never
+# prune an acknowledged key (ruling R3).
+ALERT_DEFECT = "book_liveness_defect"
+WAVE_DEFECT = "OPS-BOOK-LIVENESS-W{NEXT}"
+PROBE_CMD = ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/book-liveness-probe.js"]
+PROBE_TOKEN = "BOOK_LIVENESS_PROBE_EMIT"
+PROBE_SENTINELS_TIMEOUT_S = 300   # every active venue: one universe fetch + one 24-bar read, concurrently
+PROBE_ROWS_TIMEOUT_S = 900        # one paged history range per (venue, coin, timeframe), batch class
+SENTINEL_STATES = ("LIVE", "FROZEN", "UNREADABLE")
+ROW_VERDICTS = ("GATE_MISS", "FROZE_AFTER", "UNVERIFIABLE")
+S2_COUNT_KEY = {"GATE_MISS": "gate_miss", "FROZE_AFTER": "froze_after", "UNVERIFIABLE": "unverifiable"}
+# What the probe's --rows grammar can carry. A row outside it is UNVERIFIABLE here, never sent: one odd coin
+# must not turn the whole probe call into INDETERMINATE.
+_S2_VENUE_RE = re.compile(r"^[A-Z][A-Z0-9]*$")
+_S2_COIN_RE = re.compile(r"^(?:[^\W_]|[.:@-])+$")
+_S2_TF_RE = re.compile(r"^[0-9]{1,2}[mhd]$")
 
 VERDICT_TOKEN = "BOOK_LIVENESS_VERDICT"
 EXIT_INDETERMINATE = 3
@@ -291,6 +334,19 @@ def build_frozen_sql(lookback_days):
         " WHERE signal IN ('BUY','SELL')"
         "   AND created_at >= EXTRACT(EPOCH FROM NOW())::bigint - %d*86400"
         " GROUP BY 1 ORDER BY 1;" % int(lookback_days)
+    )
+
+
+def build_s2_rows_sql(lookback_days):
+    """The rows leg G judges: every directional row in the lookback that scored pfe = mae = 0 — the S2
+    predicate, row by row, with what the probe needs to re-read its bars before entry."""
+    return (
+        "SELECT id, exchange, coin, timeframe, created_at::bigint AS s2_entry"
+        " FROM signals"
+        " WHERE signal IN ('BUY','SELL')"
+        "   AND pfe_candles = 0 AND mae_return_pct = 0"
+        "   AND created_at >= EXTRACT(EPOCH FROM NOW())::bigint - %d*86400"
+        " ORDER BY id;" % int(lookback_days)
     )
 
 
@@ -720,7 +776,7 @@ def bound_keys(keys, render, cap_bytes):
 
 
 def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, level_breaches,
-                         evaluable, counter_age, dead_class=None):
+                         evaluable, counter_age, dead_class=None, defect=None):
     """The structured result line. Counts plus the dead-set KEYS, bounded to the recorder's cap.
 
     `dead_keys` keeps its meaning — the FULL dead set (OPS-ALARM-SINGLE-DERIVATION-W1's CLOSE_WHEN
@@ -740,6 +796,9 @@ def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, lev
         "floor_max": {r[0]: int(r[1] or 0) for r in floor_rows},
         "level_breaches": len(level_breaches),
     }
+    if defect is not None:
+        # Leg S and leg G ride in the SAME bounded line, so the dead-key bound below accounts for them.
+        base.update(defect_metrics(defect))
 
     def classed(keys):
         return {
@@ -756,6 +815,237 @@ def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, lev
     kept, dropped = bound_keys([d.key for d in dead], render,
                                _RESULT_MAX_BYTES - RESULT_LINE_MARGIN_BYTES)
     return dict(base, dead_keys=kept, dead_keys_dropped=dropped, **classed(kept))
+
+
+class ProbeError(Exception):
+    """The probe CLI could not be run, or its output is outside the contract: that leg verified nothing."""
+
+
+def parse_probe_output(stdout, mode, expected_ids=None):
+    """The probe's document from `book-liveness-probe.js` stdout. PURE. Raises ProbeError unless the run ended
+    `BOOK_LIVENESS_PROBE_EMIT=PASS` after ONE JSON document of the requested mode whose every line is in the
+    contract's vocabulary — and, for rows, classes EXACTLY the requested signal ids. The app prints its own
+    `{`-shaped log lines first (upstream-weight-budget), so the document is the LAST `{` line before the
+    token, and it must name its mode."""
+    lines = (stdout or "").splitlines()
+    tok = [i for i, ln in enumerate(lines) if ln.startswith(PROBE_TOKEN + "=")]
+    if not tok:
+        raise ProbeError("no %s token in the probe output" % PROBE_TOKEN)
+    last = tok[-1]
+    if lines[last] != PROBE_TOKEN + "=PASS":
+        raise ProbeError("the probe said %s" % lines[last])
+    blob = next((ln for ln in reversed(lines[:last]) if ln.startswith("{")), None)
+    if blob is None:
+        raise ProbeError("no JSON line before %s=PASS" % PROBE_TOKEN)
+    try:
+        doc = json.loads(blob)
+    except ValueError as e:
+        raise ProbeError("unparseable JSON line: %s" % e)
+    if not isinstance(doc, dict) or doc.get("mode") != mode:
+        raise ProbeError("the last JSON line before the token is not a %s document" % mode)
+    if mode == "sentinels":
+        items = doc.get("sentinels")
+        if not isinstance(items, list) or not items:
+            raise ProbeError("the document carries no sentinels")
+        seen = set()
+        for s in items:
+            if (not isinstance(s, dict) or s.get("state") not in SENTINEL_STATES
+                    or not isinstance(s.get("venue"), str)):
+                raise ProbeError("a sentinel outside the contract: %r" % (s,))
+            if s["venue"] in seen:
+                raise ProbeError("venue %s read twice" % s["venue"])
+            seen.add(s["venue"])
+        return doc
+    items = doc.get("rows")
+    if not isinstance(items, list):
+        raise ProbeError("the document carries no rows list")
+    ids = []
+    for r in items:
+        if (not isinstance(r, dict) or r.get("verdict") not in ROW_VERDICTS
+                or not isinstance(r.get("signal_id"), int) or not isinstance(r.get("venue"), str)):
+            raise ProbeError("a row outside the contract: %r" % (r,))
+        ids.append(r["signal_id"])
+    if expected_ids is not None and sorted(ids) != sorted(int(i) for i in expected_ids):
+        raise ProbeError("the probe classed %d id(s), not the %d requested" % (len(ids), len(expected_ids)))
+    return doc
+
+
+class S2Row(NamedTuple):
+    id: int
+    venue: str
+    coin: str
+    timeframe: str
+    entry: int       # epoch seconds
+
+    @property
+    def token(self):
+        """The probe's --rows token: VENUE|COIN|TF|entryEpochSec|signalId."""
+        return "%s|%s|%s|%d|%d" % (self.venue, self.coin, self.timeframe, self.entry, self.id)
+
+
+def parse_s2_rows(rows):
+    """(sendable, refused) from `id|exchange|coin|timeframe|s2_entry` rows. PURE. A row the probe's grammar
+    cannot carry is refused HERE as an UNVERIFIABLE row line with its reason, never sent."""
+    sendable, refused = [], []
+    for r in rows:
+        try:
+            rid, entry = int(r[0]), int(r[4])
+        except (ValueError, IndexError):
+            refused.append({"signal_id": None, "venue": str(r[1] if len(r) > 1 else "?"),
+                            "verdict": "UNVERIFIABLE", "reason": "id or entry is not an integer: %r" % (r,)})
+            continue
+        venue, coin, tf = r[1], r[2], r[3]
+        if not (_S2_VENUE_RE.match(venue) and _S2_COIN_RE.match(coin) and _S2_TF_RE.match(tf)):
+            refused.append({"signal_id": rid, "venue": venue, "coin": coin, "timeframe": tf, "verdict": "UNVERIFIABLE",
+                            "reason": "the probe's row grammar cannot carry %s|%s|%s" % (venue, coin, tf)})
+            continue
+        sendable.append(S2Row(rid, venue, coin, tf, entry))
+    return sendable, refused
+
+
+def sentinel_key(venue):
+    return "sentinel:%s" % venue
+
+
+def miss_key(signal_id):
+    return "miss:%d" % int(signal_id)
+
+
+def defect_verdict(keys, sentinel_read, any_unreadable, rows_read, s2_rows, all_unverifiable):
+    """The two legs' verdict. PURE. FAIL on any page key; INDETERMINATE when a sentinel is UNREADABLE, a probe
+    call failed, or S2 rows exist and every one is UNVERIFIABLE; else PASS (zero S2 rows is a fact)."""
+    if keys:
+        return "FAIL"
+    if not sentinel_read or any_unreadable or not rows_read or (s2_rows and all_unverifiable):
+        return "INDETERMINATE"
+    return "PASS"
+
+
+def judge_defect(mode, sdoc, sfail, rows, refused, rdoc, rfail):
+    """Both legs, judged. PURE — the probe documents in, the page keys, per-venue counts and verdict out.
+
+    `rows` are the S2Row tuples sent to the probe; `refused` the row lines parse_s2_rows kept back. A failed
+    rows call leaves every sent row UNVERIFIABLE with the failure as its reason, so the counts still add up.
+    """
+    sentinels = list((sdoc or {}).get("sentinels") or [])
+    frozen = [s for s in sentinels if s["state"] == "FROZEN"]
+    unreadable = [s for s in sentinels if s["state"] == "UNREADABLE"]
+    if rfail is not None:
+        probed = [{"signal_id": r.id, "venue": r.venue, "coin": r.coin, "timeframe": r.timeframe,
+                   "verdict": "UNVERIFIABLE", "reason": "probe unavailable: %s" % rfail} for r in rows]
+    else:
+        probed = list((rdoc or {}).get("rows") or [])
+    lines = probed + list(refused)
+    s2 = {}
+    for r in lines:
+        c = s2.setdefault(r["venue"], {"gate_miss": 0, "froze_after": 0, "unverifiable": 0})
+        c[S2_COUNT_KEY[r["verdict"]]] += 1
+    misses = [r for r in lines if r["verdict"] == "GATE_MISS"]
+    paged_misses = misses if mode == "enforce" else []
+    keys = [sentinel_key(s["venue"]) for s in frozen] + [miss_key(r["signal_id"]) for r in paged_misses]
+    all_unverifiable = bool(lines) and all(r["verdict"] == "UNVERIFIABLE" for r in lines)
+    verdict = defect_verdict(keys, sfail is None, bool(unreadable), rfail is None, len(lines), all_unverifiable)
+    return {
+        "verdict": verdict, "keys": keys, "mode": mode,
+        "sentinels": sentinels, "sentinel_failure": sfail, "frozen": frozen, "unreadable": unreadable,
+        "rows": lines, "rows_failure": rfail, "misses": misses, "paged_misses": paged_misses, "s2": s2,
+        "all_unverifiable": all_unverifiable,
+    }
+
+
+def defect_dispatch(verdict, keys):
+    """What book_liveness_defect hears this run: ("fire", keys) · ("clear", None) · (None, None). PURE.
+    INDETERMINATE says nothing: a run that verified nothing must not prune an acknowledged key."""
+    if verdict == "FAIL":
+        return "fire", list(keys)
+    if verdict == "PASS":
+        return "clear", None
+    return None, None
+
+
+def _short(text):
+    """A reason as the page carries it: one line, bounded by slicing (the full text is in the run log)."""
+    return " ".join(str(text or "").split())[:REASON_MAX_CHARS]
+
+
+def defect_lines(d):
+    """The positive per-leg lines — printed on EVERY run, so a skipped leg can never read like a passing one."""
+    out = []
+    states = [s["state"] for s in d["sentinels"]]
+    if d["sentinel_failure"] is not None:
+        out.append("sentinel leg: UNAVAILABLE - %s (INDETERMINATE: the probe read nothing)" % _short(d["sentinel_failure"]))
+    else:
+        out.append("sentinel leg: %d active venue(s) read - LIVE %d · FROZEN %d · UNREADABLE %d"
+                   % (len(states), states.count("LIVE"), states.count("FROZEN"), states.count("UNREADABLE")))
+        for s in d["sentinels"]:
+            out.append("  sentinel %s %s: %s - %s" % (s["venue"], s.get("coin"), s["state"], _short(s.get("reason"))))
+    if not d["rows"]:
+        out.append("gate-miss leg: 0 S2 rows in the last %dd - nothing to judge (a fact, not a gap)" % LOOKBACK_DAYS)
+    else:
+        verdicts = [r["verdict"] for r in d["rows"]]
+        out.append("gate-miss leg: %d S2 row(s) in the last %dd - GATE_MISS %d · FROZE_AFTER %d · UNVERIFIABLE %d "
+                   "(gate mode %s%s)" % (len(verdicts), LOOKBACK_DAYS, verdicts.count("GATE_MISS"),
+                                         verdicts.count("FROZE_AFTER"), verdicts.count("UNVERIFIABLE"), d["mode"],
+                                         "" if d["mode"] == "enforce" else "; a miss pages only while it enforces"))
+        if d["rows_failure"] is not None:
+            out.append("  gate-miss probe UNAVAILABLE - %s" % _short(d["rows_failure"]))
+        for venue in sorted(d["s2"]):
+            c = d["s2"][venue]
+            out.append("  s2 %s: gate_miss %d · froze_after %d · unverifiable %d"
+                       % (venue, c["gate_miss"], c["froze_after"], c["unverifiable"]))
+        for r in d["rows"]:
+            if r["verdict"] == "UNVERIFIABLE" and d["rows_failure"] is None:
+                out.append("  s2 row %s %s|%s|%s UNVERIFIABLE - %s" % (r.get("signal_id"), r["venue"], r.get("coin"),
+                                                                      r.get("timeframe"), _short(r.get("reason"))))
+    return out
+
+
+def build_defect_body(d, stamp):
+    """The page-on-change body: each page key with what was read, then ONE remedy per key kind. The wrapper
+    prepends the derived `NEW: … · still present (acknowledged): n` header, so NEW is never guessed here."""
+    lines = [
+        "\U0001F9CA Book-liveness canary: an adapter reads a live book as dead, or the gate let through a "
+        "call it should have withheld - this alert pages on ENTRY; the header names what is NEW",
+        "",
+        "Checked %s · gate mode %s · sentinel 24 x 1h per active venue · S2 rows of the last %dd"
+        % (stamp, d["mode"], LOOKBACK_DAYS),
+    ]
+    if d["frozen"]:
+        shown = d["frozen"][:BODY_MAX_KEYS]
+        lines += ["", "Sentinel read FROZEN: %d" % len(d["frozen"])]
+        lines += ["  - %s - %s read %s: %s" % (sentinel_key(s["venue"]), s.get("coin"), s["state"], _short(s.get("reason")))
+                  for s in shown]
+        dropped = len(d["frozen"]) - len(shown)
+        if dropped:
+            lines.append("  … and %d more venue(s) - the full set is in canary-results.jsonl" % dropped)
+        lines.append("  -> the venue's adapter reads a book that is trading as not trading (a volume parsed as 0, "
+                     "null or text), so the emit gate is suppressing that whole venue: fix the adapter's volume parse.")
+    if d["paged_misses"]:
+        shown = d["paged_misses"][:BODY_MAX_KEYS]
+        lines += ["", "Gate miss: %d" % len(d["paged_misses"])]
+        lines += ["  - %s - %s|%s|%s entered %s: %s" % (miss_key(r["signal_id"]), r["venue"], r.get("coin"),
+                                                       r.get("timeframe"), r.get("entry"), _short(r.get("reason")))
+                  for r in shown]
+        dropped = len(d["paged_misses"]) - len(shown)
+        if dropped:
+            lines.append("  … and %d more row(s) - the full set is in canary-results.jsonl" % dropped)
+        lines.append("  -> get_trade_call emitted a call whose bars before entry fail the gate's own "
+                     "assessBookLiveness: check that the emit path still judges the bars it emits from.")
+    lines += ["", "Runbook: %s" % RUNBOOK_URL, "recommended_wave: %s" % WAVE_DEFECT]
+    return "\n".join(lines)
+
+
+def defect_metrics(d):
+    """What the result record carries for the two legs: every venue's sentinel state, per-venue S2 counts and
+    the page keys (bounded; the drop is RECORDED)."""
+    keys = d["keys"][:BODY_MAX_KEYS]
+    return {
+        "defect_verdict": d["verdict"],
+        "sentinel": {s["venue"]: s["state"] for s in d["sentinels"]},
+        "s2": d["s2"],
+        "defect_keys": keys,
+        "defect_keys_dropped": len(d["keys"]) - len(keys),
+    }
 
 
 # == live plumbing ==
@@ -832,8 +1122,8 @@ def _dispatch(argv, body=None, keys=None):
         print("[book-liveness-canary] TG dispatch failed (fail-open): %s" % e, file=sys.stderr)
 
 
-# The four call sites stay LITERAL: check-alert-registry.mjs enumerates alert ids by their position
-# in a `[TG, "<id>", "CRITICAL_PERSISTENT"` call, and a parameterised id would hide both from it.
+# The six call sites stay LITERAL: check-alert-registry.mjs enumerates alert ids by their position
+# in a `[TG, "<id>", "CRITICAL_PERSISTENT"` call, and a parameterised id would hide them from it.
 # Each is its own stubbable seam, so a test can drive the real `main()` without touching the wrapper.
 def fire_ceiling(body):
     _dispatch([TG, "book_liveness_ceiling", "CRITICAL_PERSISTENT", "-"], body)
@@ -849,6 +1139,49 @@ def fire_dead_book(body, keys):
 
 def clear_dead_book():
     _dispatch([TG, "--clear", "book_liveness_dead_book"])
+
+
+def fire_defect(body, keys):
+    _dispatch([TG, "book_liveness_defect", "CRITICAL_PERSISTENT", "-"], body, keys)
+
+
+def clear_defect():
+    _dispatch([TG, "--clear", "book_liveness_defect"])
+
+
+def _run_probe(args, timeout_s):
+    try:
+        r = subprocess.run(PROBE_CMD + list(args), capture_output=True, text=True, timeout=timeout_s, check=False)
+    except Exception as e:  # noqa: BLE001 — an unreachable container is a reading we could not take
+        raise ProbeError("could not run the probe: %s" % e)
+    return r.stdout
+
+
+def probe_sentinels():
+    """Leg S's live seam (stubbed in tests): every active venue's sentinel, read-only. Raises ProbeError."""
+    return parse_probe_output(_run_probe(["--sentinels"], PROBE_SENTINELS_TIMEOUT_S), "sentinels")
+
+
+def probe_rows(rows):
+    """Leg G's live seam (stubbed in tests): each S2Row's verdict, read-only. Raises ProbeError."""
+    return parse_probe_output(_run_probe(["--rows", " ".join(r.token for r in rows)], PROBE_ROWS_TIMEOUT_S),
+                              "rows", [r.id for r in rows])
+
+
+def run_defect_legs(mode, s2raw):
+    """Both legs. Each probe call is its own failure domain: one failing never hides what the other read."""
+    try:
+        sdoc, sfail = probe_sentinels(), None
+    except ProbeError as e:
+        sdoc, sfail = None, str(e)
+    rows, refused = parse_s2_rows(s2raw)
+    rdoc, rfail = None, None
+    if rows:
+        try:
+            rdoc = probe_rows(rows)
+        except ProbeError as e:
+            rfail = str(e)
+    return judge_defect(mode, sdoc, sfail, rows, refused, rdoc, rfail)
 
 
 def record_result(verdict, exit_code, metrics):
@@ -1000,6 +1333,14 @@ def main():
             "UNAVAILABLE (%s)" % failure if failure else " · ".join(
                 "%s %d" % (c, sum(1 for v in classes.values() if v["class"] == c)) for c in DEAD_CLASSES)))
 
+    # -- 4 + 5. sentinel and gate-miss legs (book_liveness_defect) — the app's own predicate --
+    try:
+        s2raw = parse_rows(psql(build_s2_rows_sql(LOOKBACK_DAYS)), 5)
+    except QueryError as e:
+        return indeterminate("s2 rows query: %s" % e)
+    defect = run_defect_legs(mode, s2raw)
+    evaluated += (defect["sentinel_failure"] is None) + (defect["rows_failure"] is None)
+
     # -- verdict: FAIL describes the WORLD (a level breach, or a dead book the venue's own status
     #    does not explain). Whether the operator is paged about it is the wrapper's decision. --
     print("[book-liveness-canary] %s mode=%s - %d check(s) evaluated, %d line(s)"
@@ -1014,8 +1355,17 @@ def main():
         print("  dead book %s [THIN_LIVE, not paged] %s" % (d.line, _class_detail(classes[d.key])))
     if evaluable:
         print(THIN_LIVE_LINE % len(thin))
+    for ln in defect_lines(defect):
+        print("  %s" % ln)
 
-    verdict = "FAIL" if (breaches or paged) else "PASS"
+    # FAIL on any breach or page key; else a leg that verified nothing makes the run INDETERMINATE.
+    if breaches or paged or defect["verdict"] == "FAIL":
+        verdict = "FAIL"
+    elif defect["verdict"] == "INDETERMINATE":
+        verdict = "INDETERMINATE"
+    else:
+        verdict = "PASS"
+    exit_code = _token_exit_map()[verdict]
 
     # ONE ALERT ID, ONE REMEDY — and each id hears from this run EVERY time: fire on its
     # condition, `--clear` without it. An unevaluable dead-book window sends nothing at all:
@@ -1033,11 +1383,21 @@ def main():
         print(dbody)
     elif action == "clear":
         clear_dead_book()
+    daction, dkeys = defect_dispatch(defect["verdict"], defect["keys"])
+    if daction == "fire":
+        xbody = build_defect_body(defect, stamp)
+        fire_defect(xbody, dkeys)
+        print(xbody)
+    elif daction == "clear":
+        clear_defect()
+    else:
+        print("  %s: INDETERMINATE - neither fired nor cleared (a run that verified nothing must not "
+              "prune an acknowledged key)" % ALERT_DEFECT)
 
-    record_result(verdict, 0, build_result_metrics(
-        verdict, 0, mode, lo, hi, dead, frows, breaches, evaluable, counter_age,
-        dead_class={k: v["class"] for k, v in classes.items()}))
-    return emit(verdict, 0)
+    record_result(verdict, exit_code, build_result_metrics(
+        verdict, exit_code, mode, lo, hi, dead, frows, breaches, evaluable, counter_age,
+        dead_class={k: v["class"] for k, v in classes.items()}, defect=defect))
+    return emit(verdict, exit_code)
 
 
 # == self-test ==
@@ -1362,6 +1722,143 @@ def _self_test():
     ck("a normal dead set is carried WHOLE",
        lambda: (small["dead_keys"], small["dead_keys_dropped"], small["floor_max"]),
        (["dead:XT|EPT"], 0, {"ASTER": 10}))
+
+    # -- BOOK_LIVENESS_DEFECT: leg S (sentinel) + leg G (gate miss), OPS-BOOK-LIVENESS-W2 CH2 ----------
+    ck("the defect id is distinct from the other two", lambda: len({ALERT_CEILING, ALERT_DEAD_BOOK, ALERT_DEFECT}), 3)
+    ck("the defect remedy is TEMPLATED", lambda: bool(re.search(r"^OPS-[A-Z0-9-]+-W\{NEXT\}$", WAVE_DEFECT)), True)
+    ck("the probe seam is the app container's own CLI",
+       lambda: PROBE_CMD, ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/book-liveness-probe.js"])
+    s2sql = build_s2_rows_sql(LOOKBACK_DAYS)
+    ck("the S2 query IS the S2 predicate, row by row, in the lookback",
+       lambda: all(f in s2sql for f in ("signal IN ('BUY','SELL')", "pfe_candles = 0 AND mae_return_pct = 0",
+                                        "%d*86400" % LOOKBACK_DAYS, "s2_entry")), True)
+    ck("the S2 query carries no stage reason", lambda: "reason" in s2sql, False)
+
+    ok_rows, bad_rows = parse_s2_rows([["7", "ASTER", "SYRUP", "15m", "1790000000"],
+                                       ["8", "XT", "BAD COIN", "1h", "1790000000"],
+                                       ["x", "XT", "AUD", "8h", "1790000000"]])
+    ck("an S2 row becomes the probe's own row token", lambda: [r.token for r in ok_rows], ["ASTER|SYRUP|15m|1790000000|7"])
+    ck("a row the probe's grammar cannot carry is refused HERE as UNVERIFIABLE, never sent",
+       lambda: [(r["signal_id"], r["verdict"]) for r in bad_rows], [(8, "UNVERIFIABLE"), (None, "UNVERIFIABLE")])
+
+    # the parser, on REAL container captures (2026-11-12T17:07:49.559Z, noise lines kept)
+    real_sent = "\n".join([
+        "[universe-admission] PHEMEX admitted 130 excluded 0 (venue_disabled 0 · field_absent 1) evidence(ticker_stale 0 · no_book 0 · zero_liquidity 0) side=sot mode=enforce source=status_field status=ok",
+        "{\"generated_at\":\"2026-11-12T17:07:49.559Z\",\"mode\":\"sentinels\",\"predicate\":{\"window\":24,\"min_genuine_bars\":12},\"timeframe\":\"1h\",\"sentinels\":[{\"venue\":\"ASTER\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"BINANCE\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"BINGX\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"BITGET\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"BYBIT\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"GATE\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"HL\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"HTX\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"KUCOIN\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"MEXC\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"OKX\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"PHEMEX\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"WEEX\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"WHITEBIT\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"},{\"venue\":\"XT\",\"coin\":\"BTC\",\"book_source\":\"universe_btc\",\"state\":\"LIVE\",\"bars\":24,\"genuine_bars\":24,\"reason\":\"24 of 24 bars traded (k=12); the universe lists BTC\"}],\"excluded_retired\":[\"BITMART\",\"EDGEX\"]}",
+        "BOOK_LIVENESS_PROBE_EMIT=PASS",
+    ])
+    real_rows = "\n".join([
+        "{\"generated_at\":\"2026-11-12T17:08:21.735Z\",\"mode\":\"rows\",\"predicate\":{\"window\":24,\"min_genuine_bars\":12},\"rows\":[{\"signal_id\":1345331,\"venue\":\"GATE\",\"coin\":\"KWEB\",\"timeframe\":\"1h\",\"entry\":\"2026-11-09T20:12:39.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":12,\"reason\":\"pre-entry window live (12/24)\"},{\"signal_id\":1346341,\"venue\":\"GATE\",\"coin\":\"KWEB\",\"timeframe\":\"2h\",\"entry\":\"2026-11-09T22:47:39.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":12,\"reason\":\"pre-entry window live (12/24)\"},{\"signal_id\":1346419,\"venue\":\"GATE\",\"coin\":\"KWEB\",\"timeframe\":\"1h\",\"entry\":\"2026-11-09T23:13:00.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":12,\"reason\":\"pre-entry window live (12/24)\"},{\"signal_id\":1346435,\"venue\":\"GATE\",\"coin\":\"VKTX\",\"timeframe\":\"1h\",\"entry\":\"2026-11-09T23:15:25.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":15,\"reason\":\"pre-entry window live (15/24)\"},{\"signal_id\":1346436,\"venue\":\"GATE\",\"coin\":\"TMO\",\"timeframe\":\"1h\",\"entry\":\"2026-11-09T23:15:41.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":13,\"reason\":\"pre-entry window live (13/24)\"},{\"signal_id\":1347122,\"venue\":\"GATE\",\"coin\":\"KWEB\",\"timeframe\":\"1h\",\"entry\":\"2026-11-10T01:12:46.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":12,\"reason\":\"pre-entry window live (12/24)\"},{\"signal_id\":1348124,\"venue\":\"HTX\",\"coin\":\"APD\",\"timeframe\":\"2h\",\"entry\":\"2026-11-10T04:05:05.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":24,\"reason\":\"pre-entry window live (24/24)\"},{\"signal_id\":1354189,\"venue\":\"ASTER\",\"coin\":\"TRUST\",\"timeframe\":\"2h\",\"entry\":\"2026-11-10T18:22:39.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":13,\"reason\":\"pre-entry window live (13/24)\"},{\"signal_id\":1354778,\"venue\":\"XT\",\"coin\":\"USDTRY\",\"timeframe\":\"2h\",\"entry\":\"2026-11-10T22:05:29.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1354801,\"venue\":\"XT\",\"coin\":\"USDTRY\",\"timeframe\":\"1h\",\"entry\":\"2026-11-10T22:12:12.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1357992,\"venue\":\"GATE\",\"coin\":\"MIDEA\",\"timeframe\":\"1h\",\"entry\":\"2026-11-11T07:14:53.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":16,\"reason\":\"pre-entry window live (16/24)\"},{\"signal_id\":1358582,\"venue\":\"GATE\",\"coin\":\"MIDEA\",\"timeframe\":\"1h\",\"entry\":\"2026-11-11T09:15:02.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":15,\"reason\":\"pre-entry window live (15/24)\"},{\"signal_id\":1359841,\"venue\":\"GATE\",\"coin\":\"MIDEA\",\"timeframe\":\"2h\",\"entry\":\"2026-11-11T11:00:04.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":15,\"reason\":\"pre-entry window live (15/24)\"},{\"signal_id\":1360349,\"venue\":\"GATE\",\"coin\":\"MIDEA\",\"timeframe\":\"1h\",\"entry\":\"2026-11-11T12:14:52.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":14,\"reason\":\"pre-entry window live (14/24)\"},{\"signal_id\":1361855,\"venue\":\"GATE\",\"coin\":\"MIDEA\",\"timeframe\":\"2h\",\"entry\":\"2026-11-11T14:52:27.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":12,\"reason\":\"pre-entry window live (12/24)\"},{\"signal_id\":1368085,\"venue\":\"GATE\",\"coin\":\"ANDURIL\",\"timeframe\":\"1h\",\"entry\":\"2026-11-11T23:11:21.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":16,\"reason\":\"pre-entry window live (16/24)\"},{\"signal_id\":1368511,\"venue\":\"HTX\",\"coin\":\"APD\",\"timeframe\":\"2h\",\"entry\":\"2026-11-12T00:05:16.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":24,\"reason\":\"pre-entry window live (24/24)\"},{\"signal_id\":1369020,\"venue\":\"GATE\",\"coin\":\"ANDURIL\",\"timeframe\":\"1h\",\"entry\":\"2026-11-12T01:12:28.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":14,\"reason\":\"pre-entry window live (14/24)\"},{\"signal_id\":1369295,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T02:23:41.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":24,\"reason\":\"pre-entry window live (24/24)\"},{\"signal_id\":1369320,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T02:28:45.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":24,\"reason\":\"pre-entry window live (24/24)\"},{\"signal_id\":1369507,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T02:58:37.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":24,\"reason\":\"pre-entry window live (24/24)\"},{\"signal_id\":1369625,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:13:39.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369664,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:33:43.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369700,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:43:37.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369720,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:48:39.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369725,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:53:45.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369730,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T03:58:35.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369737,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T04:03:35.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369774,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T04:09:51.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369816,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T04:14:43.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"},{\"signal_id\":1369833,\"venue\":\"PHEMEX\",\"coin\":\"NG\",\"timeframe\":\"5m\",\"entry\":\"2026-11-12T04:19:30.000Z\",\"verdict\":\"FROZE_AFTER\",\"pre_bars\":24,\"genuine_bars\":23,\"reason\":\"pre-entry window live (23/24)\"}]}",
+        "BOOK_LIVENESS_PROBE_EMIT=PASS",
+    ])
+    ck("the parser reads a captured REAL --sentinels output past the app's own log lines",
+       lambda: (len(parse_probe_output(real_sent, "sentinels")["sentinels"]),
+                sorted({s["state"] for s in parse_probe_output(real_sent, "sentinels")["sentinels"]})),
+       (15, ['LIVE']))
+    ck("an app JSON log line printed before the document is skipped, never read as the document",
+       lambda: len(parse_probe_output('{"tag":"upstream-weight-budget","event":"window","venue":"Aster"}\n' + real_sent,
+                                      "sentinels")["sentinels"]), 15)
+    ck("the parser reads a captured REAL --rows output and checks every requested id",
+       lambda: [r["signal_id"] for r in parse_probe_output(real_rows, "rows", [1345331, 1346341, 1346419, 1346435, 1346436, 1347122, 1348124, 1354189, 1354778, 1354801, 1357992, 1358582, 1359841, 1360349, 1361855, 1368085, 1368511, 1369020, 1369295, 1369320, 1369507, 1369625, 1369664, 1369700, 1369720, 1369725, 1369730, 1369737, 1369774, 1369816, 1369833])["rows"]], [1345331, 1346341, 1346419, 1346435, 1346436, 1347122, 1348124, 1354189, 1354778, 1354801, 1357992, 1358582, 1359841, 1360349, 1361855, 1368085, 1368511, 1369020, 1369295, 1369320, 1369507, 1369625, 1369664, 1369700, 1369720, 1369725, 1369730, 1369737, 1369774, 1369816, 1369833])
+    ck("a document of the wrong mode is a ProbeError",
+       lambda: _raises(lambda: parse_probe_output(real_rows, "sentinels"), ProbeError), True)
+    ck("an id the probe did not class is a ProbeError",
+       lambda: _raises(lambda: parse_probe_output(real_rows, "rows", [1345331, 1346341, 1346419, 1346435, 1346436, 1347122, 1348124, 1354189, 1354778, 1354801, 1357992, 1358582, 1359841, 1360349, 1361855, 1368085, 1368511, 1369020, 1369295, 1369320, 1369507, 1369625, 1369664, 1369700, 1369720, 1369725, 1369730, 1369737, 1369774, 1369816, 1369833] + [1]), ProbeError), True)
+    ck("an INDETERMINATE probe run is a ProbeError",
+       lambda: _raises(lambda: parse_probe_output("BOOK_LIVENESS_PROBE_EMIT=INDETERMINATE", "sentinels"), ProbeError), True)
+    ck("no token at all is a ProbeError",
+       lambda: _raises(lambda: parse_probe_output(real_sent.rsplit("\n", 1)[0], "sentinels"), ProbeError), True)
+    ck("a state outside the vocabulary is a ProbeError",
+       lambda: _raises(lambda: parse_probe_output(real_sent.replace('"state":"LIVE"', '"state":"MAYBE"', 1),
+                                                  "sentinels"), ProbeError), True)
+    ck("only the noise before the token is a ProbeError, never a document",
+       lambda: _raises(lambda: parse_probe_output("\n".join([real_sent.split("\n")[0], "BOOK_LIVENESS_PROBE_EMIT=PASS"]),
+                                                  "sentinels"), ProbeError), True)
+
+    def _sent(states):
+        return {"mode": "sentinels", "sentinels": [{"venue": v, "coin": "BTC", "state": s, "reason": "r"}
+                                                   for v, s in states]}
+
+    def _rdoc(rows_):
+        return {"mode": "rows", "rows": [{"signal_id": i, "venue": v, "coin": c, "timeframe": tf, "entry": "T",
+                                          "verdict": vd, "reason": "r"} for i, v, c, tf, vd in rows_]}
+
+    def _s2(rows_):
+        return [S2Row(i, v, c, tf, 1790000000) for i, v, c, tf, _vd in rows_]
+
+    def judge(mode, states, rows_, sfail=None, rfail=None, refused=()):
+        return judge_defect(mode, None if sfail else _sent(states), sfail, _s2(rows_), list(refused),
+                            None if (rfail or not rows_) else _rdoc(rows_), rfail)
+
+    live4 = [("BINGX", "LIVE"), ("BITGET", "LIVE"), ("ASTER", "LIVE"), ("XT", "LIVE")]
+    # W1's measured state (vault audits/OPS-BOOK-LIVENESS-W1-evidence.md): 4 BTC sentinels LIVE and the 30
+    # S2 rows behind the 11-07..09 breaches, every one FROZE_AFTER. No outcome field.
+    w1 = [(int(i), v, c, tf, "FROZE_AFTER") for i, v, c, tf in (ln.split() for ln in (
+        "1311028 ASTER SYRUP 15m", "1311233 ASTER SYRUP 15m", "1311396 ASTER SYRUP 15m", "1312229 ASTER HD 4h",
+        "1312458 ASTER PNUT 1h", "1313590 ASTER NOW 30m", "1313813 ASTER ZKC 4h", "1313950 ASTER DYM 2h",
+        "1314030 ASTER DYM 1h", "1315499 ASTER CRDO 1h", "1315526 ASTER DYM 1h", "1316579 ASTER DYM 2h",
+        "1317739 ASTER DYM 2h", "1318896 ASTER DYM 2h", "1319770 ASTER DYM 2h", "1324506 ASTER SOXL 3m",
+        "1321248 XT USDTRY 2h", "1321726 XT USDNOK 2h", "1321728 XT USDTRY 2h", "1322700 XT DE30EUR 2h",
+        "1322702 XT NZDUSD 2h", "1322878 XT NZDUSD 1h", "1323495 XT DE30EUR 2h", "1323497 XT NZDUSD 2h",
+        "1323511 XT USDTRY 2h", "1323543 XT DE30EUR 1h", "1323545 XT NZDUSD 1h", "1324088 XT AUD 8h",
+        "1326197 XT NZDUSD 8h", "1328245 XT AUD 8h"))]
+    rep = judge("enforce", live4, w1)
+    ck("the W1 replay (4 LIVE sentinels, 30 FROZE_AFTER rows) pages NOTHING and CLEARS the id",
+       lambda: (len(w1), rep["keys"], rep["verdict"], defect_dispatch(rep["verdict"], rep["keys"])),
+       (30, [], "PASS", ("clear", None)))
+    ck("…and counts the 30 per venue, unpaged",
+       lambda: rep["s2"], {"ASTER": {"gate_miss": 0, "froze_after": 16, "unverifiable": 0},
+                           "XT": {"gate_miss": 0, "froze_after": 14, "unverifiable": 0}})
+
+    fz = judge("enforce", [("BINGX", "FROZEN")] + live4[1:], w1)
+    ck("a planted FROZEN sentinel pages sentinel:<VENUE>",
+       lambda: (fz["verdict"], defect_dispatch(fz["verdict"], fz["keys"])), ("FAIL", ("fire", ["sentinel:BINGX"])))
+    gm = judge("enforce", live4, w1[:29] + [(1328245, "XT", "AUD", "8h", "GATE_MISS")])
+    ck("a planted GATE_MISS pages miss:<id>",
+       lambda: (gm["verdict"], defect_dispatch(gm["verdict"], gm["keys"])), ("FAIL", ("fire", ["miss:1328245"])))
+    sh = judge("shadow", live4, w1[:29] + [(1328245, "XT", "AUD", "8h", "GATE_MISS")])
+    ck("a GATE_MISS while the gate is in SHADOW is recorded per venue, never paged (R3)",
+       lambda: (sh["keys"], sh["verdict"], sh["s2"]["XT"]["gate_miss"]), ([], "PASS", 1))
+    ck("FAIL dominates an UNREADABLE sentinel",
+       lambda: judge("enforce", [("BINGX", "FROZEN"), ("XT", "UNREADABLE")], [])["verdict"], "FAIL")
+    un = judge("enforce", live4[:3] + [("XT", "UNREADABLE")], w1)
+    ck("an UNREADABLE sentinel is INDETERMINATE and neither fires nor clears",
+       lambda: (un["verdict"], defect_dispatch(un["verdict"], un["keys"])), ("INDETERMINATE", (None, None)))
+    sf = judge("enforce", [], w1, sfail="docker exec: no such container")
+    ck("a failed --sentinels call is INDETERMINATE", lambda: (sf["verdict"], sf["keys"]), ("INDETERMINATE", []))
+    rf = judge("enforce", live4, w1, rfail="timed out")
+    ck("a failed --rows call leaves every row UNVERIFIABLE and the run INDETERMINATE",
+       lambda: (rf["verdict"], sum(c["unverifiable"] for c in rf["s2"].values())), ("INDETERMINATE", 30))
+    au = judge("enforce", live4, [(5, "XT", "AUD", "8h", "UNVERIFIABLE"), (6, "XT", "AUD", "8h", "UNVERIFIABLE")])
+    ck("S2 rows that are ALL UNVERIFIABLE verified nothing: INDETERMINATE", lambda: au["verdict"], "INDETERMINATE")
+    ck("one judged row beside an UNVERIFIABLE one is a verdict",
+       lambda: judge("enforce", live4, [(5, "XT", "AUD", "8h", "UNVERIFIABLE"), (6, "XT", "AUD", "8h", "FROZE_AFTER")])["verdict"],
+       "PASS")
+    ck("refused rows count as UNVERIFIABLE beside the probed ones",
+       lambda: judge("enforce", live4, [], refused=bad_rows)["verdict"], "INDETERMINATE")
+    z = judge("enforce", live4, [])
+    ck("zero S2 rows is a fact, reported as PASS", lambda: (z["verdict"], z["s2"]), ("PASS", {}))
+    ck("each leg prints a POSITIVE line, even with nothing to judge",
+       lambda: [ln.split(":")[0] for ln in defect_lines(z) if not ln.startswith(" ")], ["sentinel leg", "gate-miss leg"])
+    ck("a failed leg prints UNAVAILABLE, never a pass",
+       lambda: defect_lines(sf)[0].startswith("sentinel leg: UNAVAILABLE"), True)
+
+    xbody = _safe("defect body", lambda: build_defect_body(fz, "T"), "")
+    ck("the defect body names the key, the adapter remedy, the runbook and the templated wave",
+       lambda: all(s in xbody for s in ("sentinel:BINGX", "fix the adapter's volume parse", RUNBOOK_URL,
+                                        "recommended_wave: %s" % WAVE_DEFECT)), True)
+    gbody = _safe("gate-miss body", lambda: build_defect_body(gm, "T"), "")
+    ck("a gate-miss body names the row and the emit-path remedy, not the adapter",
+       lambda: ("miss:1328245" in gbody, "assessBookLiveness" in gbody, "volume parse" in gbody), (True, True, False))
+
+    many_miss = judge("enforce", live4, [(i, "XT", "C%d" % i, "1h", "GATE_MISS") for i in range(1, 400)])
+    dm = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30", [], [], [], True, 36, defect=many_miss)
+    ck("the record carries every sentinel's state, the per-venue s2 counts and the BOUNDED page keys",
+       lambda: (dm["sentinel"], dm["s2"]["XT"]["gate_miss"], len(dm["defect_keys"]), dm["defect_keys_dropped"]),
+       ({"BINGX": "LIVE", "BITGET": "LIVE", "ASTER": "LIVE", "XT": "LIVE"}, 399, BODY_MAX_KEYS, 399 - BODY_MAX_KEYS))
+    ck("…and the line still fits the recorder's cap",
+       lambda: len((_build_record(RESULT_CANARY, "FAIL", 0, dm) if _build_record
+                    else json.dumps(dm)).encode("utf-8")) <= _RESULT_MAX_BYTES, True)
 
     # VACUITY GUARD: in --self-test WE build the corpus, so empty means the test built nothing.
     # That is a defect in the TEST and must REFUSE, never report a pass.
