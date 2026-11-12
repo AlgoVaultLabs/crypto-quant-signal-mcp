@@ -30,6 +30,27 @@ function py(args: string[], env: Record<string, string> = {}): { status: number 
   return { status: r.status, out, token: (name) => out.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1] ?? null };
 }
 
+/** Where two parsed JSON documents differ: numbers agree to a relative REL_TOL, everything else is identical.
+ *  The estimator is pure Python and adds floats with the built-in `sum`, which CPython 3.12 made a compensated
+ *  sum, so the same counts give statistics that differ in the sixteenth digit between interpreters (measured:
+ *  3.9.6 where the artifact was generated against the ubuntu-26.04 runner of deploy run 43227842654). The counts
+ *  come from the TypeScript engine and their sha256 is the same on both. */
+const REL_TOL = 1e-9;
+function jsonDiffs(got: unknown, want: unknown, at = '$'): string[] {
+  if (typeof got === 'number' && typeof want === 'number') {
+    return Math.abs(got - want) <= REL_TOL * Math.max(1, Math.abs(got), Math.abs(want)) ? [] : [`${at}: ${got} != ${want}`];
+  }
+  if (Array.isArray(got) && Array.isArray(want)) {
+    return got.length !== want.length ? [`${at}: length ${got.length} != ${want.length}`] : got.flatMap((g, i) => jsonDiffs(g, want[i], `${at}[${i}]`));
+  }
+  if (got && want && typeof got === 'object' && typeof want === 'object' && !Array.isArray(got) && !Array.isArray(want)) {
+    const [g, w] = [got as Record<string, unknown>, want as Record<string, unknown>];
+    return [...new Set([...Object.keys(g), ...Object.keys(w)])].sort()
+      .flatMap((k) => (k in g && k in w ? jsonDiffs(g[k], w[k], `${at}.${k}`) : [`${at}.${k}: on one side only`]));
+  }
+  return got === want ? [] : [`${at}: ${JSON.stringify(got)} != ${JSON.stringify(want)}`];
+}
+
 const pinTable = (pins: Record<string, string>): string =>
   ['# A registration', '', '## Pinned artifacts', '', '| artifact | sha256 |', '|---|---|', ...Object.entries(pins).map(([k, v]) => `| \`${k}\` | \`${v}\` |`), ''].join('\n');
 
@@ -446,6 +467,35 @@ describe('AC1.4 — the null calibration', () => {
     for (const rel of CALIBRATION_FILES) expect(c.harness_sha256[rel], rel).toBe(sha256(readFileSync(rel)));
   });
 
+  it('compares statistics across interpreters to nine digits and everything else exactly', () => {
+    const c = cal();
+    const rep = c.reps[1];
+    // Replication 1 as deploy run 43227842654 computed it from the same counts: two fields, sixteenth digit.
+    expect(rep).toMatchObject({ coin_delta_pp: 0.18541734569309962, v4b_delta_pp: 0.07486194343757711 });
+    const ci = { ...rep, coin_delta_pp: 0.18541734569309956, v4b_delta_pp: 0.07486194343757725 };
+    expect(ci).not.toEqual(rep);
+    expect(jsonDiffs([ci], [rep])).toEqual([]);
+    expect(jsonDiffs({ ...c, reps: c.reps.map((r: any) => (r.rep === 1 ? ci : r)) }, cal())).toEqual([]);
+    // Nothing more than the last digits: a moved statistic, label, count, hash, key or length is named.
+    const { hi: _hi, ...noHi } = rep;
+    const moved: Array<[unknown, unknown, string]> = [
+      [{ ...rep, delta_pp: rep.delta_pp + 1e-6 }, rep, '$.delta_pp: '],
+      [{ ...rep, verdict: 'PASS' }, rep, '$.verdict: '],
+      [{ ...rep, day_clusters: rep.day_clusters + 1 }, rep, '$.day_clusters: '],
+      [{ ...rep, rows_sha256: `${rep.rows_sha256}0` }, rep, '$.rows_sha256: '],
+      [{ ...rep, lo: null }, rep, '$.lo: '],
+      [noHi, rep, '$.hi: on one side only'],
+      [[rep], [rep, rep], '$: length 1 != 2'],
+      [{ ...c, mean_delta_pp: c.mean_delta_pp + 1e-6 }, c, '$.mean_delta_pp: '],
+      [{ ...c, harness_sha256: { ...c.harness_sha256, [PY]: 'x' } }, c, `$.harness_sha256.${PY}: `],
+    ];
+    for (const [got, want, at] of moved) {
+      const d = jsonDiffs(got, want);
+      expect(d, at).toHaveLength(1);
+      expect(d[0].startsWith(at), `${d[0]} | ${at}`).toBe(true);
+    }
+  });
+
   it('is reproduced from the seed, and the half-width control breaks it', { timeout: 600_000 }, () => {
     const c = cal();
     const rows = SAMPLE.map((rep) => calibrationRows(rep));
@@ -454,7 +504,7 @@ describe('AC1.4 — the null calibration', () => {
     writeFileSync(csv, `${[CALIBRATION_HEADER, ...rows.flat()].join('\n')}\n`);
     const out = path.join(dir, 'cal-sample.json');
     const r = py(['--calibrate', csv, '--min-reps', String(SAMPLE.length), '--out', out]);
-    expect(JSON.parse(readFileSync(out, 'utf8')).reps).toEqual(SAMPLE.map((rep) => c.reps[rep]));
+    expect(jsonDiffs(JSON.parse(readFileSync(out, 'utf8')).reps, SAMPLE.map((rep) => c.reps[rep]))).toEqual([]);
     expect(r.token('SR_BACKTEST_CALIBRATION_VERDICT')).toBe('PASS');
     expect(r.status).toBe(0);
     // Under the registered floor of replications the same counts are not a verdict; nor is a file with no counts.
@@ -478,12 +528,12 @@ describe('AC1.4 — the null calibration', () => {
     expect(Math.abs(JSON.parse(broken.out.split('\n')[0]).mean_delta_pp)).toBeGreaterThan(0.5);
   });
 
-  it.skipIf(!process.env.SR_BACKTEST_FULL)('SR_BACKTEST_FULL=1: every replication regenerates the committed artifact byte for byte', { timeout: 3_600_000 }, () => {
+  it.skipIf(!process.env.SR_BACKTEST_FULL)('SR_BACKTEST_FULL=1: every replication regenerates the committed artifact', { timeout: 3_600_000 }, () => {
     const csv = path.join(dir, 'cal-full.csv');
     writeFileSync(csv, calibrationCsv(0, CALIBRATION.replications));
     const out = path.join(dir, 'cal-full.json');
     expect(py(['--calibrate', csv, '--out', out]).token('SR_BACKTEST_CALIBRATION_VERDICT')).toBe('PASS');
-    expect(readFileSync(out, 'utf8')).toBe(readFileSync(CAL, 'utf8'));
+    expect(jsonDiffs(JSON.parse(readFileSync(out, 'utf8')), cal())).toEqual([]);
   });
 });
 
