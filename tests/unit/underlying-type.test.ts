@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
-// Only `upstreamFetch` is replaced (every other export stays real): the XT, HTX and Phemex blocks drive the
+// Only `upstreamFetch` is replaced (every other export stays real): the venue-decode blocks drive the
 // REAL detector registry over the venue's own payload. The other blocks never fetch (records are loaded directly).
 vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
@@ -174,5 +174,78 @@ describe('OPS-ASSET-CLASS-PHEMEX-DECODE-W1 — Phemex books resolve through Phem
     expect(await resolveAssetClass('GOLD', 'PHEMEX')).toBe('COMMODITY'); // adapter alias GOLD → XAUUSDT
     expect(await resolveAssetClass('OPENAI', 'PHEMEX')).toBe('PREMARKET');
     expect(await resolveAssetClass('BTC', 'PHEMEX')).toBe('CRYPTO');
+  });
+});
+
+describe('OPS-TIER-CLASSIFIER-DECODE-W2 — Aster, KuCoin and WEEX books resolve through their own record', () => {
+  // Each venue's own list, shapes as served 2026-11-12T17:08Z (fields the detectors read, verbatim), plus
+  // Gate's RTX and US30 records. Measured defects:
+  // - KUCOIN ACNX (assetClass STOCK, 251.76 USDT) and WEEX KKR (TRADIFI_PERPETUAL Stocks) are listed by
+  //   no other venue, so they fell to the CRYPTO floor (Tier 4).
+  // - ASTER RTX is a 0.22 USDT token (symbolType 0), but the union read it as Gate's Raytheon (Tier 3, 126 calls).
+  const URLS = {
+    ASTER: 'https://fapi.asterdex.com/fapi/v1/exchangeInfo',
+    KUCOIN: 'https://api-futures.kucoin.com/api/v1/contracts/active',
+    WEEX: 'https://api-contract.weex.com/capi/v3/market/exchangeInfo',
+    GATE: 'https://api.gateio.ws/api/v4/futures/usdt/contracts',
+  };
+  const aster = (symbol: string, symbolType: number, underlyingSubType: string[]) => (
+    { symbol, contractType: 'PERPETUAL', quoteAsset: 'USDT', underlyingType: 'COIN', symbolType, underlyingSubType });
+  const kucoin = (symbol: string, assetClass: string, subMarketType: string | null, marketStage = 'NORMAL') => (
+    { symbol, type: 'FFWCSX', quoteCurrency: 'USDT', assetClass, subMarketType, marketStage });
+  const weex = (symbol: string, contractType: string, underlyingType: string) => (
+    { symbol, contractType, underlyingType, quoteAsset: 'USDT' });
+  const PAYLOADS: Record<string, unknown> = {
+    [URLS.ASTER]: { symbols: [
+      aster('RTXUSDT', 0, []), // a token; Gate's RTX is Raytheon
+      aster('OPENAIUSDT', 1, ['pre-launch', 'STOCK']),
+      aster('CLUSDT', 1, ['Commodities']),
+      aster('BTCUSDT', 0, ['Top']),
+    ] },
+    [URLS.KUCOIN]: { code: '200000', data: [
+      kucoin('ACNXUSDTM', 'STOCK', 'US.STOCK'),
+      kucoin('SHEINHKDUSDTM', 'STOCK', 'HK.STOCK'),
+      kucoin('MOONSHOTUSDTM', 'STOCK', 'HK.STOCK', 'PRE_MARKET'),
+      kucoin('XAUTUSDTM', 'METAL', null), // the adapter's GOLD
+      kucoin('XBTUSDTM', 'CRYPTO', null), // the adapter's BTC
+    ] },
+    [URLS.WEEX]: { symbols: [
+      weex('KKRUSDT', 'TRADIFI_PERPETUAL', 'Stocks'),
+      weex('US30USDT', 'TRADIFI_PERPETUAL', 'Stocks'), // the Dow, filed under Stocks
+      weex('EURUSDT', 'TRADIFI_PERPETUAL', 'Forex'),
+      weex('YMTCUSDT', 'TRADIFI_PERPETUAL', 'Pre-IPO'),
+      weex('ALLUSDT', 'TRADIFI_PERPETUAL', 'Indices'), // Allora, a 0.50 USDT token WEEX files under Indices
+      weex('ETHUSDT', 'PERPETUAL', 'COIN'),
+    ] },
+    [URLS.GATE]: [{ name: 'RTX_USDT', contract_type: 'stocks' }, { name: 'US30_USDT', contract_type: 'indices' }],
+  };
+
+  beforeEach(() => {
+    _clearAssetClassCache();
+    (upstreamFetch as unknown as Mock).mockReset();
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url in PAYLOADS) return PAYLOADS[req.url];
+      throw new Error(`unmocked ${req.url}`); // every other venue fails open
+    });
+  });
+  afterEach(() => _clearAssetClassCache());
+
+  it('each venue’s own record decides its book: TradFi books leave the CRYPTO floor, and a token leaves Tier 3', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry
+    await _warmForTest();
+    expect(await resolveAssetClass('ACNX', 'KUCOIN')).toBe('EQUITY');
+    expect(await resolveAssetClass('KKR', 'WEEX')).toBe('EQUITY');
+    expect(await resolveAssetClass('RTX', 'ASTER')).toBe('CRYPTO');
+    expect(await resolveAssetClass('RTX', 'GATE')).toBe('EQUITY');      // Gate's own Raytheon record still decides on Gate
+    expect(await resolveAssetClass('US30', 'WEEX')).toBe('INDEX');      // level-0 Stocks refined by Gate's level-2 indices
+    expect(await resolveAssetClass('EUR', 'WEEX')).toBe('FX');
+    expect(await resolveAssetClass('YMTC', 'WEEX')).toBe('PREMARKET');
+    expect(await resolveAssetClass('ALL', 'WEEX')).toBe('CRYPTO');      // the deny-list, whatever WEEX files it under
+    expect(await resolveAssetClass('SHEINHKD', 'KUCOIN')).toBe('HK_EQUITY');
+    expect(await resolveAssetClass('MOONSHOT', 'KUCOIN')).toBe('PREMARKET');
+    expect(await resolveAssetClass('GOLD', 'KUCOIN')).toBe('COMMODITY'); // adapter alias GOLD → XAUTUSDTM
+    expect(await resolveAssetClass('BTC', 'KUCOIN')).toBe('CRYPTO');
+    expect(await resolveAssetClass('OPENAI', 'ASTER')).toBe('PREMARKET');
+    expect(await resolveAssetClass('CL', 'ASTER')).toBe('COMMODITY');
   });
 });

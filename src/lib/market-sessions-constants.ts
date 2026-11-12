@@ -204,9 +204,54 @@ export const VENUE_TAG_CLASS = {
     Stocks: { cls: 'EQUITY', level: 0 },
     Indices: { cls: 'INDEX', level: 0 },
   },
+  // Aster `symbolType` (1 TradFi · 0 crypto) and `underlyingSubType` (OPS-TIER-CLASSIFIER-DECODE-W2,
+  // live-probed 2026-11-12: 124 of 606 USDT perps carry symbolType 1). Aster's `underlyingType` reads COIN
+  // on every contract, stocks included, so the class lives in `underlyingSubType`, beside category words
+  // (Meme, AI, Top, Semiconductor). The detector's tag is the first row here a symbolType-1 contract
+  // carries, so row ORDER is data: `pre-launch` beside STOCK is a pre-IPO stock (OpenAI, Anthropic). On a
+  // symbolType-0 contract every word is moot: it is crypto (tag ''), pre-launch tokens included (PREDICT).
+  // STOCK and ETF are level 1: Aster lists HK, KR and CN stocks as STOCK, and every name it labels STOCK
+  // or ETF is equity-family (measured), so refinement names the market.
+  ASTER: {
+    '': 'CRYPTO',
+    'pre-launch': { cls: 'PREMARKET', level: 2 },
+    Commodities: { cls: 'COMMODITY', level: 2 },
+    ETF: { cls: 'EQUITY', level: 1 },
+    STOCK: { cls: 'EQUITY', level: 1 },
+  },
+  // KuCoin `assetClass` (CRYPTO · STOCK · METAL · COMMODITY), with `subMarketType` (US / HK / KR / JP
+  // .STOCK) and `marketStage` (PRE_MARKET) for stocks (OPS-TIER-CLASSIFIER-DECODE-W2, live-probed
+  // 2026-11-12: 193 of 712 USDT perps are not CRYPTO). The detector's tag is PRE_MARKET for a pre-market
+  // stock (OpenAI, Anthropic, OURA, MOONSHOT), else the stock's market, else the asset class; a CRYPTO
+  // pre-market contract is a pre-launch token (BP, PREDICT). A market row names class and market
+  // (level 2), as MEXC's do, except JP: the taxonomy has no Japanese class (MEXC `jpstocks` is level 1).
+  KUCOIN: {
+    CRYPTO: 'CRYPTO',
+    PRE_MARKET: { cls: 'PREMARKET', level: 2 },
+    'US.STOCK': { cls: 'EQUITY', level: 2 },
+    'HK.STOCK': { cls: 'HK_EQUITY', level: 2 },
+    'KR.STOCK': { cls: 'KR_EQUITY', level: 2 },
+    'JP.STOCK': { cls: 'EQUITY', level: 1 },
+    METAL: { cls: 'COMMODITY', level: 2 },
+    COMMODITY: { cls: 'COMMODITY', level: 2 },
+  },
+  // WEEX `underlyingType` on its TRADIFI_PERPETUAL contracts (OPS-TIER-CLASSIFIER-DECODE-W2, live-probed
+  // 2026-11-12: 466 of 1,030 USDT perps). Stocks and Indices are level 0 because neither pins the family:
+  // WEEX files the Dow (US30) and the DAX (GER40) under Stocks, and ETFs (SPY, QQQ, SOXL) under Indices.
+  // Refinement names the class.
+  // No crypto row: WEEX's PERPETUAL is not crypto evidence (it lists JP225, the Nikkei, as one), so a
+  // PERPETUAL contract is no record at all (the detector skips it).
+  WEEX: {
+    'Pre-IPO': { cls: 'PREMARKET', level: 2 },
+    Forex: { cls: 'FX', level: 2 },
+    Metals: { cls: 'COMMODITY', level: 2 },
+    Commodities: { cls: 'COMMODITY', level: 2 },
+    Indices: { cls: 'INDEX', level: 0 },
+    Stocks: { cls: 'EQUITY', level: 0 },
+  },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, TagClass | 'CRYPTO'>>>>;
 
-/** The venues that publish their own per-instrument TradFi record. */
+/** The venues that publish their own per-instrument TradFi record — every `ExchangeId` (asset-class-detection pins it). */
 export type FieldVenue = keyof typeof VENUE_TAG_CLASS;
 
 /**

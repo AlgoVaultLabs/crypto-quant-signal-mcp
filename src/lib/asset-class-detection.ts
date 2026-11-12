@@ -24,6 +24,10 @@
  *    `NCSKCVX2USD`) cannot collide. A coin with no own record falls to the cross-venue union, where a
  *    field venue's EXACT crypto listing beats any TradFi one; only then may its de-tokenized query
  *    form decide TradFi (TSLAX → TSLA, ratified Q3). Storage-side form expansion is retired.
+ *  - EVERY VENUE DECODES ITSELF (OPS-TIER-CLASSIFIER-DECODE-W2). The tag table, the keying and the
+ *    detectors are keyed by every `ExchangeId`: tsc refuses a venue without its own detector, so no
+ *    venue is read only through the union (XT, HTX and Phemex each sent TradFi books to the CRYPTO
+ *    floor that way). The union remains the fallback for instruments a venue leaves without a record.
  *  - LEDGER. Every snapshot carries `ledger`: `unmapped`, `conflicts`, `lost`, `collisions` and the
  *    failed venues. `src/scripts/asset-class-totality.ts` builds its own snapshot from a live read of
  *    the active venues and turns that ledger into the daily canary's verdict.
@@ -61,6 +65,9 @@ import { toOKXInstId } from './adapters/okx.js';
 import { toXtSymbol } from './adapters/xt.js';
 import { toHtxSymbol } from './adapters/htx.js';
 import { toPhemexSymbol } from './adapters/phemex.js';
+import { toAsterSymbol } from './adapters/aster.js';
+import { toKucoinSymbol } from './adapters/kucoin.js';
+import { toWeexSymbol } from './adapters/weex.js';
 
 /**
  * Crypto tickers that collide with (or resemble) TradFi symbols — never Tier 3, whatever a venue
@@ -77,6 +84,9 @@ const CRYPTO_DENYLIST: ReadonlySet<string> = new Set([
   // Crypto tokens pegged to a commodity (gold) — crypto, NOT a commodity perp; the real
   // metal tickers (XAU/XAG/XPT/XPD) are unaffected (C3 canary caught XAUT/PAXG -> COMMODITY).
   'XAUT', 'PAXG',
+  // Allora (0.50 USDT; Binance and MEXC list it as crypto), not Allstate: WEEX files ALLUSDT under
+  // Indices (OPS-TIER-CLASSIFIER-DECODE-W2, 2026-11-12), and no venue lists an Allstate ALL.
+  'ALL',
 ]);
 
 // ── Symbol forms ──
@@ -152,30 +162,25 @@ const VENUE_KEYING: Readonly<Record<FieldVenue, VenueKeying>> = {
   XT: { bare: (s) => s.replace(/_usdt$/, ''), native: toXtSymbol },
   HTX: { bare: (s) => s.replace(/-USDT$/, ''), native: toHtxSymbol },
   PHEMEX: { bare: (s) => s.replace(/USDT$/, ''), native: toPhemexSymbol },
+  ASTER: { bare: (s) => s.replace(/USDT$/, ''), native: toAsterSymbol },
+  KUCOIN: { bare: (s) => s.replace(/USDTM$/, ''), native: toKucoinSymbol },
+  WEEX: { bare: (s) => s.replace(/USDT$/, ''), native: toWeexSymbol },
 };
 
 /** The field venues, in tag-table order — also the union's tie-break order. */
 export const FIELD_VENUES: readonly FieldVenue[] = Object.keys(VENUE_TAG_CLASS) as FieldVenue[];
 
 /**
- * Venues whose own per-instrument class field the engine does not read yet — resolved through the
- * cross-venue union (decoding them is OPS-TIER-CLASSIFIER-DECODE-W2). Measured 2026-11-12: all three
- * publish one (ASTER `underlyingSubType`, KUCOIN `assetClass`, WEEX `underlyingType`). Together with
- * the field venues this must cover every `ExchangeId`: tsc refuses a new venue that is neither
- * (structural, not asserted).
- * XT left this list in OPS-ASSET-CLASS-XT-DECODE-W1: it publishes `tags` per contract, and in the
- * union its FX and index books no field venue lists (USDTRY, NZDUSD, DE30EUR…) fell to the CRYPTO floor.
- * HTX left it in OPS-ASSET-CLASS-HTX-DECODE-W1 for the same reason: it labels each contract's class,
- * and in the union NASDAQ100 (listed by no field venue) fell to the CRYPTO floor.
- * PHEMEX left it in OPS-ASSET-CLASS-PHEMEX-DECODE-W1: it types each contract (`perpProductSubType`),
- * and in the union its oil, stock and index books no field venue lists (XTI, XBR, MUX, SPYX, CATX) fell
- * to the CRYPTO floor.
+ * Every `ExchangeId` is a field venue: tsc refuses one without a tag table, a keying and a detector
+ * (rank 1 — OPS-TIER-CLASSIFIER-DECODE-W2 retired `UNION_VENUES`, the list of venues read only through
+ * the cross-venue union). Three venues on that list sent TradFi books to the CRYPTO floor although each
+ * published the class itself (XT, HTX and Phemex: OPS-ASSET-CLASS-{XT,HTX,PHEMEX}-DECODE-W1), and the
+ * last three published one too (Aster `underlyingSubType`, KuCoin `assetClass`, WEEX `underlyingType`).
  */
-export const UNION_VENUES = ['ASTER', 'WEEX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
-type Unclassified = Exclude<ExchangeId, FieldVenue | (typeof UNION_VENUES)[number]>;
-const _everyVenueClassified: [Unclassified] extends [never] ? true : Unclassified = true;
+type Undecoded = Exclude<ExchangeId, FieldVenue>;
+const _everyVenueDecoded: [Undecoded] extends [never] ? true : Undecoded = true;
 const _fieldVenuesAreExchanges: readonly ExchangeId[] = FIELD_VENUES;
-void _everyVenueClassified; void _fieldVenuesAreExchanges;
+void _everyVenueDecoded; void _fieldVenuesAreExchanges;
 
 export function isFieldVenue(v: string): v is FieldVenue {
   return Object.prototype.hasOwnProperty.call(VENUE_TAG_CLASS, v);
@@ -210,6 +215,8 @@ const XT_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.XT);
 const HTX_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.HTX);
 /** Phemex's crypto listing subtypes — no record: the union keeps deciding them, as on XT and HTX. */
 const PHEMEX_CRYPTO_SUBTYPES: ReadonlySet<string> = new Set(['Normal', 'Pilot']);
+/** Aster class words in row order — a symbolType-1 contract's tag is the first one it carries (`pre-launch` before STOCK). */
+const ASTER_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.ASTER).filter((t) => t !== '');
 
 const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
   // Binance — contractType PERPETUAL (crypto) vs TRADIFI_PERPETUAL + underlyingType.
@@ -375,6 +382,67 @@ const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
       out.push(venueRecord('PHEMEX', c.symbol, sub === 'TradFi' ? (c.perpProductSubGroup || 'TradFi') : sub));
     }
     if (typed === 0) throw new Error('Phemex products: no USDT perpetual carries perpProductSubType');
+    return out;
+  },
+  // Aster — `symbolType` 1 marks TradFi and `underlyingSubType` names the class: the tag is the first
+  // `VENUE_TAG_CLASS.ASTER` row the contract carries (an unknown word set still lands TradFi, by
+  // TAG_PATTERNS + the ledger). symbolType 0 is crypto evidence (tag ''): Aster's RTX is a 0.22 USDT token,
+  // not Gate's Raytheon (2026-11-12). Any other symbolType lands TradFi as `symbolType:N`, so a new type is
+  // announced, never dropped. A list in which no contract carries a symbolType throws (schema change).
+  ASTER: async () => {
+    const j = await fetchVenue<{ symbols?: Array<{ symbol?: string; contractType?: string; quoteAsset?: string; symbolType?: number | string | null; underlyingSubType?: string[] | null }> }>(
+      'ASTER', 'https://fapi.asterdex.com/fapi/v1/exchangeInfo');
+    const out: VenueRecord[] = [];
+    let typed = 0;
+    for (const s of j.symbols ?? []) {
+      if (s.contractType !== 'PERPETUAL' || s.quoteAsset !== 'USDT' || !s.symbol?.endsWith('USDT')) continue;
+      if (s.symbolType === undefined || s.symbolType === null) continue;
+      typed++;
+      const type = String(s.symbolType);
+      if (type === '0') { out.push(venueRecord('ASTER', s.symbol, '')); continue; }
+      const words = (s.underlyingSubType ?? []).filter((w) => typeof w === 'string' && w !== '');
+      const tag = type === '1' ? (ASTER_TAGS.find((t) => words.includes(t)) ?? (words.join('+') || 'symbolType:1')) : `symbolType:${type}`;
+      out.push(venueRecord('ASTER', s.symbol, tag));
+    }
+    if (typed === 0) throw new Error('Aster exchangeInfo: no USDT perpetual carries symbolType');
+    return out;
+  },
+  // KuCoin — `assetClass` on the USDT-margined perpetuals: the tag is PRE_MARKET for a pre-market stock,
+  // else the stock's `subMarketType`, else the asset class (CRYPTO is crypto evidence; an unknown class
+  // still lands TradFi, by TAG_PATTERNS + the ledger). A list in which no contract carries an assetClass
+  // throws (schema change).
+  KUCOIN: async () => {
+    const j = await fetchVenue<{ data?: Array<{ symbol?: string; type?: string; quoteCurrency?: string; assetClass?: string | null; subMarketType?: string | null; marketStage?: string | null }> }>(
+      'KUCOIN', 'https://api-futures.kucoin.com/api/v1/contracts/active');
+    const out: VenueRecord[] = [];
+    let typed = 0;
+    for (const c of j.data ?? []) {
+      if (c.type !== 'FFWCSX' || c.quoteCurrency !== 'USDT' || !c.symbol?.endsWith('USDTM')) continue;
+      const cls = typeof c.assetClass === 'string' ? c.assetClass : '';
+      if (cls === '') continue;
+      typed++;
+      const tag = cls !== 'STOCK' ? cls : c.marketStage === 'PRE_MARKET' ? 'PRE_MARKET' : (c.subMarketType || 'STOCK');
+      out.push(venueRecord('KUCOIN', c.symbol, tag));
+    }
+    if (typed === 0) throw new Error('KuCoin contracts: no USDT perpetual carries assetClass');
+    return out;
+  },
+  // WEEX — `contractType` TRADIFI_PERPETUAL marks TradFi and `underlyingType` names the class (an
+  // unknown one still lands TradFi, by TAG_PATTERNS + the ledger). A PERPETUAL contract is NOT crypto
+  // evidence: WEEX lists JP225 (the Nikkei) as one (2026-11-12), so it yields no record and the union
+  // decides it. A list in which no contract carries a contractType throws (schema change).
+  WEEX: async () => {
+    const j = await fetchVenue<{ symbols?: Array<{ symbol?: string; contractType?: string | null; underlyingType?: string | null }> }>(
+      'WEEX', 'https://api-contract.weex.com/capi/v3/market/exchangeInfo');
+    const out: VenueRecord[] = [];
+    let typed = 0;
+    for (const s of j.symbols ?? []) {
+      if (!s.symbol?.endsWith('USDT') || typeof s.contractType !== 'string' || s.contractType === '') continue;
+      typed++;
+      if (s.contractType !== 'TRADIFI_PERPETUAL') continue;
+      out.push(venueRecord('WEEX', s.symbol, s.underlyingType || 'TRADIFI_PERPETUAL'));
+    }
+    if (typed === 0) throw new Error('WEEX exchangeInfo: no USDT contract carries contractType');
     return out;
   },
 };

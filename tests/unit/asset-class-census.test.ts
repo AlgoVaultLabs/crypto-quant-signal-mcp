@@ -24,6 +24,9 @@ import { evaluateTotality, type PerformancePublicTiers } from '../../src/scripts
 import { fromXtSymbol } from '../../src/lib/adapters/xt.js';
 import { fromHtxSymbol } from '../../src/lib/adapters/htx.js';
 import { fromPhemexSymbol } from '../../src/lib/adapters/phemex.js';
+import { fromAsterSymbol, toAsterSymbol } from '../../src/lib/adapters/aster.js';
+import { fromKucoinSymbol, toKucoinSymbol } from '../../src/lib/adapters/kucoin.js';
+import { fromWeexSymbol, toWeexSymbol } from '../../src/lib/adapters/weex.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CENSUS = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'asset-class-census.json'), 'utf8')) as {
@@ -47,7 +50,7 @@ const bareOf = (v: FieldVenue, native: string) => venueRecord(v, native, '').bar
 
 describe('the census itself', () => {
   it('covers every active field venue; retired venues are skipped, not failed', () => {
-    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'HTX', 'MEXC', 'OKX', 'PHEMEX', 'WHITEBIT', 'XT']);
+    expect(Object.keys(CENSUS.venues).sort()).toEqual(['ASTER', 'BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'HTX', 'KUCOIN', 'MEXC', 'OKX', 'PHEMEX', 'WEEX', 'WHITEBIT', 'XT']);
     expect(CENSUS.skipped_retired.sort()).toEqual(['BITMART', 'EDGEX']);
   });
 
@@ -203,6 +206,53 @@ describe('CH1.10 — every perp lands in its class, from its own venue’s recor
     expect(cls('QNTX', 'BINANCE')).toBe('EQUITY');
     const L = SNAP.ledger.venues.PHEMEX!;
     expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
+  });
+
+  it('ASTER, KUCOIN, WEEX (OPS-TIER-CLASSIFIER-DECODE-W2): every record resolves through its own coin — TradFi to TradFi, crypto to CRYPTO', () => {
+    const mappers = {
+      ASTER: { from: fromAsterSymbol, to: toAsterSymbol, min: 500 },
+      KUCOIN: { from: fromKucoinSymbol, to: toKucoinSymbol, min: 600 },
+      WEEX: { from: fromWeexSymbol, to: toWeexSymbol, min: 400 },
+    } as const;
+    for (const v of ['ASTER', 'KUCOIN', 'WEEX'] as const) {
+      const rows = CENSUS.venues[v] ?? [];
+      expect(rows.length, v).toBeGreaterThanOrEqual(mappers[v].min);
+      for (const [native, tag] of rows) {
+        const coin = mappers[v].from(native); // the coin the app stores and serves
+        if (mappers[v].to(coin) !== native) continue; // shadowed: no coin reaches this instrument
+        const c = cls(coin, v);
+        if (venueRecord(v, native, tag).flag === 'CRYPTO' || ['PAXG', 'XAUT', 'ALL'].includes(coin)) {
+          expect(c, `${v} ${native}`).toBe('CRYPTO'); // the venue's own crypto record, or the deny-list
+          continue;
+        }
+        expect(c === null || c === 'CRYPTO', `${v} ${native} ${tag} → ${c}`).toBe(false);
+      }
+      const L = SNAP.ledger.venues[v]!;
+      expect({ lost: L.lost, collisions: L.collisions }, v).toEqual({ lost: 0, collisions: 0 });
+    }
+    // The books the measured defects named: listed by no other venue, they resolved CRYPTO from the union…
+    expect(cls('ACNX', 'KUCOIN')).toBe('EQUITY');
+    expect(cls('KKR', 'WEEX')).toBe('EQUITY');
+    // …and a 0.22 USDT token the union read as Gate's Raytheon. Gate's own record still decides on Gate.
+    expect(cls('RTX', 'ASTER')).toBe('CRYPTO');
+    expect(cls('RTX', 'GATE')).toBe('EQUITY');
+    // WEEX files the Dow and the DAX under Stocks: the row is level 0, so the level-2 indices name them.
+    for (const coin of ['US30', 'GER40']) expect(cls(coin, 'WEEX'), coin).toBe('INDEX');
+    // Every forex and pre-IPO contract keeps its level-2 class.
+    for (const [n] of rowsWithTag('WEEX', ['Forex'])) expect(cls(fromWeexSymbol(n), 'WEEX'), n).toBe('FX');
+    for (const [n] of rowsWithTag('WEEX', ['Pre-IPO'])) expect(cls(fromWeexSymbol(n), 'WEEX'), n).toBe('PREMARKET');
+    for (const [n] of rowsWithTag('KUCOIN', ['PRE_MARKET'])) expect(cls(fromKucoinSymbol(n), 'KUCOIN'), n).toBe('PREMARKET');
+    for (const [n] of rowsWithTag('ASTER', ['pre-launch'])) expect(cls(fromAsterSymbol(n), 'ASTER'), n).toBe('PREMARKET');
+    // KuCoin's market rows: HK and KR stocks keep their market.
+    for (const [n] of rowsWithTag('KUCOIN', ['HK.STOCK'])) expect(cls(fromKucoinSymbol(n), 'KUCOIN'), n).toBe('HK_EQUITY');
+    for (const [n] of rowsWithTag('KUCOIN', ['KR.STOCK'])) expect(cls(fromKucoinSymbol(n), 'KUCOIN'), n).toBe('KR_EQUITY');
+    // A ticker clash: KuCoin's and WEEX's PURR is the stock (8.87 / 8.85 USDT, 2026-11-12); HL's is the token.
+    expect(family(cls('PURR', 'KUCOIN'))).toBe('EQUITY');
+    expect(family(cls('PURR', 'WEEX'))).toBe('EQUITY');
+    expect(cls('PURR', 'HL')).toBe('CRYPTO');
+    // WEEX's PERPETUAL is not crypto evidence: it lists the Nikkei as one, and the union keeps JP225 an index.
+    expect(cls('JP225', 'WEEX')).toBe('INDEX');
+    expect(SNAP.ledger.venues.WEEX!.crypto).toBe(0);
   });
 
   it('an injected unknown tag (JP_EQUITY) lands by TAG_PATTERNS and in the ledger', () => {

@@ -187,6 +187,16 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
   const phemexProducts = (rows: string[][]) => ({ code: 0, msg: '', data: { products: [], perpProductsV2: rows.map(
     ([symbol, status, quoteCurrency, perpProductSubType, perpProductSubGroup]) => (
       { symbol, status, quoteCurrency, perpProductSubType, ...(perpProductSubGroup ? { perpProductSubGroup } : {}) })) } });
+  const URLS = {
+    ASTER: 'https://fapi.asterdex.com/fapi/v1/exchangeInfo',
+    KUCOIN: 'https://api-futures.kucoin.com/api/v1/contracts/active',
+    WEEX: 'https://api-contract.weex.com/capi/v3/market/exchangeInfo',
+  };
+  const asterPerp = (symbol: string, symbolType: number, underlyingSubType: string[]) => (
+    { symbol, contractType: 'PERPETUAL', quoteAsset: 'USDT', underlyingType: 'COIN', symbolType, underlyingSubType });
+  const kucoinPerp = (symbol: string, assetClass: string, subMarketType: string | null, marketStage = 'NORMAL') => (
+    { symbol, type: 'FFWCSX', quoteCurrency: 'USDT', assetClass, subMarketType, marketStage });
+  const weexPerp = (symbol: string, contractType: string, underlyingType: string) => ({ symbol, contractType, underlyingType });
   const FIXTURES: Record<string, unknown> = {
     'https://fapi.binance.com/fapi/v1/exchangeInfo': { symbols: [
       { symbol: 'TENCENTUSDT', contractType: 'TRADIFI_PERPETUAL', underlyingType: 'HK_EQUITY' },
@@ -201,6 +211,8 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       { name: 'EUR_USDT', contract_type: 'forex' }, { name: 'BTC_USDT', contract_type: '' },
       { name: 'CAT_USDT', contract_type: '' }, // a crypto CAT: XT's CAT (Caterpillar) must not borrow it
       { name: 'SPX500_USDT', contract_type: 'indices' },
+      { name: 'RTX_USDT', contract_type: 'stocks' }, // Raytheon; Aster's RTX is a token
+      { name: 'US30_USDT', contract_type: 'indices' },
     ],
     'https://contract.mexc.com/api/v1/contract/detail': { data: [
       { symbol: 'VOOSTOCK_USDT', typeLabel: 2, conceptPlate: ['mc-trade-zone-usstocks', 'mc-trade-zone-tradfi'] },
@@ -278,6 +290,44 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       ['NEWUSDT', 'Delisted', 'USDT', 'Pilot'],
       ['BTCUSDC', 'Listed', 'USDC', 'Normal'],
     ]),
+    // OPS-TIER-CLASSIFIER-DECODE-W2 — shapes as served 2026-11-12T17:08Z.
+    // Aster `symbolType` + `underlyingSubType`:
+    [URLS.ASTER]: { symbols: [
+      asterPerp('RTXUSDT', 0, []), // a 0.22 USDT token: crypto evidence, not Gate's Raytheon
+      asterPerp('PREDICTUSDT', 0, ['pre-launch']), // a crypto pre-launch token
+      asterPerp('OPENAIUSDT', 1, ['pre-launch', 'STOCK']),
+      asterPerp('QQQUSDT', 1, ['STOCK', 'ETF']),
+      asterPerp('TENCENTUSDT', 1, ['STOCK']),
+      asterPerp('XAUUSDT', 1, ['Commodities']),
+      { ...asterPerp('MOONSHOTUSD1', 1, ['pre-launch', 'STOCK', 'USD1-RWA']), quoteAsset: 'USD1' }, // not USDT
+      { ...asterPerp('SMSNUSDT', 1, ['STOCK']), contractType: '' }, // not a perpetual yet
+    ] },
+    // KuCoin `assetClass` + `subMarketType` + `marketStage`:
+    [URLS.KUCOIN]: { code: '200000', data: [
+      kucoinPerp('ACNXUSDTM', 'STOCK', 'US.STOCK'),
+      kucoinPerp('SHEINHKDUSDTM', 'STOCK', 'HK.STOCK'),
+      kucoinPerp('SAMSUNGUSDTM', 'STOCK', 'KR.STOCK'),
+      kucoinPerp('KIOXIAUSDTM', 'STOCK', 'JP.STOCK'),
+      kucoinPerp('OPENAIUSDTM', 'STOCK', 'US.STOCK', 'PRE_MARKET'),
+      kucoinPerp('XAUTUSDTM', 'METAL', null), // the adapter's GOLD
+      kucoinPerp('CLUSDTM', 'COMMODITY', null),
+      kucoinPerp('XBTUSDTM', 'CRYPTO', null), // the adapter's BTC
+      kucoinPerp('BPUSDTM', 'CRYPTO', null, 'PRE_MARKET'), // a pre-launch token
+      { ...kucoinPerp('XBTUSDM', 'CRYPTO', null), quoteCurrency: 'USD' }, // inverse
+      { ...kucoinPerp('XBTMZ26', 'CRYPTO', null), type: 'FFICSX', quoteCurrency: 'USD' }, // a delivery future
+    ] },
+    // WEEX `contractType` + `underlyingType`:
+    [URLS.WEEX]: { symbols: [
+      weexPerp('KKRUSDT', 'TRADIFI_PERPETUAL', 'Stocks'),
+      weexPerp('US30USDT', 'TRADIFI_PERPETUAL', 'Stocks'), // the Dow, filed under Stocks
+      weexPerp('SPYUSDT', 'TRADIFI_PERPETUAL', 'Indices'), // an ETF, filed under Indices
+      weexPerp('EURUSDT', 'TRADIFI_PERPETUAL', 'Forex'),
+      weexPerp('YMTCUSDT', 'TRADIFI_PERPETUAL', 'Pre-IPO'),
+      weexPerp('GLDUSDT', 'TRADIFI_PERPETUAL', 'Metals'),
+      weexPerp('ALLUSDT', 'TRADIFI_PERPETUAL', 'Indices'), // Allora, a token: the deny-list decides
+      weexPerp('JP225USDT', 'PERPETUAL', 'COIN'), // the Nikkei, filed as a COIN perpetual: not crypto evidence
+      weexPerp('BTCUSDT', 'PERPETUAL', 'COIN'),
+    ] },
   };
 
   it('parses each venue end-to-end into records the engine classes', async () => {
@@ -361,7 +411,68 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     expect(getAssetClass('BTC', 'PHEMEX')).toBe('CRYPTO');      // Normal: the union's crypto evidence
     expect(getAssetClass('NEW', 'PHEMEX')).toBeNull();          // Pilot: no record, and no venue lists it
     expect(_getAssetClassLedgerForTest()!.venues.PHEMEX).toMatchObject({ tradfi: 8, crypto: 0, denied: 1, lost: 0 });
+    // Aster: symbolType 0 is crypto evidence; symbolType 1's class word decides (pre-launch before STOCK).
+    expect(getAssetClass('RTX', 'ASTER')).toBe('CRYPTO');        // Aster's own record beats Gate's Raytheon…
+    expect(getAssetClass('RTX', 'GATE')).toBe('EQUITY');         // …which still decides on Gate
+    expect(getAssetClass('PREDICT', 'ASTER')).toBe('CRYPTO');    // pre-launch on a symbolType-0 contract: a token
+    expect(getAssetClass('OPENAI', 'ASTER')).toBe('PREMARKET');
+    expect(getAssetClass('QQQ', 'ASTER')).toBe('EQUITY');        // level-1 ETF: no equity-family level-2 hit, so EQUITY
+    expect(getAssetClass('TENCENT', 'ASTER')).toBe('HK_EQUITY'); // level-1 STOCK refined by Binance's level-2 HK_EQUITY
+    expect(getAssetClass('XAU', 'ASTER')).toBe('COMMODITY');
+    expect(_getAssetClassLedgerForTest()!.venues.ASTER).toMatchObject({ tradfi: 4, crypto: 2, lost: 0 }); // USD1 + non-perp skipped
+    // KuCoin: assetClass, then the stock's market or PRE_MARKET.
+    expect(getAssetClass('ACNX', 'KUCOIN')).toBe('EQUITY');
+    expect(getAssetClass('SHEINHKD', 'KUCOIN')).toBe('HK_EQUITY');
+    expect(getAssetClass('SAMSUNG', 'KUCOIN')).toBe('KR_EQUITY');
+    expect(getAssetClass('KIOXIA', 'KUCOIN')).toBe('KR_EQUITY'); // JP is level 1 (no Japanese class): the STATIC seed's market fills it
+    expect(getAssetClass('OPENAI', 'KUCOIN')).toBe('PREMARKET');
+    expect(getAssetClass('GOLD', 'KUCOIN')).toBe('COMMODITY');   // the adapter's alias → XAUTUSDTM
+    expect(getAssetClass('XAUT', 'KUCOIN')).toBe('CRYPTO');      // the deny-list
+    expect(getAssetClass('CL', 'KUCOIN')).toBe('COMMODITY');
+    expect(getAssetClass('BTC', 'KUCOIN')).toBe('CRYPTO');       // the adapter's XBT
+    expect(getAssetClass('BP', 'KUCOIN')).toBe('CRYPTO');        // a pre-market token, not BP plc
+    expect(_getAssetClassLedgerForTest()!.venues.KUCOIN).toMatchObject({ tradfi: 7, crypto: 2, denied: 1, lost: 0 }); // inverse + delivery skipped
+    // WEEX: TRADIFI_PERPETUAL's underlyingType decides; a PERPETUAL is no record (the union decides it).
+    expect(getAssetClass('KKR', 'WEEX')).toBe('EQUITY');
+    expect(getAssetClass('US30', 'WEEX')).toBe('INDEX');         // level-0 Stocks refined by Gate's level-2 indices
+    expect(getAssetClass('SPY', 'WEEX')).toBe('EQUITY');         // level-0 Indices refined by Binance's level-2 EQUITY
+    expect(getAssetClass('EUR', 'WEEX')).toBe('FX');
+    expect(getAssetClass('YMTC', 'WEEX')).toBe('PREMARKET');
+    expect(getAssetClass('GLD', 'WEEX')).toBe('COMMODITY');
+    expect(getAssetClass('ALL', 'WEEX')).toBe('CRYPTO');         // the deny-list, whatever WEEX files it under
+    expect(getAssetClass('BTC', 'WEEX')).toBe('CRYPTO');         // no record: the union's crypto evidence
+    expect(_getAssetClassLedgerForTest()!.venues.WEEX).toMatchObject({ tradfi: 7, crypto: 0, denied: 1, lost: 0 });
     expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([]);
+  });
+
+  it('Aster, KuCoin and WEEX: an unknown class lands TradFi and is announced; a list without the field is a failed fetch', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry; every other venue fails open
+    let payloads: Record<string, unknown> = {
+      [URLS.ASTER]: { symbols: [asterPerp('NEWUSDT', 2, ['STOCK'])] },
+      [URLS.KUCOIN]: { data: [kucoinPerp('EURUSDTM', 'FOREX', null)] },
+      [URLS.WEEX]: { symbols: [weexPerp('BUNDUSDT', 'TRADIFI_PERPETUAL', 'Bonds')] },
+    };
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url in payloads) return payloads[req.url];
+      throw new Error(`unmocked ${req.url}`);
+    });
+    await _warmForTest();
+    expect(getAssetClass('EUR', 'KUCOIN')).toBe('FX'); // TAG_PATTERNS
+    expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([
+      { venue: 'ASTER', tag: 'symbolType:2', natives: ['NEWUSDT'] },
+      { venue: 'KUCOIN', tag: 'FOREX', natives: ['EURUSDTM'] },
+      { venue: 'WEEX', tag: 'Bonds', natives: ['BUNDUSDT'] },
+    ]);
+    for (const v of ['ASTER', 'KUCOIN', 'WEEX']) expect(_getAssetClassLedgerForTest()!.failed).not.toContain(v);
+
+    _clearAssetClassCache();
+    payloads = {
+      [URLS.ASTER]: { symbols: [{ symbol: 'BTCUSDT', contractType: 'PERPETUAL', quoteAsset: 'USDT' }] },
+      [URLS.KUCOIN]: { data: [{ symbol: 'XBTUSDTM', type: 'FFWCSX', quoteCurrency: 'USDT' }] },
+      [URLS.WEEX]: { symbols: [{ symbol: 'BTCUSDT' }] },
+    };
+    await _warmForTest();
+    expect(_getAssetClassLedgerForTest()!.failed).toEqual(expect.arrayContaining(['ASTER', 'KUCOIN', 'WEEX']));
   });
 
   it('Phemex: an unknown subtype lands TradFi and is announced; a list with no subtype at all is a failed fetch', async () => {
