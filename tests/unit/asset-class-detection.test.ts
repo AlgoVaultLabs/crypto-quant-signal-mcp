@@ -187,6 +187,7 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     'https://fapi.binance.com/fapi/v1/exchangeInfo': { symbols: [
       { symbol: 'TENCENTUSDT', contractType: 'TRADIFI_PERPETUAL', underlyingType: 'HK_EQUITY' },
       { symbol: 'USDBRLUSDT', contractType: 'TRADIFI_PERPETUAL', underlyingType: 'FX' },
+      { symbol: 'SPYUSDT', contractType: 'TRADIFI_PERPETUAL', underlyingType: 'EQUITY' },
       { symbol: 'BTCUSDT', contractType: 'PERPETUAL', underlyingType: 'COIN' },
       { symbol: 'BTCUSDC', contractType: 'PERPETUAL', underlyingType: 'COIN' },
       { symbol: 'BTCUSDT_261225', contractType: 'CURRENT_QUARTER', underlyingType: 'COIN' },
@@ -244,6 +245,20 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       { symbol: 'btc_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: null },
       { symbol: 'btc_usdt_230630', contractType: 'CURRENT_QUARTER', quoteCoin: 'usdt', tags: null },
     ] },
+    // HTX class words in `tradfi_labels` and `labels`, records as served 2026-11-12 (OPS-ASSET-CLASS-HTX-DECODE-W1).
+    'https://api.hbdm.com/linear-swap-api/v1/swap_contract_info': { status: 'ok', ts: 1794484904064, data: [
+      ['NASDAQ100-USDT', ['tradfi', 'indices', 'new', 'common'], ['Indices']],
+      ['SPY-USDT', ['tradfi', 'indices', 'new', 'common'], ['Indices']], // an ETF HTX files under Indices
+      ['OPENAI-USDT', ['tradfi', 'stock'], ['Stocks']],
+      ['PURR-USDT', ['tradfi', 'stock'], ['Stocks']],
+      ['BKNG-USDT', ['stock'], []], // the class named in `labels` only
+      ['USOIL-USDT', ['tradfi', 'commodities', 'new', 'common'], ['Commodities']],
+      ['XAU-USDT', ['tradfi', 'commodities', 'common'], ['Metals']],
+      ['PAXG-USDT', ['tradfi', 'commodities', 'common'], ['Metals']],
+      ['CMCSA-USDT', [], []], // a stock HTX leaves unlabeled
+      ['BTC-USDT', ['hot', 'common'], []],
+    ].map(([code, labels, tradfi_labels]) => ({
+      symbol: (code as string).replace(/-USDT$/, ''), contract_code: code, business_type: 'swap', contract_status: 1, labels, tradfi_labels })) },
   };
 
   it('parses each venue end-to-end into records the engine classes', async () => {
@@ -260,7 +275,7 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     expect(getAssetClass('TENCENT', 'BINANCE')).toBe('HK_EQUITY');
     expect(getAssetClass('USDBRL', 'BINANCE')).toBe('FX');
     expect(getAssetClass('BTC', 'BINANCE')).toBe('CRYPTO');
-    expect(_getAssetClassLedgerForTest()!.venues.BINANCE).toMatchObject({ tradfi: 2, crypto: 1 }); // USDC + quarterly skipped
+    expect(_getAssetClassLedgerForTest()!.venues.BINANCE).toMatchObject({ tradfi: 3, crypto: 1 }); // USDC + quarterly skipped
     expect(getAssetClass('NASDAQ', 'GATE')).toBe('INDEX');
     expect(getAssetClass('XAG', 'GATE')).toBe('COMMODITY');
     expect(getAssetClass('EUR', 'GATE')).toBe('FX');
@@ -302,6 +317,18 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     expect(getAssetClass('CLSK', 'XT')).toBeNull();
     expect(getAssetClass('BTC', 'XT')).toBe('CRYPTO');        // untagged: the union's crypto evidence
     expect(_getAssetClassLedgerForTest()!.venues.XT).toMatchObject({ tradfi: 7, crypto: 0, denied: 1, lost: 0 });
+    // HTX: its class words in either field decide; a contract with none is no record (the union decides it).
+    expect(getAssetClass('NASDAQ100', 'HTX')).toBe('INDEX');   // level 0, nothing refines it: HTX's own INDEX
+    expect(getAssetClass('SPY', 'HTX')).toBe('EQUITY');        // level 0 `indices` refined by Binance's level-2 EQUITY
+    expect(getAssetClass('OPENAI', 'HTX')).toBe('PREMARKET');  // level 0 `stocks` refined by OKX's pre_market
+    expect(getAssetClass('PURR', 'HTX')).toBe('EQUITY');
+    expect(getAssetClass('BKNG', 'HTX')).toBe('EQUITY');
+    expect(getAssetClass('USOIL', 'HTX')).toBe('COMMODITY');
+    expect(getAssetClass('GOLD', 'HTX')).toBe('COMMODITY');    // the adapter's alias → XAU-USDT
+    expect(getAssetClass('PAXG', 'HTX')).toBe('CRYPTO');       // the deny-list, whatever HTX labels it
+    expect(getAssetClass('CMCSA', 'HTX')).toBeNull();
+    expect(getAssetClass('BTC', 'HTX')).toBe('CRYPTO');        // unlabeled: the union's crypto evidence
+    expect(_getAssetClassLedgerForTest()!.venues.HTX).toMatchObject({ tradfi: 8, crypto: 0, denied: 1, lost: 0 });
     expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([]);
   });
 });

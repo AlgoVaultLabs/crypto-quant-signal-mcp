@@ -173,6 +173,23 @@ export const VENUE_TAG_CLASS = {
     INDEX: { cls: 'INDEX', level: 0 },
     STOCK: { cls: 'EQUITY', level: 0 },
   },
+  // HTX class words (OPS-ASSET-CLASS-HTX-DECODE-W1, live-probed 2026-11-12: 309 of 418 USDT swaps
+  // carry one). HTX publishes them in two fields: `tradfi_labels` (Metals, Commodities, Stocks,
+  // Indices) and `labels`, which repeats the class in lower case beside marketing labels (common,
+  // new, hot) and is the ONLY place it names the class on 86 contracts. The detector case-folds both
+  // and takes the first row here the contract carries, so row ORDER is data: the 37 contracts that
+  // carry a stock word AND `indices` (funds, mostly) read as stocks. Stock and index rows are level 0
+  // because neither pins the family: HTX labels pre-IPO MOONSHOT and OURA `stock` (Binance and OKX
+  // list them pre-market), and files ETFs under `indices` beside NASDAQ100 and SPX500. Refinement
+  // names the class.
+  // No crypto row: a contract with no class word is no record at all (the detector skips it).
+  HTX: {
+    metals: { cls: 'COMMODITY', level: 2 },
+    commodities: { cls: 'COMMODITY', level: 2 },
+    stocks: { cls: 'EQUITY', level: 0 },
+    stock: { cls: 'EQUITY', level: 0 },
+    indices: { cls: 'INDEX', level: 0 },
+  },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, TagClass | 'CRYPTO'>>>>;
 
 /** The venues that publish their own per-instrument TradFi record. */

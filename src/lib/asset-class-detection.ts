@@ -59,6 +59,7 @@ import { toBitmartSymbol } from './adapters/bitmart.js';
 import { toBingxSymbol } from './adapters/bingx.js';
 import { toOKXInstId } from './adapters/okx.js';
 import { toXtSymbol } from './adapters/xt.js';
+import { toHtxSymbol } from './adapters/htx.js';
 
 /**
  * Crypto tickers that collide with (or resemble) TradFi symbols — never Tier 3, whatever a venue
@@ -148,6 +149,7 @@ const VENUE_KEYING: Readonly<Record<FieldVenue, VenueKeying>> = {
   HL: { bare: (s) => s.replace(/^xyz:/i, '') },
   OKX: { bare: (s) => s.replace(/-USDT-SWAP$/, ''), native: toOKXInstId },
   XT: { bare: (s) => s.replace(/_usdt$/, ''), native: toXtSymbol },
+  HTX: { bare: (s) => s.replace(/-USDT$/, ''), native: toHtxSymbol },
 };
 
 /** The field venues, in tag-table order — also the union's tie-break order. */
@@ -159,8 +161,10 @@ export const FIELD_VENUES: readonly FieldVenue[] = Object.keys(VENUE_TAG_CLASS) 
  * every `ExchangeId`: tsc refuses a new venue that is neither (structural, not asserted).
  * XT left this list in OPS-ASSET-CLASS-XT-DECODE-W1: it publishes `tags` per contract, and in the
  * union its FX and index books no field venue lists (USDTRY, NZDUSD, DE30EUR…) fell to the CRYPTO floor.
+ * HTX left it in OPS-ASSET-CLASS-HTX-DECODE-W1 for the same reason: it labels each contract's class,
+ * and in the union NASDAQ100 (listed by no field venue) fell to the CRYPTO floor.
  */
-export const UNION_VENUES = ['ASTER', 'PHEMEX', 'WEEX', 'HTX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
+export const UNION_VENUES = ['ASTER', 'PHEMEX', 'WEEX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
 type Unclassified = Exclude<ExchangeId, FieldVenue | (typeof UNION_VENUES)[number]>;
 const _everyVenueClassified: [Unclassified] extends [never] ? true : Unclassified = true;
 const _fieldVenuesAreExchanges: readonly ExchangeId[] = FIELD_VENUES;
@@ -195,6 +199,8 @@ function fetchVenue<T>(venue: ExchangeId, url: string): Promise<T> {
 const MEXC_ZONES: readonly string[] = Object.keys(VENUE_TAG_CLASS.MEXC).filter((t) => t !== '');
 /** XT tags in row order — the tag is the first one a contract carries (`Pre-M` before `STOCK`). */
 const XT_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.XT);
+/** HTX class words in row order — the tag is the first one a contract carries (`stocks` before `indices`). */
+const HTX_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.HTX);
 
 const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
   // Binance — contractType PERPETUAL (crypto) vs TRADIFI_PERPETUAL + underlyingType.
@@ -315,6 +321,27 @@ const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
       const tags = (c.tags ?? []).filter((t) => typeof t === 'string' && t !== '');
       if (tags.length === 0) continue;
       out.push(venueRecord('XT', c.symbol, XT_TAGS.find((t) => tags.includes(t)) ?? tags.join('+')));
+    }
+    return out;
+  },
+  // HTX — its class words, case-folded across `tradfi_labels` and `labels`: the tag is the first
+  // `VENUE_TAG_CLASS.HTX` row the contract carries. A `tradfi_labels` value with no row still lands
+  // TradFi (TAG_PATTERNS + the ledger's `unmapped`); an unknown word in `labels` alone does not, since
+  // that field mixes the class with marketing labels. A contract with no class word is NOT crypto
+  // evidence: HTX leaves FX pairs and some stocks unlabeled (2026-11-12: EURUSD, USDJPY, GBPUSD,
+  // USDBRL, CMCSA, SNPS), so it yields no record and the union keeps deciding it.
+  HTX: async () => {
+    const j = await fetchVenue<{ data?: Array<{ contract_code?: string; business_type?: string; labels?: string[] | null; tradfi_labels?: string[] | null }> }>(
+      'HTX', 'https://api.hbdm.com/linear-swap-api/v1/swap_contract_info');
+    const words = (xs: string[] | null | undefined): string[] =>
+      (xs ?? []).filter((t) => typeof t === 'string' && t !== '').map((t) => t.toLowerCase());
+    const out: VenueRecord[] = [];
+    for (const c of j.data ?? []) {
+      if (c.business_type !== 'swap' || !c.contract_code?.endsWith('-USDT')) continue;
+      const tradfi = words(c.tradfi_labels);
+      const carried = new Set([...tradfi, ...words(c.labels)]);
+      const tag = HTX_TAGS.find((t) => carried.has(t)) ?? (tradfi.length > 0 ? tradfi.join('+') : undefined);
+      if (tag !== undefined) out.push(venueRecord('HTX', c.contract_code, tag));
     }
     return out;
   },

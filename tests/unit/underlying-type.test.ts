@@ -8,8 +8,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
-// Only `upstreamFetch` is replaced (every other export stays real): the XT block drives the REAL
-// detector registry over XT's own payload. The other blocks never fetch (records are loaded directly).
+// Only `upstreamFetch` is replaced (every other export stays real): the XT and HTX blocks drive the
+// REAL detector registry over the venue's own payload. The other blocks never fetch (records are loaded directly).
 vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
   upstreamFetch: vi.fn(),
@@ -94,5 +94,43 @@ describe('OPS-ASSET-CLASS-XT-DECODE-W1 — XT books resolve through XT’s own r
     expect(await resolveAssetClass('DE30EUR', 'XT')).toBe('INDEX');
     expect(await resolveAssetClass('AUD', 'XT')).toBe('FX');
     expect(await resolveAssetClass('BTC', 'XT')).toBe('CRYPTO');
+  });
+});
+
+describe('OPS-ASSET-CLASS-HTX-DECODE-W1 — HTX books resolve through HTX’s own record', () => {
+  // HTX's own contract list, as served 2026-11-12T12:01Z (fields the detector reads, verbatim).
+  // Measured defect: no field venue lists NASDAQ100 (Gate lists NASDAQ), so while HTX sat in the
+  // union it fell to the floor and resolved CRYPTO: Tier 4 in the public track record (121 calls).
+  const HTX_URL = 'https://api.hbdm.com/linear-swap-api/v1/swap_contract_info';
+  const swap = (code: string, labels: string[], tradfi_labels: string[]) => (
+    { symbol: code.replace(/-USDT$/, ''), contract_code: code, business_type: 'swap', contract_status: 1, labels, tradfi_labels });
+  const HTX_PAYLOAD = { status: 'ok', data: [
+    swap('NASDAQ100-USDT', ['tradfi', 'indices', 'new', 'common'], ['Indices']),
+    swap('USOIL-USDT', ['tradfi', 'commodities', 'new', 'common'], ['Commodities']),
+    swap('PURR-USDT', ['tradfi', 'stock'], ['Stocks']),
+    swap('BKNG-USDT', ['stock'], []), // HTX names the class only in `labels` on 86 contracts
+    swap('XAU-USDT', ['tradfi', 'commodities', 'common'], ['Metals']),
+    swap('BTC-USDT', ['hot', 'common'], []),
+  ], ts: 1794484904064 };
+
+  beforeEach(() => {
+    _clearAssetClassCache();
+    (upstreamFetch as unknown as Mock).mockReset();
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url === HTX_URL) return HTX_PAYLOAD;
+      throw new Error(`unmocked ${req.url}`); // every other venue fails open: HTX's record alone decides
+    });
+  });
+  afterEach(() => _clearAssetClassCache());
+
+  it('HTX index, commodity and stock books resolve to their TradFi class, never the CRYPTO floor', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry
+    await _warmForTest();
+    expect(await resolveAssetClass('NASDAQ100', 'HTX')).toBe('INDEX');
+    expect(await resolveAssetClass('USOIL', 'HTX')).toBe('COMMODITY');
+    expect(await resolveAssetClass('PURR', 'HTX')).toBe('EQUITY'); // Hyperliquid Strategies Inc.; PURR@HL is the token
+    expect(await resolveAssetClass('BKNG', 'HTX')).toBe('EQUITY');
+    expect(await resolveAssetClass('GOLD', 'HTX')).toBe('COMMODITY'); // adapter alias GOLD → XAU-USDT
+    expect(await resolveAssetClass('BTC', 'HTX')).toBe('CRYPTO');
   });
 });

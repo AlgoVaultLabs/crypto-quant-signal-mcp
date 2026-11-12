@@ -22,6 +22,7 @@ import {
 } from '../../src/lib/market-sessions-constants.js';
 import { evaluateTotality, type PerformancePublicTiers } from '../../src/scripts/asset-class-totality.js';
 import { fromXtSymbol } from '../../src/lib/adapters/xt.js';
+import { fromHtxSymbol } from '../../src/lib/adapters/htx.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CENSUS = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'asset-class-census.json'), 'utf8')) as {
@@ -45,7 +46,7 @@ const bareOf = (v: FieldVenue, native: string) => venueRecord(v, native, '').bar
 
 describe('the census itself', () => {
   it('covers every active field venue; retired venues are skipped, not failed', () => {
-    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'MEXC', 'OKX', 'WHITEBIT', 'XT']);
+    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'HTX', 'MEXC', 'OKX', 'WHITEBIT', 'XT']);
     expect(CENSUS.skipped_retired.sort()).toEqual(['BITMART', 'EDGEX']);
   });
 
@@ -146,6 +147,33 @@ describe('CH1.10 — every perp lands in its class, from its own venue’s recor
     // Pre-IPO: Pre-M wins over STOCK; a plain-STOCK pre-IPO name still refines from OKX's pre_market.
     for (const coin of ['OPENAI', 'ANTHROPIC', 'MOONSHOT', 'OURA']) expect(cls(coin, 'XT'), coin).toBe('PREMARKET');
     const L = SNAP.ledger.venues.XT!;
+    expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
+  });
+
+  it('HTX (OPS-ASSET-CLASS-HTX-DECODE-W1): every labeled swap resolves TradFi through its own coin; NASDAQ100 → INDEX', () => {
+    const htx = CENSUS.venues.HTX ?? [];
+    expect(htx.length).toBeGreaterThanOrEqual(250);
+    const coinOf = (native: string) => fromHtxSymbol(native); // the coin the app stores and serves
+    const denied = (native: string) => ['PAXG', 'XAUT'].includes(bareOf('HTX', native));
+    for (const [native, tag] of htx) {
+      const c = cls(coinOf(native), 'HTX');
+      if (denied(native)) { expect(c, native).toBe('CRYPTO'); continue; } // the deny-list
+      expect(c === null || c === 'CRYPTO', `${native} ${tag} → ${c}`).toBe(false);
+    }
+    // The book the measured defect named: no field venue lists it, so it resolved CRYPTO while HTX sat in the union.
+    expect(cls('NASDAQ100', 'HTX')).toBe('INDEX');
+    expect(cls('SPX500', 'HTX')).toBe('INDEX');
+    // Every metal and commodity HTX labels is COMMODITY (level 2), oil included (the union had USOIL as EQUITY).
+    const commodities = rowsWithTag('HTX', ['metals', 'commodities']).filter(([n]) => !denied(n));
+    expect(commodities.length).toBeGreaterThanOrEqual(5);
+    for (const [n] of commodities) expect(cls(coinOf(n), 'HTX'), n).toBe('COMMODITY');
+    expect(cls('USOIL', 'HTX')).toBe('COMMODITY');
+    // A ticker clash: HTX's PURR is Hyperliquid Strategies Inc. (8.67 USDT, 2026-11-12); HL's PURR is the token (0.09).
+    expect(family(cls('PURR', 'HTX'))).toBe('EQUITY');
+    expect(cls('PURR', 'HL')).toBe('CRYPTO');
+    // Pre-IPO names HTX labels `stock` still refine from Binance's and OKX's pre-market records (stock rows are level 0).
+    for (const coin of ['OPENAI', 'ANTHROPIC', 'MOONSHOT', 'OURA']) expect(cls(coin, 'HTX'), coin).toBe('PREMARKET');
+    const L = SNAP.ledger.venues.HTX!;
     expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
   });
 
