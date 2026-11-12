@@ -181,6 +181,10 @@ describe('class preservation — tags moved, classes did not', () => {
     'src/scripts/sr-probe/fetch-candles.ts': { runAsCaller: 1 },
     // EDGE-SR-LEVEL-BACKTEST-W1 CH1: one-shot Mac-side candle fetch — class-neutral runAsCaller, literal 'sr-level-backtest'.
     'src/scripts/sr-backtest/fetch-store.ts': { runAsCaller: 1 },
+    // OPS-BOOK-LIVENESS-W2 CH1: the book-liveness canary's probe CLI — every active venue's sentinel book and each
+    // S2 row's pre-entry bars, read THROUGH the adapters under ONE batch scope so the nightly canary can never
+    // spend a venue's interactive reserve; its own entrypoint, literal name `book-liveness-probe`.
+    'src/scripts/book-liveness-probe.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {
