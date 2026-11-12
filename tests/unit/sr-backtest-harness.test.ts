@@ -2,7 +2,7 @@
 // candles (store -> guarded run -> estimator -> verdict); the estimator's self-test and the mutations that break
 // it; the null calibration and the half-width control that breaks it; what was registered is what is run.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,11 +23,25 @@ const REG = 'audits/sr-level-backtest-preregistration-2024-01-01.md';
 const git = (repo: string, ...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
+interface Ran { status: number | null; out: string; token: (name: string) => string | null }
+const ran = (status: number | null, out: string): Ran => ({ status, out, token: (name) => out.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1] ?? null });
+
 /** The estimator, as the operator runs it. */
-function py(args: string[], env: Record<string, string> = {}): { status: number | null; out: string; token: (name: string) => string | null } {
+function py(args: string[], env: Record<string, string> = {}): Ran {
   const r = spawnSync('python3', ['-I', PY, ...args], { encoding: 'utf8', timeout: 240_000, env: { ...process.env, ...env } });
-  const out = `${r.stdout ?? ''}`;
-  return { status: r.status, out, token: (name) => out.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1] ?? null };
+  return ran(r.status, `${r.stdout ?? ''}`);
+}
+
+/** A child process, awaited. A run of minutes must not hold the vitest worker: its RPC to the runner gives up
+ *  after 60 s of silence and the run exits 1 with every assertion green. */
+function child(cmd: string, args: string[], timeoutMs: number): Promise<Ran> {
+  return new Promise((resolve) => {
+    const c = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'], timeout: timeoutMs });
+    let out = '';
+    c.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
+    c.on('error', () => resolve(ran(null, out)));
+    c.on('close', (status) => resolve(ran(status, out)));
+  });
 }
 
 /** Where two parsed JSON documents differ: numbers agree to a relative REL_TOL, everything else is identical.
@@ -91,6 +105,7 @@ let plan: StorePlan;
 let manifestSha = '';
 let before: ReturnType<typeof outcomeStep>;
 let after: ReturnType<typeof outcomeStep>;
+let baseSha = '';
 let landedSha = '';
 const outDir = (name: string): string => path.join(dir, 'out', name);
 
@@ -107,6 +122,11 @@ function withFile<T>(file: string, change: (text: string) => string, fn: () => T
 
 const step = (name: string, registration = REG, s = store): ReturnType<typeof outcomeStep> => outcomeStep({ repo, registration, store: s, venue: VENUE, out: outDir(name) });
 
+/** A sandbox checkout that can commit: its own identity, no signing, no hooks. */
+function configure(checkout: string): void {
+  for (const [k, v] of [['user.email', 'sandbox@example.invalid'], ['user.name', 'sandbox'], ['commit.gpgsign', 'false'], ['core.hooksPath', path.join(dir, 'no-hooks')]]) git(checkout, 'config', k, v);
+}
+
 beforeAll(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'sr-backtest-harness-'));
   const origin = path.join(dir, 'origin.git');
@@ -116,8 +136,14 @@ beforeAll(() => {
   execFileSync('git', ['init', '-q', '--bare', '--initial-branch=main', origin], { timeout: 60_000 });
   execFileSync('git', ['init', '-q', '--initial-branch=main', repo], { timeout: 60_000 });
   mkdirSync(path.join(dir, 'no-hooks'));
-  for (const [k, v] of [['user.email', 'sandbox@example.invalid'], ['user.name', 'sandbox'], ['commit.gpgsign', 'false'], ['core.hooksPath', path.join(dir, 'no-hooks')]]) git(repo, 'config', k, v);
+  configure(repo);
   git(repo, 'remote', 'add', 'origin', origin);
+  // origin/main is there before the registration is: a base commit, pushed.
+  writeFileSync(path.join(repo, 'README.md'), 'sandbox\n');
+  git(repo, 'add', 'README.md');
+  git(repo, 'commit', '-q', '-m', 'base');
+  git(repo, 'push', '-q', '-u', 'origin', 'main');
+  baseSha = git(repo, 'rev-parse', 'origin/main');
   // The sandbox checkout carries this checkout's own harness files, byte for byte.
   for (const rel of PINNED_FILES) {
     mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
@@ -147,9 +173,9 @@ beforeAll(() => {
   reg('holed-store.md', { ...files, [storePin(VENUE)]: sha256(readFileSync(manifestFile(holed, VENUE))) });
   for (const rel of PINNED_FILES) git(repo, 'add', rel);
   git(repo, 'commit', '-q', '-m', 'registration');
-  // Both ways, on the same registration and the same store: committed but not landed, then landed.
+  // Both ways, on the same registration and the same store: committed but not pushed, then landed.
   before = step('before');
-  git(repo, 'push', '-q', '-u', 'origin', 'main');
+  git(repo, 'push', '-q', 'origin', 'main');
   landedSha = git(repo, 'rev-parse', 'origin/main');
   after = step('run');
 }, 300_000);
@@ -159,8 +185,10 @@ afterAll(() => {
 });
 
 describe('the outcome step refuses until the registration has landed', () => {
-  it('refuses a registration that is committed but not on origin/main, and writes nothing', () => {
-    expect(before.guard.ok).toBe(false);
+  it('refuses a registration that is committed but not pushed to an origin/main that exists, and writes nothing', () => {
+    // origin/main was the base commit then: the refusal is about the registration, not about a missing branch.
+    expect(before.guard).toMatchObject({ ok: false, originMain: baseSha, registrationCommit: null });
+    expect(landedSha).not.toBe(baseSha);
     expect(before.guard.reason).toMatch(/is not on origin\/main/);
     expect(before.run).toBeNull();
     expect(existsSync(outDir('before'))).toBe(false);
@@ -212,6 +240,28 @@ describe('the outcome step refuses code or candles the registration did not pin'
     const r = withFile(engine, () => edited, () =>
       withFile(path.join(repo, REG), (t) => t.replace(sha256(readFileSync('src/scripts/sr-backtest/engine.ts')), sha256(edited)), () => step('repinned')));
     refused('repinned', r, /engine\.ts is not the registered file/);
+  });
+
+  it('a local commit that edits a pinned file and pins the edit cannot move the pins either', { timeout: 120_000 }, () => {
+    // A second checkout of the landed origin. Clean, it passes.
+    const clone = path.join(dir, 'clone');
+    execFileSync('git', ['clone', '-q', path.join(dir, 'origin.git'), clone], { timeout: 60_000 });
+    configure(clone);
+    expect(checkOutcomeGuard({ repo: clone, registration: REG, store, venue: VENUE })).toMatchObject({ ok: true, registrationCommit: landedSha, originMain: landedSha });
+    // Committed there and never pushed: the engine with one more byte, and a registration that pins that engine.
+    const rel = 'src/scripts/sr-backtest/engine.ts';
+    const edited = `${readFileSync(path.join(clone, rel), 'utf8')}\n`;
+    writeFileSync(path.join(clone, rel), edited);
+    writeFileSync(path.join(clone, REG), readFileSync(path.join(clone, REG), 'utf8').replace(sha256(readFileSync(rel)), sha256(edited)));
+    git(clone, 'add', rel, REG);
+    git(clone, 'commit', '-q', '-m', 'engine edited and pinned again');
+    expect(git(clone, 'status', '--porcelain')).toBe('');
+    expect(git(clone, 'rev-parse', 'HEAD')).not.toBe(landedSha);
+    expect(pinsOf(git(clone, 'show', `HEAD:${REG}`)).get(rel)).toBe(sha256(edited));
+    // The checkout agrees with its own history; the pins are still the ones on origin/main.
+    const r = outcomeStep({ repo: clone, registration: REG, store, venue: VENUE, out: outDir('local-commit') });
+    refused('local-commit', r, /engine\.ts is not the registered file/);
+    expect(r.guard).toMatchObject({ registrationCommit: landedSha, originMain: landedSha });
   });
 
   it('refuses when a pinned file is gone', { timeout: 60_000 }, () => {
@@ -528,11 +578,22 @@ describe('AC1.4 — the null calibration', () => {
     expect(Math.abs(JSON.parse(broken.out.split('\n')[0]).mean_delta_pp)).toBeGreaterThan(0.5);
   });
 
-  it.skipIf(!process.env.SR_BACKTEST_FULL)('SR_BACKTEST_FULL=1: every replication regenerates the committed artifact', { timeout: 3_600_000 }, () => {
+  it.skipIf(!process.env.SR_BACKTEST_FULL)('SR_BACKTEST_FULL=1: every replication regenerates the committed artifact', { timeout: 3_600_000 }, async () => {
+    // The generator as the operator runs it, over consecutive ranges of replications side by side, then the
+    // estimator: every one a child process, awaited.
+    const total = CALIBRATION.replications;
+    const per = Math.ceil(total / Math.max(1, Math.min(8, os.availableParallelism() - 1)));
+    const parts = Array.from({ length: Math.ceil(total / per) }, (_, i) => ({ from: i * per, reps: Math.min(per, total - i * per), file: path.join(dir, `cal-full-${i}.csv`) }));
+    expect(parts.reduce((n, p) => n + p.reps, 0)).toBe(total);
+    const made = await Promise.all(parts.map((p) => child('node_modules/.bin/tsx', [
+      'src/scripts/sr-backtest/run.ts', '--calibrate', '--from', String(p.from), '--reps', String(p.reps), '--out', p.file, ...(p.from ? ['--no-header'] : []),
+    ], 3_000_000)));
+    expect(made.map((r) => [r.status, r.token('SR_BACKTEST_RUN_VERDICT')])).toEqual(parts.map(() => [0, 'PASS']));
     const csv = path.join(dir, 'cal-full.csv');
-    writeFileSync(csv, calibrationCsv(0, CALIBRATION.replications));
+    writeFileSync(csv, parts.map((p) => readFileSync(p.file, 'utf8')).join(''));
     const out = path.join(dir, 'cal-full.json');
-    expect(py(['--calibrate', csv, '--out', out]).token('SR_BACKTEST_CALIBRATION_VERDICT')).toBe('PASS');
+    const r = await child('python3', ['-I', PY, '--calibrate', csv, '--out', out], 3_000_000);
+    expect([r.status, r.token('SR_BACKTEST_CALIBRATION_VERDICT')]).toEqual([0, 'PASS']);
     expect(jsonDiffs(JSON.parse(readFileSync(out, 'utf8')), cal())).toEqual([]);
   });
 });

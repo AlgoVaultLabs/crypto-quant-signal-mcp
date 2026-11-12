@@ -285,6 +285,37 @@ describe('one instant end to end, by hand', () => {
     for (const e of events) expect((e.t2 - T) / M15).toBeLessThanOrEqual(108);
   });
 
+  it('passes over every candidate that touches a qualifying zone, and keeps the last one, flagged, when all do', () => {
+    // The same bars up to T, then a price that only falls, an eighth a bar, in bars of the same 40 range: no new
+    // pivot and ATR 40 at every later instant, so the qualifying zones stay D, C, A and B, and the candidate j bars
+    // after T (j = 13 … 108) re-lays each served zone 0.125 j lower. Zones are closed: an edge on an edge touches.
+    //   C [1040, 1060] is 20 wide: 13.5 lower at j = 108, it is on itself at every candidate -> the last, flagged.
+    //   D, A and B are 10 wide: on themselves up to j = 80 (10 lower, edge on edge), free at j = 81.
+    const fall: Bar[] = Array.from({ length: 150 }, (_, k) => {
+      const mid = 1075 - (k + 1) / 8;
+      return { time: T + k * M15, open: mid + 0.125, high: mid + 20, low: mid - 20, close: mid };
+    });
+    const falling: CoinData = { coin: 'KB', frames: { '15m': [...before, ...fall] } };
+    for (const j of [0, 13, 80, 81, 108]) {
+      const at = asOfSet(falling, M, T + j * M15);
+      expect([at.atr, ...at.zones.map((z) => [z.lo, z.hi])], `${j} bars after T`).toEqual([40, [982.5, 992.5], [1040, 1060], [1097.5, 1107.5], [1147.5, 1157.5]]);
+    }
+    const controls = (p: BtParams): { placed: unknown[]; counts: number[] } => {
+      const r = run(falling, { startMs: T, endMs: T + 150 * M15, timeframes: [M], sources: ['z1'], crossTf: false }, p);
+      const z1 = r.tally.rows.get(`z1|15m|${T / DAY}|KB`)!;
+      return { placed: r.events.map((e) => [e.side, e.rank, (e.t2 - T) / M15, e.price2, e.atr2, e.forced]), counts: [r.tally.instants, z1[0], z1[1], z1[8]] };
+    };
+    expect(controls(BT)).toEqual({
+      placed: [['support', 1, 108, 1061.5, 40, true], ['support', 2, 81, 1064.875, 40, false], ['resistance', 1, 81, 1064.875, 40, false], ['resistance', 2, 81, 1064.875, 40, false]],
+      counts: [1, 4, 4, 1],
+    });
+    // A control that ignores disjointness sits on the first candidate every time and flags nothing.
+    expect(controls({ ...BT, controlDisjoint: false })).toEqual({
+      placed: [['support', 1, 13, 1073.375, 40, false], ['support', 2, 13, 1073.375, 40, false], ['resistance', 1, 13, 1073.375, 40, false], ['resistance', 2, 13, 1073.375, 40, false]],
+      counts: [1, 4, 4, 0],
+    });
+  });
+
   it('tallies V1 and its descriptive cuts', () => {
     const control = [sum((e) => e.c.entered), sum((e) => e.c.outcome === 'bounce'), sum((e) => e.c.outcome === 'break'), sum((e) => e.forced)];
     expect(row('z1')).toEqual([4, 4, 2, 1, 1, ...control]);
@@ -443,22 +474,39 @@ describe('the mirror property, on whole runs', () => {
   const swap = (key: string): string =>
     ({ 'z1.sup': 'z1.res', 'z1.res': 'z1.sup', 'v4a.long': 'v4a.short', 'v4a.short': 'v4a.long', 'v4b.long': 'v4b.short', 'v4b.short': 'v4b.long' } as Record<string, string>)[key] ?? key;
 
-  it('every count of every arm is unchanged under p -> K - p, with the sides swapped', { timeout: 120_000 }, () => {
-    const data = seededCoin();
+  /** One walk and its mirror through the whole harness: the first walk's counts, re-keyed with the sides swapped
+   *  or left as they are, beside the mirror's. */
+  function mirrorRun(seed: number): { a: Tally; b: Tally; swapped: string; kept: string; got: string } {
+    const data = synthCoin(`W${seed}`, { seed, key: 'engine', firstMs: F, bars: 130 * 96, startPrice: K / 2 });
     const a = run(data, SEEDED).tally;
     const b = run(mirrorCoin(data, K), SEEDED).tally;
-    const mirrored = new Map<string, number[]>();
-    for (const [id, r] of a.rows) {
-      const [key, ...rest] = id.split('|');
-      mirrored.set([swap(key), ...rest].join('|'), r);
+    const rekeyed = (f: (key: string) => string): string =>
+      JSON.stringify([...a.rows].map(([id, r]): [string, number[]] => [[f(id.split('|')[0]), ...id.split('|').slice(1)].join('|'), r]).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
+    return { a, b, swapped: rekeyed(swap), kept: rekeyed((key) => key), got: JSON.stringify([...b.rows].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))) };
+  }
+
+  const WALKS = 200;
+  it('every count of every arm is unchanged under p -> K - p, with the sides swapped, on 200 seeded walks', { timeout: 600_000 }, () => {
+    const arms = new Set<string>();
+    for (let seed = 1; seed <= WALKS; seed++) {
+      const { a, b, swapped, kept, got } = mirrorRun(seed);
+      expect(got === swapped, `walk ${seed}: the mirror's counts are the walk's with the sides swapped`).toBe(true);
+      // Two-way: with the sides left as they are the same counts do not match.
+      expect(got === kept, `walk ${seed}: the sides must swap`).toBe(false);
+      for (const [key, [first, second]] of a.sides) expect(b.sides.get(swap(key)), `walk ${seed} ${key}`).toEqual([second, first]);
+      expect(b.instants, `walk ${seed}`).toBe(a.instants);
+      // Outcomes, not only zones: on every walk, served zones and controls were entered and labelled.
+      expect(a.rows.size, `walk ${seed}`).toBeGreaterThan(500);
+      let entered = 0;
+      for (const [id, r] of a.rows) {
+        arms.add(id.split('|')[0]);
+        if (id.startsWith('z1|')) entered += r[2] + r[5];
+      }
+      expect(entered, `walk ${seed}`).toBeGreaterThan(100);
     }
-    expect(a.rows.size).toBeGreaterThan(500);
-    expect(new Set([...a.rows.keys()].map((id) => id.split('|')[0]))).toEqual(new Set([
+    expect(arms).toEqual(new Set([
       'z1', 'z1.W', 'z1.M', 'z1.S', 'z1.sup', 'z1.res', 'z1.r1', 'z1.r2', 'z1.r3', 'z1.rnd0', 'z1.rnd1', 'z1.SS', 'z1.SSS', 'z1.S0',
       'floor', 'pdhl', 'rnd', 'v4a', 'v4a.long', 'v4a.short', 'v4b', 'v4b.long', 'v4b.short', 'v5.b1', 'v5.b2',
     ]));
-    expect(Object.fromEntries([...b.rows].sort())).toEqual(Object.fromEntries([...mirrored].sort()));
-    for (const [key, [first, second]] of a.sides) expect(b.sides.get(swap(key)), key).toEqual([second, first]);
-    expect(b.instants).toBe(a.instants);
   });
 });
