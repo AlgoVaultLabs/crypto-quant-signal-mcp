@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
-// Only `upstreamFetch` is replaced (every other export stays real): the XT and HTX blocks drive the
+// Only `upstreamFetch` is replaced (every other export stays real): the XT, HTX and Phemex blocks drive the
 // REAL detector registry over the venue's own payload. The other blocks never fetch (records are loaded directly).
 vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
@@ -132,5 +132,47 @@ describe('OPS-ASSET-CLASS-HTX-DECODE-W1 — HTX books resolve through HTX’s ow
     expect(await resolveAssetClass('BKNG', 'HTX')).toBe('EQUITY');
     expect(await resolveAssetClass('GOLD', 'HTX')).toBe('COMMODITY'); // adapter alias GOLD → XAU-USDT
     expect(await resolveAssetClass('BTC', 'HTX')).toBe('CRYPTO');
+  });
+});
+
+describe('OPS-ASSET-CLASS-PHEMEX-DECODE-W1 — Phemex books resolve through Phemex’s own record', () => {
+  // Phemex's own product list, as served 2026-11-12T15:17Z (fields the detector reads, verbatim).
+  // Measured defect: no field venue lists XTI, XBR, MUX, SPYX or CATX, so while Phemex sat in the
+  // union they fell to the floor and resolved CRYPTO: Tier 4 in the public track record (716 calls).
+  const PHEMEX_URL = 'https://api.phemex.com/public/products';
+  const perp = (symbol: string, status: string, perpProductSubType: string, perpProductSubGroup?: string) => (
+    { symbol, status, quoteCurrency: 'USDT', perpProductSubType, ...(perpProductSubGroup ? { perpProductSubGroup } : {}) });
+  const PHEMEX_PAYLOAD = { code: 0, msg: '', data: { perpProductsV2: [
+    perp('XTIUSDT', 'Listed', 'TradFi', 'Commodities'), // WTI crude
+    perp('XBRUSDT', 'Listed', 'TradFi', 'Commodities'), // Brent crude
+    perp('MUXUSDT', 'Listed', 'TradFi', 'Stocks'),
+    perp('SPYXUSDT', 'Listed', 'TradFi', 'Indices'),
+    perp('CATXUSDT', 'Delisted', 'TradFi', 'Stocks'), // delisted, still in the public track record
+    perp('XAUUSDT', 'Listed', 'TradFi', 'Metals'),
+    perp('OPENAIUSDT', 'Listed', 'PreMarket'),
+    perp('BTCUSDT', 'Listed', 'Normal'),
+  ] } };
+
+  beforeEach(() => {
+    _clearAssetClassCache();
+    (upstreamFetch as unknown as Mock).mockReset();
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url === PHEMEX_URL) return PHEMEX_PAYLOAD;
+      throw new Error(`unmocked ${req.url}`); // every other venue fails open: Phemex's record alone decides
+    });
+  });
+  afterEach(() => _clearAssetClassCache());
+
+  it('Phemex commodity, stock and index books resolve to their TradFi class, never the CRYPTO floor', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry
+    await _warmForTest();
+    expect(await resolveAssetClass('XTI', 'PHEMEX')).toBe('COMMODITY');
+    expect(await resolveAssetClass('XBR', 'PHEMEX')).toBe('COMMODITY');
+    expect(await resolveAssetClass('MUX', 'PHEMEX')).toBe('EQUITY');
+    expect(await resolveAssetClass('SPYX', 'PHEMEX')).toBe('INDEX');
+    expect(await resolveAssetClass('CATX', 'PHEMEX')).toBe('EQUITY');
+    expect(await resolveAssetClass('GOLD', 'PHEMEX')).toBe('COMMODITY'); // adapter alias GOLD → XAUUSDT
+    expect(await resolveAssetClass('OPENAI', 'PHEMEX')).toBe('PREMARKET');
+    expect(await resolveAssetClass('BTC', 'PHEMEX')).toBe('CRYPTO');
   });
 });

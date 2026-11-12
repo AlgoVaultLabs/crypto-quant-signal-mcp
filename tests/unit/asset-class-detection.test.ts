@@ -183,6 +183,10 @@ describe('engine — degradation', () => {
 });
 
 describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)', () => {
+  const PHEMEX_URL = 'https://api.phemex.com/public/products';
+  const phemexProducts = (rows: string[][]) => ({ code: 0, msg: '', data: { products: [], perpProductsV2: rows.map(
+    ([symbol, status, quoteCurrency, perpProductSubType, perpProductSubGroup]) => (
+      { symbol, status, quoteCurrency, perpProductSubType, ...(perpProductSubGroup ? { perpProductSubGroup } : {}) })) } });
   const FIXTURES: Record<string, unknown> = {
     'https://fapi.binance.com/fapi/v1/exchangeInfo': { symbols: [
       { symbol: 'TENCENTUSDT', contractType: 'TRADIFI_PERPETUAL', underlyingType: 'HK_EQUITY' },
@@ -196,6 +200,7 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       { name: 'NASDAQ_USDT', contract_type: 'indices' }, { name: 'XAG_USDT', contract_type: 'metals' },
       { name: 'EUR_USDT', contract_type: 'forex' }, { name: 'BTC_USDT', contract_type: '' },
       { name: 'CAT_USDT', contract_type: '' }, // a crypto CAT: XT's CAT (Caterpillar) must not borrow it
+      { name: 'SPX500_USDT', contract_type: 'indices' },
     ],
     'https://contract.mexc.com/api/v1/contract/detail': { data: [
       { symbol: 'VOOSTOCK_USDT', typeLabel: 2, conceptPlate: ['mc-trade-zone-usstocks', 'mc-trade-zone-tradfi'] },
@@ -259,6 +264,20 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       ['BTC-USDT', ['hot', 'common'], []],
     ].map(([code, labels, tradfi_labels]) => ({
       symbol: (code as string).replace(/-USDT$/, ''), contract_code: code, business_type: 'swap', contract_status: 1, labels, tradfi_labels })) },
+    // Phemex `perpProductSubType` + `perpProductSubGroup`, records as served 2026-11-12 (OPS-ASSET-CLASS-PHEMEX-DECODE-W1).
+    [PHEMEX_URL]: phemexProducts([
+      ['XTIUSDT', 'Listed', 'USDT', 'TradFi', 'Commodities'], // WTI crude
+      ['XAUUSDT', 'Listed', 'USDT', 'TradFi', 'Metals'],
+      ['PAXGUSDT', 'Listed', 'USDT', 'TradFi', 'Metals'],
+      ['MUXUSDT', 'Listed', 'USDT', 'TradFi', 'Stocks'],
+      ['CATXUSDT', 'Delisted', 'USDT', 'TradFi', 'Stocks'], // delisted: Phemex keeps it, so does the track record
+      ['SPX500USDT', 'Delisted', 'USDT', 'TradFi', 'Stocks'], // the S&P 500, filed under Stocks
+      ['SPYXUSDT', 'Listed', 'USDT', 'TradFi', 'Indices'],
+      ['OPENAIUSDT', 'Listed', 'USDT', 'PreMarket'],
+      ['BTCUSDT', 'Listed', 'USDT', 'Normal'],
+      ['NEWUSDT', 'Delisted', 'USDT', 'Pilot'],
+      ['BTCUSDC', 'Listed', 'USDC', 'Normal'],
+    ]),
   };
 
   it('parses each venue end-to-end into records the engine classes', async () => {
@@ -329,6 +348,37 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     expect(getAssetClass('CMCSA', 'HTX')).toBeNull();
     expect(getAssetClass('BTC', 'HTX')).toBe('CRYPTO');        // unlabeled: the union's crypto evidence
     expect(_getAssetClassLedgerForTest()!.venues.HTX).toMatchObject({ tradfi: 8, crypto: 0, denied: 1, lost: 0 });
+    // Phemex: a TradFi contract's group, or PreMarket, decides; Normal and Pilot are no record (the union decides them).
+    expect(getAssetClass('XTI', 'PHEMEX')).toBe('COMMODITY');
+    expect(getAssetClass('GOLD', 'PHEMEX')).toBe('COMMODITY');  // the adapter's alias → XAUUSDT
+    expect(getAssetClass('XAU', 'PHEMEX')).toBe('COMMODITY');
+    expect(getAssetClass('PAXG', 'PHEMEX')).toBe('CRYPTO');     // the deny-list, whatever Phemex groups it under
+    expect(getAssetClass('MUX', 'PHEMEX')).toBe('EQUITY');      // level 0, nothing refines it: Phemex's own EQUITY
+    expect(getAssetClass('CATX', 'PHEMEX')).toBe('EQUITY');     // delisted, still Phemex's record
+    expect(getAssetClass('SPX500', 'PHEMEX')).toBe('INDEX');    // level 0 Stocks refined by Gate's level-2 indices
+    expect(getAssetClass('SPYX', 'PHEMEX')).toBe('INDEX');
+    expect(getAssetClass('OPENAI', 'PHEMEX')).toBe('PREMARKET');
+    expect(getAssetClass('BTC', 'PHEMEX')).toBe('CRYPTO');      // Normal: the union's crypto evidence
+    expect(getAssetClass('NEW', 'PHEMEX')).toBeNull();          // Pilot: no record, and no venue lists it
+    expect(_getAssetClassLedgerForTest()!.venues.PHEMEX).toMatchObject({ tradfi: 8, crypto: 0, denied: 1, lost: 0 });
     expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([]);
+  });
+
+  it('Phemex: an unknown subtype lands TradFi and is announced; a list with no subtype at all is a failed fetch', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry; every other venue fails open
+    let payload = phemexProducts([['EURUSDUSDT', 'Listed', 'USDT', 'Forex'], ['BTCUSDT', 'Listed', 'USDT', 'Normal']]);
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url === PHEMEX_URL) return payload;
+      throw new Error(`unmocked ${req.url}`);
+    });
+    await _warmForTest();
+    expect(getAssetClass('EURUSD', 'PHEMEX')).toBe('FX'); // TAG_PATTERNS
+    expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([{ venue: 'PHEMEX', tag: 'Forex', natives: ['EURUSDUSDT'] }]);
+    expect(_getAssetClassLedgerForTest()!.failed).not.toContain('PHEMEX');
+
+    _clearAssetClassCache();
+    payload = { code: 0, msg: '', data: { products: [], perpProductsV2: [{ symbol: 'XTIUSDT', status: 'Listed', quoteCurrency: 'USDT' }] } } as typeof payload;
+    await _warmForTest();
+    expect(_getAssetClassLedgerForTest()!.failed).toContain('PHEMEX');
   });
 });

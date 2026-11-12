@@ -23,6 +23,7 @@ import {
 import { evaluateTotality, type PerformancePublicTiers } from '../../src/scripts/asset-class-totality.js';
 import { fromXtSymbol } from '../../src/lib/adapters/xt.js';
 import { fromHtxSymbol } from '../../src/lib/adapters/htx.js';
+import { fromPhemexSymbol } from '../../src/lib/adapters/phemex.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CENSUS = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'asset-class-census.json'), 'utf8')) as {
@@ -46,7 +47,7 @@ const bareOf = (v: FieldVenue, native: string) => venueRecord(v, native, '').bar
 
 describe('the census itself', () => {
   it('covers every active field venue; retired venues are skipped, not failed', () => {
-    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'HTX', 'MEXC', 'OKX', 'WHITEBIT', 'XT']);
+    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'HTX', 'MEXC', 'OKX', 'PHEMEX', 'WHITEBIT', 'XT']);
     expect(CENSUS.skipped_retired.sort()).toEqual(['BITMART', 'EDGEX']);
   });
 
@@ -174,6 +175,33 @@ describe('CH1.10 — every perp lands in its class, from its own venue’s recor
     // Pre-IPO names HTX labels `stock` still refine from Binance's and OKX's pre-market records (stock rows are level 0).
     for (const coin of ['OPENAI', 'ANTHROPIC', 'MOONSHOT', 'OURA']) expect(cls(coin, 'HTX'), coin).toBe('PREMARKET');
     const L = SNAP.ledger.venues.HTX!;
+    expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
+  });
+
+  it('PHEMEX (OPS-ASSET-CLASS-PHEMEX-DECODE-W1): every typed perp resolves TradFi through its own coin; XTI and XBR → COMMODITY', () => {
+    const px = CENSUS.venues.PHEMEX ?? [];
+    expect(px.length).toBeGreaterThanOrEqual(120);
+    const coinOf = (native: string) => fromPhemexSymbol(native); // the coin the app stores and serves
+    const denied = (native: string) => ['PAXG', 'XAUT'].includes(bareOf('PHEMEX', native));
+    for (const [native, tag] of px) {
+      const c = cls(coinOf(native), 'PHEMEX');
+      if (denied(native)) { expect(c, native).toBe('CRYPTO'); continue; } // the deny-list
+      expect(c === null || c === 'CRYPTO', `${native} ${tag} → ${c}`).toBe(false);
+    }
+    // The five books the measured defect named: no field venue lists them, so they resolved CRYPTO while Phemex sat in the union.
+    for (const [coin, want] of [['XTI', 'COMMODITY'], ['XBR', 'COMMODITY'], ['MUX', 'EQUITY'], ['SPYX', 'INDEX'], ['CATX', 'EQUITY']] as const) {
+      expect(cls(coin, 'PHEMEX'), coin).toBe(want);
+    }
+    // Every metal and commodity Phemex groups is COMMODITY (level 2).
+    const commodities = rowsWithTag('PHEMEX', ['Metals', 'Commodities']).filter(([n]) => !denied(n));
+    expect(commodities.length).toBeGreaterThanOrEqual(5);
+    for (const [n] of commodities) expect(cls(coinOf(n), 'PHEMEX'), n).toBe('COMMODITY');
+    // Phemex files the S&P 500 under Stocks: the stock row is level 0, so Gate's level-2 `indices` names it.
+    expect(cls('SPX500', 'PHEMEX')).toBe('INDEX');
+    // PreMarket is Phemex's own record, even for a name that has since listed (QNTX trades as EQUITY on Binance).
+    for (const coin of ['OPENAI', 'ANTHROPIC', 'SPACEX', 'QNTX']) expect(cls(coin, 'PHEMEX'), coin).toBe('PREMARKET');
+    expect(cls('QNTX', 'BINANCE')).toBe('EQUITY');
+    const L = SNAP.ledger.venues.PHEMEX!;
     expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
   });
 

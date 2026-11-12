@@ -190,6 +190,20 @@ export const VENUE_TAG_CLASS = {
     stock: { cls: 'EQUITY', level: 0 },
     indices: { cls: 'INDEX', level: 0 },
   },
+  // Phemex `perpProductSubType` (OPS-ASSET-CLASS-PHEMEX-DECODE-W1, live-probed 2026-11-12: 153 of 881
+  // USDT perps carry a TradFi or PreMarket subtype) and, for TradFi, `perpProductSubGroup` (Stocks,
+  // Indices, Metals, Commodities). The detector's tag is the group, or `PreMarket`, which holds
+  // Phemex's pre-IPO books (OpenAI, Anthropic, SpaceX, QNTX). Stocks and Indices are level 0 because
+  // neither pins the family: Phemex files SPX500 under Stocks, and ETFs (QQQ, EWY, KORU) and VIX under
+  // Indices beside NAS100 and SP500. Refinement names the class.
+  // No crypto row: Normal and Pilot contracts are no record at all (the detector skips them).
+  PHEMEX: {
+    PreMarket: { cls: 'PREMARKET', level: 2 },
+    Metals: { cls: 'COMMODITY', level: 2 },
+    Commodities: { cls: 'COMMODITY', level: 2 },
+    Stocks: { cls: 'EQUITY', level: 0 },
+    Indices: { cls: 'INDEX', level: 0 },
+  },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, TagClass | 'CRYPTO'>>>>;
 
 /** The venues that publish their own per-instrument TradFi record. */

@@ -60,6 +60,7 @@ import { toBingxSymbol } from './adapters/bingx.js';
 import { toOKXInstId } from './adapters/okx.js';
 import { toXtSymbol } from './adapters/xt.js';
 import { toHtxSymbol } from './adapters/htx.js';
+import { toPhemexSymbol } from './adapters/phemex.js';
 
 /**
  * Crypto tickers that collide with (or resemble) TradFi symbols — never Tier 3, whatever a venue
@@ -150,21 +151,27 @@ const VENUE_KEYING: Readonly<Record<FieldVenue, VenueKeying>> = {
   OKX: { bare: (s) => s.replace(/-USDT-SWAP$/, ''), native: toOKXInstId },
   XT: { bare: (s) => s.replace(/_usdt$/, ''), native: toXtSymbol },
   HTX: { bare: (s) => s.replace(/-USDT$/, ''), native: toHtxSymbol },
+  PHEMEX: { bare: (s) => s.replace(/USDT$/, ''), native: toPhemexSymbol },
 };
 
 /** The field venues, in tag-table order — also the union's tie-break order. */
 export const FIELD_VENUES: readonly FieldVenue[] = Object.keys(VENUE_TAG_CLASS) as FieldVenue[];
 
 /**
- * Venues that publish no usable per-instrument class field — resolved through the cross-venue union
- * (decoding them is OPS-TIER-CLASSIFIER-DECODE-W2). Together with the field venues this must cover
- * every `ExchangeId`: tsc refuses a new venue that is neither (structural, not asserted).
+ * Venues whose own per-instrument class field the engine does not read yet — resolved through the
+ * cross-venue union (decoding them is OPS-TIER-CLASSIFIER-DECODE-W2). Measured 2026-11-12: all three
+ * publish one (ASTER `underlyingSubType`, KUCOIN `assetClass`, WEEX `underlyingType`). Together with
+ * the field venues this must cover every `ExchangeId`: tsc refuses a new venue that is neither
+ * (structural, not asserted).
  * XT left this list in OPS-ASSET-CLASS-XT-DECODE-W1: it publishes `tags` per contract, and in the
  * union its FX and index books no field venue lists (USDTRY, NZDUSD, DE30EUR…) fell to the CRYPTO floor.
  * HTX left it in OPS-ASSET-CLASS-HTX-DECODE-W1 for the same reason: it labels each contract's class,
  * and in the union NASDAQ100 (listed by no field venue) fell to the CRYPTO floor.
+ * PHEMEX left it in OPS-ASSET-CLASS-PHEMEX-DECODE-W1: it types each contract (`perpProductSubType`),
+ * and in the union its oil, stock and index books no field venue lists (XTI, XBR, MUX, SPYX, CATX) fell
+ * to the CRYPTO floor.
  */
-export const UNION_VENUES = ['ASTER', 'PHEMEX', 'WEEX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
+export const UNION_VENUES = ['ASTER', 'WEEX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
 type Unclassified = Exclude<ExchangeId, FieldVenue | (typeof UNION_VENUES)[number]>;
 const _everyVenueClassified: [Unclassified] extends [never] ? true : Unclassified = true;
 const _fieldVenuesAreExchanges: readonly ExchangeId[] = FIELD_VENUES;
@@ -201,6 +208,8 @@ const MEXC_ZONES: readonly string[] = Object.keys(VENUE_TAG_CLASS.MEXC).filter((
 const XT_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.XT);
 /** HTX class words in row order — the tag is the first one a contract carries (`stocks` before `indices`). */
 const HTX_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.HTX);
+/** Phemex's crypto listing subtypes — no record: the union keeps deciding them, as on XT and HTX. */
+const PHEMEX_CRYPTO_SUBTYPES: ReadonlySet<string> = new Set(['Normal', 'Pilot']);
 
 const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
   // Binance — contractType PERPETUAL (crypto) vs TRADIFI_PERPETUAL + underlyingType.
@@ -343,6 +352,29 @@ const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
       const tag = HTX_TAGS.find((t) => carried.has(t)) ?? (tradfi.length > 0 ? tradfi.join('+') : undefined);
       if (tag !== undefined) out.push(venueRecord('HTX', c.contract_code, tag));
     }
+    return out;
+  },
+  // Phemex — `perpProductSubType` on the USDT perpetuals (Normal · Pilot · TradFi · PreMarket): the tag
+  // is a TradFi contract's `perpProductSubGroup` (`TradFi` when it has none), else the subtype. Normal
+  // and Pilot are Phemex's crypto listings and yield no record (the union keeps deciding them); any
+  // other subtype lands TradFi (TAG_PATTERNS + the ledger's `unmapped`), so a new class is announced,
+  // never dropped. Delisted contracts stay: Phemex keeps them in this list and the track record keeps
+  // their books (2026-11-12: CATX). A list in which no contract carries a subtype is a schema change,
+  // not an empty venue: it throws, so Phemex lands in `failed` instead of silently classing nothing.
+  PHEMEX: async () => {
+    const j = await fetchVenue<{ data?: { perpProductsV2?: Array<{ symbol?: string; quoteCurrency?: string; perpProductSubType?: string | null; perpProductSubGroup?: string | null }> } }>(
+      'PHEMEX', 'https://api.phemex.com/public/products');
+    const out: VenueRecord[] = [];
+    let typed = 0;
+    for (const c of j.data?.perpProductsV2 ?? []) {
+      if (c.quoteCurrency !== 'USDT' || !c.symbol?.endsWith('USDT')) continue;
+      const sub = typeof c.perpProductSubType === 'string' ? c.perpProductSubType : '';
+      if (sub === '') continue;
+      typed++;
+      if (PHEMEX_CRYPTO_SUBTYPES.has(sub)) continue;
+      out.push(venueRecord('PHEMEX', c.symbol, sub === 'TradFi' ? (c.perpProductSubGroup || 'TradFi') : sub));
+    }
+    if (typed === 0) throw new Error('Phemex products: no USDT perpetual carries perpProductSubType');
     return out;
   },
 };
