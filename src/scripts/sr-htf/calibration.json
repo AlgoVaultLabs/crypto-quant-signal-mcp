@@ -1,0 +1,2748 @@
+{
+ "ci_level": 0.975,
+ "harness_sha256": {
+  "scripts/sr-backtest/sr_backtest.py": "4b0e1bb0dd36f07308ae19a3d668257ece4a677fd30f0437c1644cf09989018b",
+  "src/scripts/cluster-perm-stats.py": "6d82c1601a9ce1121deecaa1c88ac4685abef328ff27d35047fad37d69f60100",
+  "src/scripts/sr-backtest/engine.ts": "30a59a7bdb6198dfe14515558b7ac177042af971a5a68fe8745a8f3d5c7f1366",
+  "src/scripts/sr-backtest/spec.ts": "eb716ec7fcd2bbadf2a1f24754480a8978062dd3a1b7443684b006e99623444a",
+  "src/scripts/sr-backtest/synth.ts": "79d4d8a66006ddb71375e25854544bfcb036c9c07051155eba072f5ee57e3cb8",
+  "src/scripts/sr-backtest/zones.ts": "fd8b4c6396c5b7f2050e5d7651897a93247fb3288bf85fd3282ce570c473f1f7",
+  "src/scripts/sr-htf/config.ts": "cad14da993136ab2d6400ac232d7d469cd91e6fe0ddb5078850c88ba8b19a81e",
+  "src/scripts/sr-htf/htf-run.ts": "b9c82dd47223e7ecd3112b3a7f8c10bb9e3443b9fc201a0ed36265d877552650",
+  "src/scripts/sr-htf/registry.ts": "1d086c883717f48bc31fae1fd998c3d60475d2361f69009548ab24d9656acd92",
+  "src/scripts/sr-htf/sources.ts": "0d468d022272427020f8cdbbee6a9480d3bbab36b25fc64fc0f693b3cc6380ba",
+  "src/scripts/sr-htf/sr_htf.py": "6fa9053b9ea3b93f12f9aee0aa1d9366a53ee439db0553f07b5e2bf2f3b97cfe",
+  "src/scripts/sr-htf/synthv.ts": "487788ac84bcac2a1e0e4509eb325d1abccf6e9de47948757c5068c92d2c5c81",
+  "src/scripts/sr-probe/level-v0.ts": "ec57e3215daf2ac510b61d7e2c71563c610e6c45ab02900eda8591f2d6106f40"
+ },
+ "holdout_share": 0.17736486486486486,
+ "max_pass_share": 0.05,
+ "replications": 100,
+ "reps": [
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.079334021872474,
+    "day_clusters": 48,
+    "delta_pp": 2.0247760716808654,
+    "hi": 5.283881622197391,
+    "lo": -0.9649573252626066,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 0,
+   "rows_sha256": "197ab65b8365b6ff13bb229b853bd0ffc55611af03077fbad0c00d9a34083b01",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.09907129405508,
+    "day_clusters": 49,
+    "delta_pp": -1.1191110194003342,
+    "hi": 0.7275612647938383,
+    "lo": -2.9549733672701426,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "a reversal: the UTC-day 97.5% upper bound is under 0",
+    "coin_delta_pp": -5.128789569105766,
+    "day_clusters": 48,
+    "delta_pp": -3.238342822266121,
+    "hi": -0.4940145693720655,
+    "lo": -6.207353448613225,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 1,
+   "rows_sha256": "fd3654db76c2379233555191830877de5479c906e523dad00237fddca96957cf",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.5838992563154712,
+    "day_clusters": 49,
+    "delta_pp": 0.6903459632403135,
+    "hi": 2.3644802274291843,
+    "lo": -0.919908843341734,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.6953586146521396,
+    "day_clusters": 48,
+    "delta_pp": -2.6450861677972033,
+    "hi": 0.5885355243777667,
+    "lo": -5.880386998451262,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 2,
+   "rows_sha256": "be119e8d43583a855bf7e2c762b9ea6e7fe158c6c3715c2dee7534636ffe2e02",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5769423100448136,
+    "day_clusters": 49,
+    "delta_pp": -0.438019437844251,
+    "hi": 1.32996059990103,
+    "lo": -2.2523035364388275,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.973236078340636,
+    "day_clusters": 48,
+    "delta_pp": 2.1136925614127424,
+    "hi": 5.474222209907338,
+    "lo": -1.3379713623231482,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 3,
+   "rows_sha256": "e23e3d8d8ba7b36cd66a021e36b4e2c1128b82ce8bef269d22171eea24faf057",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.24212539249151768,
+    "day_clusters": 49,
+    "delta_pp": 0.06629798113061225,
+    "hi": 1.7954953165646417,
+    "lo": -1.6865759581193447,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.1511675761154115,
+    "day_clusters": 45,
+    "delta_pp": -1.186541224255566,
+    "hi": 2.177996408121748,
+    "lo": -4.550115637011639,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 4,
+   "rows_sha256": "98b6a5e19ca0ce023b4373c9d9c254084c8c3fe68f53a23339cc36e1c152f312",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.04473853077924104,
+    "day_clusters": 49,
+    "delta_pp": 0.40647297524960596,
+    "hi": 2.0382164459434984,
+    "lo": -1.2150879415400127,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.7638228702654644,
+    "day_clusters": 42,
+    "delta_pp": 2.1644308830726757,
+    "hi": 5.510269550271597,
+    "lo": -0.8924290136001983,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 5,
+   "rows_sha256": "170da834a0a74c8ce58684ee073362aed3c64e3632ad64e0496473a41789030b",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 1.291279650055615,
+    "day_clusters": 49,
+    "delta_pp": 0.7257592008171511,
+    "hi": 2.295853756443347,
+    "lo": -0.7870830676836658,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 5.2868751866037575,
+    "day_clusters": 47,
+    "delta_pp": 2.617565286483077,
+    "hi": 5.555222844544848,
+    "lo": -0.38279907163949856,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 6,
+   "rows_sha256": "ff1c9803c67bd4ae9e377014f69952974ffdab3d0237057e62a68fcad0c8c870",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.0521593061141265,
+    "day_clusters": 49,
+    "delta_pp": 0.18129609042080275,
+    "hi": 1.6906671401357347,
+    "lo": -1.2978901349074559,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -3.110250322633498,
+    "day_clusters": 47,
+    "delta_pp": -1.6678590136193503,
+    "hi": 1.6013215038856456,
+    "lo": -4.763639561081883,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 7,
+   "rows_sha256": "927d8b7eb3614ff387ac979d308ba1e3c447013c78e746c03852bbda32811ee6",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.48278388488768265,
+    "day_clusters": 49,
+    "delta_pp": -0.012461723275399175,
+    "hi": 1.499333410617851,
+    "lo": -1.6658282088326215,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.410699128485473,
+    "day_clusters": 48,
+    "delta_pp": -1.5016783589959164,
+    "hi": 1.2795646578312885,
+    "lo": -4.197064887751259,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 8,
+   "rows_sha256": "8a17dc33b2108ff0ec92ea1497d8b7ed23d62869a17476b49679b35fb04f9ce8",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.8865086962199602,
+    "day_clusters": 49,
+    "delta_pp": 1.6337282836998102,
+    "hi": 3.779410297896231,
+    "lo": -0.20929871543297573,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -2.9871470614034203,
+    "day_clusters": 44,
+    "delta_pp": 0.587517814451013,
+    "hi": 4.48976974784025,
+    "lo": -3.017560658411755,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 9,
+   "rows_sha256": "28e7dbba6149d78e4d75610abb22a2b6685d41e1d8da15e8c52010e3f4a5a197",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.8236587267707659,
+    "day_clusters": 49,
+    "delta_pp": 0.5598444059148407,
+    "hi": 2.3206375867796067,
+    "lo": -1.2149403133328673,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.6315528239992364,
+    "day_clusters": 42,
+    "delta_pp": 0.3020549187321843,
+    "hi": 3.7013314234042647,
+    "lo": -3.5851136438828712,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 10,
+   "rows_sha256": "d24fc5a3e1b485d2ad0e498ed836aacbe923b08f507a75bb02a51966f3109550",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.6823018064921217,
+    "day_clusters": 49,
+    "delta_pp": 0.2892766053200317,
+    "hi": 1.9736660366038277,
+    "lo": -1.291217467373282,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.3892945815248867,
+    "day_clusters": 48,
+    "delta_pp": -1.0080750446542817,
+    "hi": 1.5590352365501923,
+    "lo": -3.7266233896021603,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 11,
+   "rows_sha256": "32b6f2c9339c97d02f772e0c3cb0adaddae5b8752f62627295af977ff8c67aea",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.3018666755693451,
+    "day_clusters": 49,
+    "delta_pp": 0.7589104366235514,
+    "hi": 2.5752775035184605,
+    "lo": -1.1236527529493565,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.3841357868355817,
+    "day_clusters": 48,
+    "delta_pp": 1.8200874114623453,
+    "hi": 5.064765538094993,
+    "lo": -1.2532718617987817,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 12,
+   "rows_sha256": "02be872917b842d2f284385e3e71b9f32133c154770ed00ae6853cd7ecd8f548",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5760637124794947,
+    "day_clusters": 49,
+    "delta_pp": -0.28942706943892427,
+    "hi": 1.29864478655234,
+    "lo": -1.807884899629156,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.6088974159316425,
+    "day_clusters": 48,
+    "delta_pp": 1.227600522953716,
+    "hi": 3.8118776215028087,
+    "lo": -1.0848042376815237,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 13,
+   "rows_sha256": "9e8596ad13c3ee7b71ab12603514c5782063ad59ab472406e7d418f3fe7d6e32",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5806674299055669,
+    "day_clusters": 49,
+    "delta_pp": -0.5189570215820021,
+    "hi": 1.0862470589410598,
+    "lo": -2.0894522366312898,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 2.1029125413083487,
+    "day_clusters": 48,
+    "delta_pp": -0.02376313987666619,
+    "hi": 2.710044315071869,
+    "lo": -2.8154978155714527,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 14,
+   "rows_sha256": "f5251adb65fe4107be9770366bc2610e402e12f153544d32333adc2cc696ff9a",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.7492097195440155,
+    "day_clusters": 49,
+    "delta_pp": 0.5257469065254795,
+    "hi": 2.4813771509015847,
+    "lo": -1.3762250842278005,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.6073608444869373,
+    "day_clusters": 48,
+    "delta_pp": -2.103959022596841,
+    "hi": 0.7286502065114924,
+    "lo": -5.186658168685139,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 15,
+   "rows_sha256": "26838583464d02eed2769bbfb33fbc5675b6c60b39f3e4cfd13050ee47a551b5",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.5741775251398509,
+    "day_clusters": 49,
+    "delta_pp": 1.6280777197592033,
+    "hi": 3.5712336942008056,
+    "lo": -0.22481781200413933,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -1.9582378086132464,
+    "day_clusters": 46,
+    "delta_pp": 0.09154188747177812,
+    "hi": 3.772800819487112,
+    "lo": -3.7060511604110977,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 16,
+   "rows_sha256": "695dd21fc3fab9256de7e8aec641034c08b65cb79a29b056a2ddeda0938b0334",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.058833839210190406,
+    "day_clusters": 49,
+    "delta_pp": -0.26620653423267804,
+    "hi": 1.4250275830849075,
+    "lo": -2.017817485418146,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.45944198212636567,
+    "day_clusters": 48,
+    "delta_pp": 0.09724822552432583,
+    "hi": 3.0898883508736774,
+    "lo": -3.016774413707617,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 17,
+   "rows_sha256": "37936549e7dfb2db834b516c22d8195829f6c89b525bd6c35178d2f9fb4c4fa4",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.4919132803341549,
+    "day_clusters": 49,
+    "delta_pp": 0.8497076158961444,
+    "hi": 2.6093798697677872,
+    "lo": -0.8492410420881298,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.2707250685928464,
+    "day_clusters": 48,
+    "delta_pp": 0.9897783885046795,
+    "hi": 4.075771096202187,
+    "lo": -2.221887297134547,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 18,
+   "rows_sha256": "dcf73f9fce94790a7a07598b8e47ca59504fc4b34479675710d9b8a90788bc2d",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.32602341095582077,
+    "day_clusters": 49,
+    "delta_pp": -0.7403010701731175,
+    "hi": 0.9606864314114669,
+    "lo": -2.3564587962485324,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.6747879568519168,
+    "day_clusters": 48,
+    "delta_pp": -0.8944994846427479,
+    "hi": 1.8924907855383661,
+    "lo": -3.4651599514917817,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 19,
+   "rows_sha256": "0c99a5d173cffce04439b0d6a05d8f1177f9953047c9db1a28e44f86d34ec55d",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.7552026075644211,
+    "day_clusters": 49,
+    "delta_pp": 0.6973103197147129,
+    "hi": 2.162052860178258,
+    "lo": -0.7015274069573479,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.4419295714510005,
+    "day_clusters": 48,
+    "delta_pp": -1.745842767023132,
+    "hi": 0.9300859272925902,
+    "lo": -4.66104645828608,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 20,
+   "rows_sha256": "836cb2b8715280e9229d79f52cf0c59060c938bbbb2e3f5ec8e18ba5c0e2212e",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.1642755604236003,
+    "day_clusters": 49,
+    "delta_pp": -0.009399469747712849,
+    "hi": 1.7451229132855661,
+    "lo": -1.8400255663726373,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.900726878976234,
+    "day_clusters": 48,
+    "delta_pp": -0.6353653786852229,
+    "hi": 2.3092423088781624,
+    "lo": -3.4818888872679277,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 21,
+   "rows_sha256": "b7b128584b1113e863580ccb071ce5cea94dc0af7365a4ff72f43431f678e441",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5570193518974923,
+    "day_clusters": 49,
+    "delta_pp": -0.4586923481405885,
+    "hi": 1.2640348892615523,
+    "lo": -2.149136616504091,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.6585356113361596,
+    "day_clusters": 46,
+    "delta_pp": 1.414113562965362,
+    "hi": 4.8486334359453265,
+    "lo": -1.7572975805409552,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 22,
+   "rows_sha256": "52d34f1157b5fbaf2fc692a6dbfb55032a46b25e020f23f58f15a45bdd0ca2fd",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.12926217083228356,
+    "day_clusters": 49,
+    "delta_pp": 0.654923915331616,
+    "hi": 2.1813864111347527,
+    "lo": -0.8044394651648812,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 1.1571434316965952,
+    "day_clusters": 48,
+    "delta_pp": 0.3097335027719608,
+    "hi": 2.9748302951652583,
+    "lo": -2.1755345378027138,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 23,
+   "rows_sha256": "1d83f5023c4d0f85cbc347f8bea38fe4c3d02917363a46136815b93aef041304",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.04487668655192095,
+    "day_clusters": 49,
+    "delta_pp": 0.29647137821081876,
+    "hi": 1.9865583332497845,
+    "lo": -1.340089348269213,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.2190768283989648,
+    "day_clusters": 48,
+    "delta_pp": 0.5033143544557166,
+    "hi": 3.857198176079901,
+    "lo": -2.6151403984040735,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 24,
+   "rows_sha256": "76522a661677f2f9756989d901d3c93c41571b845516a8a4d54a94a5b1aa63f7",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.06171605150658567,
+    "day_clusters": 49,
+    "delta_pp": -0.3227706974680135,
+    "hi": 1.5327390098295814,
+    "lo": -2.2891278328630187,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.0067861149363644,
+    "day_clusters": 49,
+    "delta_pp": -1.5565499810985612,
+    "hi": 1.7697526393932699,
+    "lo": -4.86339992542329,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 25,
+   "rows_sha256": "8af98725627c532bb5d6d10a7f6d6549bb65689f5be04634d382130387b8ef7c",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.1441096613543533,
+    "day_clusters": 49,
+    "delta_pp": -0.8056714107084144,
+    "hi": 0.844751955391716,
+    "lo": -2.5168046684306695,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.045808935976904,
+    "day_clusters": 48,
+    "delta_pp": 2.5759584127739377,
+    "hi": 5.331016524005743,
+    "lo": -0.24231388578140092,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 26,
+   "rows_sha256": "e6f6b60bd3d7368edf35ef01bb07e98bcd29c83a6a162915d6cb757c40e05d3b",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.21861975247487345,
+    "day_clusters": 49,
+    "delta_pp": -0.5471902022241599,
+    "hi": 1.0974952064840093,
+    "lo": -2.161420750819704,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.3313922151081236,
+    "day_clusters": 48,
+    "delta_pp": 0.8271313292500376,
+    "hi": 3.881488856783132,
+    "lo": -2.4387729427450973,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 27,
+   "rows_sha256": "1ff1f500e64bdd3a13a50261b71bcef3b33bdc6ef684190d36f03f4f19897b0b",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.6352009855953474,
+    "day_clusters": 49,
+    "delta_pp": 0.7156325497687539,
+    "hi": 2.5945961877013537,
+    "lo": -1.0265302246513976,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.4846906865259915,
+    "day_clusters": 48,
+    "delta_pp": -1.1093203321159368,
+    "hi": 2.012925932570417,
+    "lo": -4.208367458420533,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 28,
+   "rows_sha256": "ce309958be7ef0626a9d255b99ed51922f59aa1c3e597835e7a0dbae51b8dd55",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.6202155875991024,
+    "day_clusters": 49,
+    "delta_pp": -0.6694731070352596,
+    "hi": 1.1703747052186733,
+    "lo": -2.4062128351689993,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.5754941970546558,
+    "day_clusters": 48,
+    "delta_pp": -1.615061674829776,
+    "hi": 0.8376027303655462,
+    "lo": -4.094336322433995,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 29,
+   "rows_sha256": "b09e6127430d41e9ab1e3142f48ae4de108182501b2034130ae9052eaca90be2",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.2682743471142385,
+    "day_clusters": 49,
+    "delta_pp": 0.14298053914497907,
+    "hi": 1.8738799223094722,
+    "lo": -1.5527938314848146,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "a reversal: the UTC-day 97.5% upper bound is under 0",
+    "coin_delta_pp": 0.2827434847018701,
+    "day_clusters": 47,
+    "delta_pp": -3.1409587973008333,
+    "hi": -0.05107005510020682,
+    "lo": -6.0094198273587836,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 30,
+   "rows_sha256": "629a22dfafa133de1c1b061b331f6f76cef071d8899b7929350f7ae77b61d8c9",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.4263161675454344,
+    "day_clusters": 49,
+    "delta_pp": -0.08978670914007009,
+    "hi": 1.4490290187809176,
+    "lo": -1.6624766095564154,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.5615475378348096,
+    "day_clusters": 46,
+    "delta_pp": 0.9682725191909722,
+    "hi": 4.130354993718325,
+    "lo": -2.291954081374552,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 31,
+   "rows_sha256": "4e62fe38944298438411a9c2596aa068b0d064217da1e40d8a3c74693ccf9269",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.7666809120475767,
+    "day_clusters": 49,
+    "delta_pp": 0.20431285635173976,
+    "hi": 1.8430814281900696,
+    "lo": -1.3449966480635158,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.7022556510132565,
+    "day_clusters": 48,
+    "delta_pp": -1.7076728101684993,
+    "hi": 1.0402513483463485,
+    "lo": -4.3915950712188145,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 32,
+   "rows_sha256": "8250dffd2d0b3ebfe7cec1afa9e6d76a4d928919bd150b3955e97056eddbb26b",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.6134647977802137,
+    "day_clusters": 49,
+    "delta_pp": -1.4093317028310832,
+    "hi": 0.17488207700843875,
+    "lo": -2.9987576971842826,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.9146951945222016,
+    "day_clusters": 48,
+    "delta_pp": -1.4738491326377519,
+    "hi": 1.6709847897605756,
+    "lo": -4.523969610202156,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 33,
+   "rows_sha256": "014cd73bcb9893b776867c79f9fa9565e85a5c87fac9d4e00b2dcf5472c30420",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.16005620152911018,
+    "day_clusters": 49,
+    "delta_pp": -0.027126427039003687,
+    "hi": 1.4387713518201914,
+    "lo": -1.4861454603614972,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.1143203919427649,
+    "day_clusters": 46,
+    "delta_pp": 0.6083980212754083,
+    "hi": 3.722165461996433,
+    "lo": -2.223690680282677,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 34,
+   "rows_sha256": "8c3febb569bcc01411ddeb3c84f8df979d2eb2a4977aedc4bc51f079cdcf1724",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.137928788499991,
+    "day_clusters": 49,
+    "delta_pp": 0.11753590199112689,
+    "hi": 1.668258653829699,
+    "lo": -1.4968227777932026,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5515644308204968,
+    "day_clusters": 47,
+    "delta_pp": -1.6108506670940173,
+    "hi": 2.15970118424415,
+    "lo": -5.491761018576339,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 35,
+   "rows_sha256": "13d48e98fc76d9c36bba83cf9c254786d174e2376b9d504a38e13931c6d355b4",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.10398369548841459,
+    "day_clusters": 49,
+    "delta_pp": 0.540275530047146,
+    "hi": 2.6300565749789264,
+    "lo": -1.660599256161722,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.2855420348157756,
+    "day_clusters": 46,
+    "delta_pp": -1.7769841241540476,
+    "hi": 1.5018623460940328,
+    "lo": -5.2039747373500385,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 36,
+   "rows_sha256": "278cc3c213864b2baf81705097036d5801779747a3f9a85011b246071a054fba",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 1.1393030372032658,
+    "day_clusters": 49,
+    "delta_pp": 0.9950074067111804,
+    "hi": 2.663436151253827,
+    "lo": -0.7083257527325623,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.3057630819539929,
+    "day_clusters": 48,
+    "delta_pp": 0.32141727316469126,
+    "hi": 3.2716833729620496,
+    "lo": -2.691320964015883,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 37,
+   "rows_sha256": "238e2e45d46e77f03cc74ce1401234677c7519a817becb9017f6411172080ec7",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.24966818353423684,
+    "day_clusters": 49,
+    "delta_pp": -0.02513352776129185,
+    "hi": 1.6828518353990574,
+    "lo": -1.6992123378673767,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.7656369273065688,
+    "day_clusters": 48,
+    "delta_pp": -0.4116213512583551,
+    "hi": 2.4959643947057155,
+    "lo": -3.212500932321708,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 38,
+   "rows_sha256": "310c09a4d821562a16a74a9bfb831a233fa0400a8b259b424a8f428aefc482b0",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.011827136641475828,
+    "day_clusters": 49,
+    "delta_pp": -0.6384934947480058,
+    "hi": 1.3083882281390844,
+    "lo": -2.5829273966288375,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.2600012744789115,
+    "day_clusters": 48,
+    "delta_pp": -0.9688644272575733,
+    "hi": 1.6522608815788935,
+    "lo": -3.7643402266094643,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 39,
+   "rows_sha256": "4ae95dbc0528eb05f2ebce52d3b2d60ba0e1966c5b84032045540a2e609d7d8e",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.50301697265281,
+    "day_clusters": 49,
+    "delta_pp": 0.651246171370922,
+    "hi": 2.511864966377683,
+    "lo": -1.162732742174197,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.1979809413792055,
+    "day_clusters": 48,
+    "delta_pp": -1.1982176509695477,
+    "hi": 1.3264631697626272,
+    "lo": -3.6275674206248536,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 40,
+   "rows_sha256": "61157137ef8cc1a1b2c2c0bc7df903bfa27f9127fe15e8efa384cca6fcb1cab8",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.2852825807144238,
+    "day_clusters": 49,
+    "delta_pp": 0.11840591312685675,
+    "hi": 1.7981489472372687,
+    "lo": -1.628443732622021,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.27797445848587865,
+    "day_clusters": 48,
+    "delta_pp": 0.011675896063470137,
+    "hi": 3.409692951491728,
+    "lo": -3.414012498342364,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 41,
+   "rows_sha256": "b5c0c012685f4fbd0c28f0d47d5227376be80258be8e102c6a466b153dcb6444",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.0013737134030163,
+    "day_clusters": 49,
+    "delta_pp": -0.8209322825573798,
+    "hi": 0.9637634014559344,
+    "lo": -2.345537921491986,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.1521129748828605,
+    "day_clusters": 46,
+    "delta_pp": 2.0219399511746357,
+    "hi": 4.934607847333556,
+    "lo": -0.9690273698738064,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 42,
+   "rows_sha256": "4fb212fa635ef2a1724f976fad740657a859897c6985a2ebff2032ae31ab04fe",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.3187027223897475,
+    "day_clusters": 49,
+    "delta_pp": 0.005294128608335487,
+    "hi": 1.7395406847831858,
+    "lo": -1.7246882461574067,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.3639041909088774,
+    "day_clusters": 48,
+    "delta_pp": -2.0579898577823417,
+    "hi": 0.7902443866112409,
+    "lo": -4.712484463079375,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 43,
+   "rows_sha256": "6703d887aec2a5ced4ffdc486c09c7a7459e70a2da3b5142cf2843dd9a59477b",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5801294672772265,
+    "day_clusters": 49,
+    "delta_pp": -0.5775311802724189,
+    "hi": 0.97241116931523,
+    "lo": -2.252807356118475,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.1867743318386346,
+    "day_clusters": 48,
+    "delta_pp": -1.8268851275259517,
+    "hi": 1.0052230274824212,
+    "lo": -4.402757491372015,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 44,
+   "rows_sha256": "690f84384aacbd38758e404cd1fff8c1d35f1954a60a12a073002e9eb28d8f04",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.32979489712957244,
+    "day_clusters": 49,
+    "delta_pp": 0.24629549686290958,
+    "hi": 1.9011734531096263,
+    "lo": -1.569268176150415,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.048857306248107704,
+    "day_clusters": 47,
+    "delta_pp": -2.050455040373595,
+    "hi": 1.374591790415618,
+    "lo": -5.666932470107764,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 45,
+   "rows_sha256": "a0a5bed1a88c9c97c2b1935cbd3f74dfc7ca912fa629965d313ca3a90d95a2a7",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.34283536282337357,
+    "day_clusters": 49,
+    "delta_pp": -0.43298240687747463,
+    "hi": 1.487455927394126,
+    "lo": -2.3145149883849623,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.3544689491213335,
+    "day_clusters": 48,
+    "delta_pp": 2.100634304141376,
+    "hi": 5.14629269215395,
+    "lo": -0.9746777895606248,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 46,
+   "rows_sha256": "853201c8d1dff83284d5654c260de0f5708746a4cf83d5e93c010340f989fc5f",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.9357868604434677,
+    "day_clusters": 49,
+    "delta_pp": 1.184972057805939,
+    "hi": 2.9830161445976127,
+    "lo": -0.5861346801806491,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "a reversal: the UTC-day 97.5% upper bound is under 0",
+    "coin_delta_pp": -2.5678300690897777,
+    "day_clusters": 48,
+    "delta_pp": -2.654267362478878,
+    "hi": -0.030307147247307153,
+    "lo": -5.138521584595865,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 47,
+   "rows_sha256": "9c0cfbd960555100016e379ce64afb490660554244378669098c9dab00c2995f",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.4833890987356115,
+    "day_clusters": 49,
+    "delta_pp": 0.9474112641710571,
+    "hi": 2.7009057042321256,
+    "lo": -0.7973468781237641,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.03052274728706166,
+    "day_clusters": 47,
+    "delta_pp": -0.42686637631375074,
+    "hi": 2.93603503842549,
+    "lo": -3.4652180498162792,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 48,
+   "rows_sha256": "eadc8348770fd349fdbda2aa26b4b28dbc0062ed1a1d7e618762ebaf321dfe77",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.08846625905121364,
+    "day_clusters": 49,
+    "delta_pp": -0.058445424430635176,
+    "hi": 1.7818906983301557,
+    "lo": -1.9102677372716412,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -1.6308396446643472,
+    "day_clusters": 48,
+    "delta_pp": 0.3648960959751024,
+    "hi": 3.127053236155311,
+    "lo": -2.526959813979167,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 49,
+   "rows_sha256": "bbdd474ba04d62530cdb06b7cfed98f2f0cef8b560ecf311591e0caafb80c320",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.6086675425074732,
+    "day_clusters": 49,
+    "delta_pp": -0.8006398166863818,
+    "hi": 0.7774273715547816,
+    "lo": -2.388225017508583,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.131457987599285,
+    "day_clusters": 48,
+    "delta_pp": -2.6010142930848095,
+    "hi": 0.03356384569395084,
+    "lo": -5.166134806590441,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 50,
+   "rows_sha256": "07972a143853ee2f4f7c6a9fad45f9a4e890a9005e4a2a1a8a26b0b4a1720e7a",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.2211250888208196,
+    "day_clusters": 49,
+    "delta_pp": 0.2376717462038249,
+    "hi": 2.1579137048206336,
+    "lo": -1.7112811807943233,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.46701022074092435,
+    "day_clusters": 48,
+    "delta_pp": 1.0451319435927215,
+    "hi": 4.470809114890444,
+    "lo": -2.4197318168010775,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 51,
+   "rows_sha256": "0f0146f28a232c9b8ff6ba96c3c748b2425a215ec65538808ccda258a5016a5a",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.04034299879615784,
+    "day_clusters": 49,
+    "delta_pp": -0.19508730390930681,
+    "hi": 1.4959435997353072,
+    "lo": -1.7359923151970758,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.5528756253123871,
+    "day_clusters": 48,
+    "delta_pp": -0.28815944045140635,
+    "hi": 2.6645391505021103,
+    "lo": -3.116110056876515,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 52,
+   "rows_sha256": "bf018ce5e01b722fc629e4933b6003d1ea27b99e227bac1b2a96ce6db71cebf0",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.47705483589384656,
+    "day_clusters": 49,
+    "delta_pp": 0.9540781669099797,
+    "hi": 2.7123826815962424,
+    "lo": -0.8188867132242096,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.274507293599068,
+    "day_clusters": 48,
+    "delta_pp": -0.1565404311581878,
+    "hi": 3.0089083422023717,
+    "lo": -2.8744415045165255,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 53,
+   "rows_sha256": "9ec143f982409fe0a399339265fdc74f92cb7515706b91aa510c0f06ad32ba39",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.47605187964778795,
+    "day_clusters": 49,
+    "delta_pp": 0.8781146923484694,
+    "hi": 2.666875757867759,
+    "lo": -0.9714788673911636,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.889799790144035,
+    "day_clusters": 47,
+    "delta_pp": 2.2302396141144194,
+    "hi": 5.542322101642221,
+    "lo": -1.294967740789588,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 54,
+   "rows_sha256": "059bd0e455511de12a83e54536b707430cfc7c4dd96c66d5da635ae711a2648e",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.9292819976717559,
+    "day_clusters": 49,
+    "delta_pp": -1.2110119760870188,
+    "hi": 0.8461933209287287,
+    "lo": -2.988113628176257,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.30358811811686764,
+    "day_clusters": 47,
+    "delta_pp": -0.4470891434609728,
+    "hi": 2.8415453708497678,
+    "lo": -3.5078865160378725,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 55,
+   "rows_sha256": "d77164f133ebfdfe1c80d4e966eab86d9ebe64df77555c4330491d1814bea371",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.6779653425237187,
+    "day_clusters": 49,
+    "delta_pp": -1.2805639878684467,
+    "hi": 0.339103095472573,
+    "lo": -2.9421063816765263,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.3459382383200336,
+    "day_clusters": 48,
+    "delta_pp": 2.2240120195888324,
+    "hi": 4.5752614480407034,
+    "lo": -0.42991801252864387,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 56,
+   "rows_sha256": "54d49bbd3d281db0af2a6ed564977a4390d4cd577807932cb5af4345e66a9767",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.1235897755772606,
+    "day_clusters": 49,
+    "delta_pp": -1.2595043332327636,
+    "hi": 0.12886884796454448,
+    "lo": -2.598497831498907,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.4921395444497914,
+    "day_clusters": 48,
+    "delta_pp": -0.8163865364496301,
+    "hi": 1.662512216401006,
+    "lo": -3.297356901717832,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 57,
+   "rows_sha256": "bf958f413e81b6760833b99d299729947fe1cf88721876d997c34ed845c82734",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.6680024204955446,
+    "day_clusters": 49,
+    "delta_pp": -1.5752135769350162,
+    "hi": 0.282241527946385,
+    "lo": -3.2381679091123616,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.441933944002315,
+    "day_clusters": 48,
+    "delta_pp": -1.3309005488199168,
+    "hi": 1.0697229305758162,
+    "lo": -3.7456462411124267,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 58,
+   "rows_sha256": "ad5a59f9a39adbf679bb01c412ae01ab6737ce41da8aa0835b28d86822cd3adf",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.4881172238686068,
+    "day_clusters": 49,
+    "delta_pp": 1.1032078513913524,
+    "hi": 3.160522771697394,
+    "lo": -0.7647092320400457,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.004785787204619951,
+    "day_clusters": 48,
+    "delta_pp": -0.13948685653774104,
+    "hi": 2.422151484329439,
+    "lo": -2.8086913502388104,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 59,
+   "rows_sha256": "f1a0013da43127c373f2077dbeeee2e537c7b8f89c3a8e2fe335797b29630e2e",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.8635700692571627,
+    "day_clusters": 49,
+    "delta_pp": -0.3411543114464358,
+    "hi": 1.271021309734605,
+    "lo": -1.844653824316936,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.8385567795112527,
+    "day_clusters": 48,
+    "delta_pp": 1.5673121038771745,
+    "hi": 5.091697786145825,
+    "lo": -1.5056808964251391,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 60,
+   "rows_sha256": "e73142a2073f1d497d8740606751e7996f14290e6e3c88fd0c729272616d5bdf",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.1148769281592121,
+    "day_clusters": 49,
+    "delta_pp": -0.7079538897047413,
+    "hi": 1.1421437810528576,
+    "lo": -2.5026019941102984,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -3.7720425949355727,
+    "day_clusters": 48,
+    "delta_pp": -2.8418351756224483,
+    "hi": 0.42631411958163,
+    "lo": -6.221586598240822,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 61,
+   "rows_sha256": "0bb653289e49cb7d824a22d66091ab34bb84de305a6f862896fb1c997d20302f",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.11956443918721037,
+    "day_clusters": 49,
+    "delta_pp": 0.16417704910109637,
+    "hi": 1.7665551449184798,
+    "lo": -1.4035397162873096,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.3830084956098085,
+    "day_clusters": 47,
+    "delta_pp": 0.8288555055583603,
+    "hi": 4.529535650774122,
+    "lo": -2.834684078166671,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 62,
+   "rows_sha256": "a5fcaca4e25caeda6b06279bcd7b145af67ca7765b04990aab7dc85cdc847452",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.206232301871715,
+    "day_clusters": 49,
+    "delta_pp": 1.2829037806455268,
+    "hi": 3.149096330875177,
+    "lo": -0.4886315945778895,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.006205698527501813,
+    "day_clusters": 48,
+    "delta_pp": -0.18402969415821088,
+    "hi": 3.3418901895341744,
+    "lo": -4.036982553109913,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 63,
+   "rows_sha256": "a0ec3950f5fd5ef9e25e6fc0bc958e60a45cdb3d40e0fa3d4e78080869e774d8",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.35836822345807406,
+    "day_clusters": 49,
+    "delta_pp": -0.5203453280809665,
+    "hi": 1.1179630432746066,
+    "lo": -2.1502014746699687,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.8011662753586776,
+    "day_clusters": 48,
+    "delta_pp": 1.8101715456042944,
+    "hi": 4.719522492041421,
+    "lo": -1.096170938104569,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 64,
+   "rows_sha256": "d66961ae53f864707cb4e560142cd2636da8ee7f40149b706fb90d2bae2c4a89",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.728799105696574,
+    "day_clusters": 49,
+    "delta_pp": -0.28898720892955243,
+    "hi": 1.3742468607043319,
+    "lo": -2.0130367804012077,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.776747212675719,
+    "day_clusters": 47,
+    "delta_pp": -1.4935853856967367,
+    "hi": 1.7504035626775427,
+    "lo": -4.492008633858847,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 65,
+   "rows_sha256": "826cc3c2dc0dc2067e1f166fae8e01f30055d097bc0c0c355fdc1d7cc14bf06e",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.19335647872077324,
+    "day_clusters": 49,
+    "delta_pp": -0.5044319637599264,
+    "hi": 1.1932214257151297,
+    "lo": -2.246598108702272,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -3.032776395674723,
+    "day_clusters": 46,
+    "delta_pp": -2.0022890263046107,
+    "hi": 1.7623448374091493,
+    "lo": -5.6524911292166005,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 66,
+   "rows_sha256": "8c0032083c6a4411dfa97a90264fbcee80ce793129038e614a4f4157891a738f",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.0005915582251855776,
+    "day_clusters": 49,
+    "delta_pp": 0.1201658585504866,
+    "hi": 1.6922555012586389,
+    "lo": -1.5654572977688106,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.12846961422717162,
+    "day_clusters": 48,
+    "delta_pp": 0.8780080057422781,
+    "hi": 3.5511647089716813,
+    "lo": -2.060882674210743,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 67,
+   "rows_sha256": "bfcea34797b7fc903a1246bc6c44f08d2ea29d37eeab744140b19750e80bdc37",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.146595943988105,
+    "day_clusters": 49,
+    "delta_pp": -1.1699218257564863,
+    "hi": 0.3238262223137852,
+    "lo": -2.635762110121004,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "a reversal: the UTC-day 97.5% upper bound is under 0",
+    "coin_delta_pp": -4.301787186708525,
+    "day_clusters": 47,
+    "delta_pp": -3.555822798812654,
+    "hi": -0.09285409301024262,
+    "lo": -7.353047195502509,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 68,
+   "rows_sha256": "ae0e4922f43bc21fcbd02cb62d7dd79122da30e54cbccd6f3e072896ed751ded",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.1520700991158732,
+    "day_clusters": 49,
+    "delta_pp": -1.1968303780083647,
+    "hi": 0.45730343806345913,
+    "lo": -2.8314520188270635,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.37494610669530865,
+    "day_clusters": 48,
+    "delta_pp": 0.07407786536203902,
+    "hi": 3.352299121761428,
+    "lo": -3.2002038814908076,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 69,
+   "rows_sha256": "11ea2462b07e9887f8fec0e39e1b00928be394ee984e186f859f5233edc66468",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 1.0117140512201221,
+    "day_clusters": 49,
+    "delta_pp": 0.6660261940340222,
+    "hi": 2.2482494124435086,
+    "lo": -0.9115875240042405,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -1.4517996497806893,
+    "day_clusters": 47,
+    "delta_pp": -0.3418495743150811,
+    "hi": 3.2413820060860865,
+    "lo": -3.9556945993247323,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 70,
+   "rows_sha256": "92d176f5168f239bfff251675a12a3591391994d3d0e5a6aa84296be286a5e15",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.32021508339984905,
+    "day_clusters": 49,
+    "delta_pp": -0.369155776177025,
+    "hi": 1.3085742102213764,
+    "lo": -2.1406225654542115,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 3.060260397842108,
+    "day_clusters": 48,
+    "delta_pp": 2.244812566872285,
+    "hi": 4.867539898870155,
+    "lo": -0.5163463823480305,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 71,
+   "rows_sha256": "1486a2f3a523226bd14a4938b1839bc7b3f6bb35c5f4e7d9d75d65b525abc962",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.4312739812941956,
+    "day_clusters": 49,
+    "delta_pp": 0.42534292203251384,
+    "hi": 2.0029656175009882,
+    "lo": -1.2209719376405843,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.04397180346408908,
+    "day_clusters": 47,
+    "delta_pp": 1.6860104003582244,
+    "hi": 4.816316915125453,
+    "lo": -1.6275557315238987,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 72,
+   "rows_sha256": "227e041bdd4f26964a0bc5fadc658e6c6213480269f29f56aba8f763459d19f7",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.42890242337583756,
+    "day_clusters": 49,
+    "delta_pp": -0.5872209354541169,
+    "hi": 0.9408716266874791,
+    "lo": -2.192763245583747,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -1.4739255011801502,
+    "day_clusters": 48,
+    "delta_pp": 0.5372191615693023,
+    "hi": 3.7782097175637386,
+    "lo": -2.5942065581085125,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 73,
+   "rows_sha256": "498d53ffd1ca76e583ccf59f4ae3dde23f57c3bbd56aa1b6c9faa130e92f29b0",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.4693713960269736,
+    "day_clusters": 49,
+    "delta_pp": -0.48317126094479407,
+    "hi": 1.076588066595748,
+    "lo": -2.0430706119481825,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.297472205575962,
+    "day_clusters": 48,
+    "delta_pp": -2.3250403969859765,
+    "hi": 0.6373534430527307,
+    "lo": -5.197910777485972,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 74,
+   "rows_sha256": "62e2dfe396071433a6fa0f90ca8744c54808a687c623192ea4dbd47f8f934ace",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.5964865093250964,
+    "day_clusters": 49,
+    "delta_pp": 1.8485000987971325,
+    "hi": 3.6170429474443515,
+    "lo": -0.09056463749504642,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.128087192965985,
+    "day_clusters": 46,
+    "delta_pp": -1.7628531024446956,
+    "hi": 0.9727524106957333,
+    "lo": -4.512946939001192,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 75,
+   "rows_sha256": "b709d7fd2719c92033cf2531a66edd2a82714dacf3468e2a64143335e511949a",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.0807928665206687,
+    "day_clusters": 49,
+    "delta_pp": -0.9380669336507477,
+    "hi": 0.8107910475240306,
+    "lo": -2.7828575936477153,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.6239643221627497,
+    "day_clusters": 48,
+    "delta_pp": 0.4955723947880685,
+    "hi": 3.213699952409294,
+    "lo": -2.196755274465498,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 76,
+   "rows_sha256": "a8d849a1b850fdb4ee18e106db9c7384eb7b19092d4ed6139015927174c0d737",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.0899425845138228,
+    "day_clusters": 49,
+    "delta_pp": -0.2218509180582745,
+    "hi": 1.7310561683638979,
+    "lo": -2.2765496851420037,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "point >= +3.0pp, 97.5% lower bound > 0 on UTC-day clusters, coin-cluster point > 0, hold-out point > 0",
+    "coin_delta_pp": 3.864243010877771,
+    "day_clusters": 48,
+    "delta_pp": 4.4998462765869425,
+    "hi": 6.562326784117705,
+    "lo": 2.5819240955208156,
+    "resolves": "",
+    "state": "PASS",
+    "walks": 50
+   },
+   "rep": 77,
+   "rows_sha256": "5be49a90c7e408bb218c2c3452461ee36458a48f9d1377a3c2b09764f82cd9c4",
+   "verdict": "PASS",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.258243134484768,
+    "day_clusters": 49,
+    "delta_pp": -0.19180289202294673,
+    "hi": 1.661455468401447,
+    "lo": -1.995433916465623,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.4944256481846279,
+    "day_clusters": 48,
+    "delta_pp": -0.18551871547126075,
+    "hi": 2.7354479750752243,
+    "lo": -2.9938960964021217,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 78,
+   "rows_sha256": "1014f62d5e359579a9f9d5f0de9a4ea9e99465ebc7c445e56ab706642588eca3",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.8271185943672534,
+    "day_clusters": 49,
+    "delta_pp": 0.9654939770458394,
+    "hi": 2.658464603733668,
+    "lo": -0.6749477333178567,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.4522471242919763,
+    "day_clusters": 48,
+    "delta_pp": 2.277218089910084,
+    "hi": 4.947541624941736,
+    "lo": -0.23480464424261402,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 79,
+   "rows_sha256": "1e5919f3e609cda4d372d4ab5372d3532d204ba4ad96c1ccedaa930403af5b95",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.05249477250132102,
+    "day_clusters": 49,
+    "delta_pp": -0.026326602087766073,
+    "hi": 1.9449461316207193,
+    "lo": -1.8735315556301109,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -3.081778290508366,
+    "day_clusters": 48,
+    "delta_pp": -1.2647022613805554,
+    "hi": 1.8558536238163832,
+    "lo": -4.3788578791970485,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 80,
+   "rows_sha256": "ca3a3da1e0ada12ac4a346d1ab6db750ecfed84f44ac89a0a2d43c338a386626",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.6343175326716469,
+    "day_clusters": 49,
+    "delta_pp": 0.7167514997312725,
+    "hi": 2.2788844560969412,
+    "lo": -0.983648871070099,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.5705358057799961,
+    "day_clusters": 47,
+    "delta_pp": 0.24594439455090955,
+    "hi": 3.7004292240452443,
+    "lo": -3.12717570220552,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 81,
+   "rows_sha256": "e1394665356c8695f2bf0cb06dafee8fe48b323b3d526cb8daeba47ca1a8de54",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.09297696948021908,
+    "day_clusters": 49,
+    "delta_pp": 0.08868983956623298,
+    "hi": 1.6730010685260632,
+    "lo": -1.5826962234608328,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.46527762835776226,
+    "day_clusters": 49,
+    "delta_pp": 0.1416996490639918,
+    "hi": 2.9140494384177424,
+    "lo": -2.4799942116150047,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 82,
+   "rows_sha256": "d6b09e66744f343d7103b7fdfde7974f2aba1a8f4a0e5cf35760d97713ff1886",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.70451954147337,
+    "day_clusters": 49,
+    "delta_pp": 0.9971353296129621,
+    "hi": 2.5354084778718096,
+    "lo": -0.5807847350545121,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 2.1186279662706853,
+    "day_clusters": 48,
+    "delta_pp": -0.4582181513018619,
+    "hi": 2.8465162389565855,
+    "lo": -3.9642411459084586,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 83,
+   "rows_sha256": "ee542f6294e2edb45782f7fa537dfafd2460995b668ac647c5aae5ebee969863",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.24119952710481374,
+    "day_clusters": 49,
+    "delta_pp": 0.9355096660834548,
+    "hi": 2.7561889084191926,
+    "lo": -0.7374464363752038,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.2286475077947927,
+    "day_clusters": 48,
+    "delta_pp": -2.074477170389143,
+    "hi": 0.6518441318966494,
+    "lo": -4.80062277437612,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 84,
+   "rows_sha256": "284c3df4d1018b1a53982de8d73ed2ddf7d4eed072108ab3b91b47da56a6fb67",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.23310294539681878,
+    "day_clusters": 49,
+    "delta_pp": -0.5312366530681432,
+    "hi": 1.406740261362005,
+    "lo": -2.6251202768625426,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "a reversal: the UTC-day 97.5% upper bound is under 0",
+    "coin_delta_pp": -3.5651140968603308,
+    "day_clusters": 48,
+    "delta_pp": -3.983156006559069,
+    "hi": -1.0679778064452747,
+    "lo": -6.7818372868665735,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 85,
+   "rows_sha256": "e8fef4cea4e25d175f5262a6d63156f686e3ba42770f332f13cbbf74b0304577",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 1.000181063931754,
+    "day_clusters": 49,
+    "delta_pp": 0.5136885748130875,
+    "hi": 2.2497586467433646,
+    "lo": -1.3594707184962362,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.31369501190669,
+    "day_clusters": 46,
+    "delta_pp": -0.592107717415319,
+    "hi": 2.156548928822417,
+    "lo": -3.3518928219418,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 86,
+   "rows_sha256": "d95605cc540400f828a4e3923394d2d29a67b9840faad9869ba6b5debef51655",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.5666151988545952,
+    "day_clusters": 49,
+    "delta_pp": 0.28299749668573304,
+    "hi": 1.9421694314396283,
+    "lo": -1.4185547170104071,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.8229669095227069,
+    "day_clusters": 48,
+    "delta_pp": -0.9597727429059347,
+    "hi": 2.336894948382124,
+    "lo": -4.069470898503095,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 87,
+   "rows_sha256": "d87aa68d1e3b8dfe985129183a8380d1df0b7278b23931a426fddae49eb9834a",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.4715356260138264,
+    "day_clusters": 49,
+    "delta_pp": -1.5745571998403793,
+    "hi": 0.08878598840970921,
+    "lo": -3.2395361522908486,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": -0.3833240559890003,
+    "day_clusters": 48,
+    "delta_pp": 1.2410564205161014,
+    "hi": 3.7021345954822737,
+    "lo": -1.3499819730569655,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 88,
+   "rows_sha256": "fe3dc8b7a892883e25e7e1cf11547791dca5b10de2129c358676f88cbe24eeee",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.6502838167999961,
+    "day_clusters": 49,
+    "delta_pp": -0.6898689991345681,
+    "hi": 0.7979798797276235,
+    "lo": -2.132469152929215,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "point >= +3.0pp, 97.5% lower bound > 0 on UTC-day clusters, coin-cluster point > 0, hold-out point > 0",
+    "coin_delta_pp": 5.77873008164125,
+    "day_clusters": 48,
+    "delta_pp": 5.251657952088243,
+    "hi": 8.057130136910777,
+    "lo": 2.5082297082545586,
+    "resolves": "",
+    "state": "PASS",
+    "walks": 50
+   },
+   "rep": 89,
+   "rows_sha256": "9f30367c693db817769410830eefce0f99ec628657028adf096ceedc39c055c3",
+   "verdict": "PASS",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.8686410011028985,
+    "day_clusters": 49,
+    "delta_pp": 0.6266084433069283,
+    "hi": 2.367951930117249,
+    "lo": -1.111014272552128,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.4857681021193594,
+    "day_clusters": 48,
+    "delta_pp": -0.3930670074409705,
+    "hi": 2.6821160608983923,
+    "lo": -3.351766349417602,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 90,
+   "rows_sha256": "a63bc4ac677d702b4b2db8eeb167de9562c91ab18dbe825e29b01063b80544d6",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.5280471215611983,
+    "day_clusters": 49,
+    "delta_pp": 0.5161782982690712,
+    "hi": 2.1464101046218538,
+    "lo": -0.9946154456770575,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.8259292694281424,
+    "day_clusters": 48,
+    "delta_pp": -1.6844570883003023,
+    "hi": 1.1836221740661992,
+    "lo": -4.5255564421691865,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 91,
+   "rows_sha256": "761ba2a05f3ca8d0c680a24c5d72127ce8304fe84a20c3513e8bf994a258d9a8",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.0654562050735603,
+    "day_clusters": 49,
+    "delta_pp": -1.1365641200346508,
+    "hi": 0.42909791553863263,
+    "lo": -2.546492116495472,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "hold-out sign flip",
+    "coin_delta_pp": 3.9801821046523767,
+    "day_clusters": 48,
+    "delta_pp": 3.066931757654015,
+    "hi": 6.022443852318858,
+    "lo": 0.2769747655157192,
+    "resolves": "a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 92,
+   "rows_sha256": "3da728767b56ae1b63c082c6776403b0493377d909cd860b8d9a31c410c3bff4",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.02104550660064957,
+    "day_clusters": 49,
+    "delta_pp": -0.2685893763843692,
+    "hi": 1.461108646064158,
+    "lo": -2.1398906971010927,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -1.2994794495731365,
+    "day_clusters": 48,
+    "delta_pp": -0.5500408004856078,
+    "hi": 2.2715409569679257,
+    "lo": -3.1579043660145025,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 93,
+   "rows_sha256": "83973f8b0707852282f202913fabbca464e646e0c9f9be0c46115d2d24630b52",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.381132359417596,
+    "day_clusters": 49,
+    "delta_pp": -0.3268535841141924,
+    "hi": 1.4207375173738306,
+    "lo": -2.068204849819627,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "point >= +3.0pp, 97.5% lower bound > 0 on UTC-day clusters, coin-cluster point > 0, hold-out point > 0",
+    "coin_delta_pp": 2.514340665983423,
+    "day_clusters": 47,
+    "delta_pp": 4.066055242522043,
+    "hi": 6.60524532518931,
+    "lo": 1.5792403433817912,
+    "resolves": "",
+    "state": "PASS",
+    "walks": 50
+   },
+   "rep": 94,
+   "rows_sha256": "4905bc6f44943ffc4f0769a4ca1d64232e468d39e728ce99d0c00042f5623aef",
+   "verdict": "PASS",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.3876300315909678,
+    "day_clusters": 49,
+    "delta_pp": -0.048236241085142025,
+    "hi": 1.6231965910140322,
+    "lo": -1.850594553271357,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 0.6713160432988984,
+    "day_clusters": 48,
+    "delta_pp": 0.43784843315536404,
+    "hi": 3.427000105343005,
+    "lo": -2.475086310767849,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 95,
+   "rows_sha256": "d4ae78d40b7f8104c35fded2b5f5be77d5aa78765c90d08a7e673e745253b8f7",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.8359286317396516,
+    "day_clusters": 49,
+    "delta_pp": 1.0624866725726887,
+    "hi": 2.7579932141532977,
+    "lo": -0.6840927373821851,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 1.9446804742523534,
+    "day_clusters": 47,
+    "delta_pp": 3.0863422345609006,
+    "hi": 6.821080288207852,
+    "lo": -0.7827568411118097,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 96,
+   "rows_sha256": "bc2b75d8c943eef98e959e7cdf75b476d45933d09b04267e5f9638cd0492c47e",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.148428060615369,
+    "day_clusters": 49,
+    "delta_pp": 0.02282564354881832,
+    "hi": 1.648692740909597,
+    "lo": -1.514391400731345,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -2.8821285384373594,
+    "day_clusters": 48,
+    "delta_pp": -1.9297456394074741,
+    "hi": 0.9358702551429112,
+    "lo": -5.0475723577190035,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 97,
+   "rows_sha256": "93a05e07047f116a4633e9a016581076f5d9d222e504bfb259f9e4734f6e48d4",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": 0.031066373335834473,
+    "day_clusters": 49,
+    "delta_pp": 0.22483268566977976,
+    "hi": 2.1079117202755246,
+    "lo": -1.6014286177213224,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the 97.5% interval holds +3.0pp with its lower bound <= 0",
+    "coin_delta_pp": 2.0111403252566853,
+    "day_clusters": 48,
+    "delta_pp": 2.259001278184884,
+    "hi": 5.369081847613047,
+    "lo": -0.7942239190462956,
+    "resolves": "more scored UTC days: a forward window",
+    "state": "INDETERMINATE",
+    "walks": 50
+   },
+   "rep": 98,
+   "rows_sha256": "4469ac2739130d56bf61f524abc23f89358aa1a1f84426f3f137428eaaacf523",
+   "verdict": "INDETERMINATE",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.14601540586079145,
+    "day_clusters": 49,
+    "delta_pp": -0.23558168413289554,
+    "hi": 1.4854744595373912,
+    "lo": -2.115216649397526,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  },
+  {
+   "htf": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.0015821768191851785,
+    "day_clusters": 48,
+    "delta_pp": -1.456625159944659,
+    "hi": 1.213062795436063,
+    "lo": -4.1283750959772325,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   },
+   "rep": 99,
+   "rows_sha256": "a9b7e587157a0e980452b3563d3a5b4633eb15f5b570ee4a71013f5e287acd11",
+   "verdict": "NULL",
+   "vpoc": {
+    "cause": "the UTC-day 97.5% upper bound is under +3.0pp",
+    "coin_delta_pp": -0.6795200592077393,
+    "day_clusters": 49,
+    "delta_pp": -0.675430811505474,
+    "hi": 0.8212657541862715,
+    "lo": -2.218885484573462,
+    "resolves": "",
+    "state": "NULL",
+    "walks": 50
+   }
+  }
+ ],
+ "sources": {
+  "htf": {
+   "interval_excludes_zero_share": 0.09,
+   "mean_delta_pp": -0.09797393952304148,
+   "pass_share": 0.03,
+   "reps_with_a_delta": 100,
+   "sd_delta_pp": 1.8170057382619786,
+   "se_mean_pp": 0.18170057382619786,
+   "within_tolerance": true
+  },
+  "vpoc": {
+   "interval_excludes_zero_share": 0.0,
+   "mean_delta_pp": 0.008333219457068023,
+   "pass_share": 0.0,
+   "reps_with_a_delta": 100,
+   "sd_delta_pp": 0.7444540219185665,
+   "se_mean_pp": 0.07444540219185665,
+   "within_tolerance": true
+  }
+ },
+ "study_pass_share": 0.03,
+ "tolerance_pp": 0.5,
+ "verdict": "PASS",
+ "walks_per_replication": 50,
+ "wave": "EDGE-SR-HTF-LEVELS-W1"
+}
