@@ -7,6 +7,8 @@
  * call moves it by the number of served timeframes.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const { fakeAdapterCandles } = vi.hoisted(() => ({ fakeAdapterCandles: vi.fn() }));
 vi.mock('../../src/lib/exchange-adapter.js', async (orig) => ({
@@ -27,6 +29,18 @@ import { currentCaller, currentWeightClass, runAsCaller, WeightBudgetSkipError }
 import { processScopedTag } from '../../src/lib/caller-tags.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00.000Z');
+
+/** The §0 contract's key lists, in served order (frozen). */
+const TOP_KEYS = ['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
+const RESULT_KEYS = ['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance'];
+const ZONE_KEYS = [
+  'rank', 'low', 'high', 'distance_pct', 'formed_from', 'formed_to', 'members',
+  'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
+];
+const UNSERVED_KEYS = ['timeframe', 'reason'];
+const OVERLAP_KEYS = ['timeframe', 'side', 'rank'];
+const STATE_VALUES = ['intact', 'former_support', 'former_resistance'];
+const FLAG_VALUES = ['no_zone_above', 'no_zone_below', 'price_inside_zone'];
 
 /** A seeded random-walk series for `tf`: `bars` candles ending with the one forming at NOW. */
 function walk(tf: string, bars: number, seed: number): Candle[] {
@@ -552,20 +566,17 @@ describe('SR-ZONES-W1 R7 #4 — a window with no candles is never cached', () =>
 describe('SR-ZONES-W1 — the §0 response shape', () => {
   it('carries exactly the §0 fields, the frozen strings and at most 3 zones a side', async () => {
     const r = okOf(await runGetSrZones({ coin: 'btc', timeframes: ['1d', '4h'] }, keyed(), deps()));
-    expect(Object.keys(r)).toEqual(['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault']);
+    expect(Object.keys(r)).toEqual(TOP_KEYS);
     expect(r.coin).toBe('BTC');
     expect(r.venue).toBe('BINANCE');
     expect(r.order).toBe(SR_ZONES_ORDER);
     expect(r.note).toBe(SR_ZONES_NOTE);
     for (const res of r.results) {
-      expect(Object.keys(res)).toEqual(['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance']);
+      expect(Object.keys(res)).toEqual(RESULT_KEYS);
       expect(res.support.length).toBeLessThanOrEqual(3);
       expect(res.resistance.length).toBeLessThanOrEqual(3);
       for (const z of [...res.support, ...res.resistance]) {
-        expect(Object.keys(z)).toEqual([
-          'rank', 'low', 'high', 'distance_pct', 'formed_from', 'formed_to', 'members',
-          'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
-        ]);
+        expect(Object.keys(z)).toEqual(ZONE_KEYS);
         for (const o of z.overlaps) expect(o.timeframe).not.toBe(res.timeframe);
       }
     }
@@ -583,6 +594,79 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
     expect(o.payload).toMatchObject({ error: 'quota_exhausted', code: 'TIER_LIMIT_REACHED' });
     expect(d.calls).toEqual([]);
     expect(used(lic)).toBe(before);
+  });
+});
+
+describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-shape-snapshot-2026-11-15.json declares', () => {
+  const snap = () => JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'get-sr-zones-shape-snapshot-2026-11-15.json'), 'utf8'));
+
+  it('pins the §0 key lists, and carries every field the knowledge-bundle builder reads', () => {
+    const s = snap();
+    expect(s.endpoint).toBe('get_sr_zones (MCP tool)');
+    expect(s.snapshot_date).toBe('2026-11-15');
+    expect(s.superseded_by).toBeUndefined();
+    expect(s.allowed_keys).toEqual(TOP_KEYS);
+    expect(s.results_row_keys).toEqual(RESULT_KEYS);
+    expect(s.zone_keys).toEqual(ZONE_KEYS);
+    expect(s.unserved_row_keys).toEqual(UNSERVED_KEYS);
+    expect(s.overlaps_row_keys).toEqual(OVERLAP_KEYS);
+    expect(s.state_values).toEqual(STATE_VALUES);
+    expect(s.flag_values).toEqual(FLAG_VALUES);
+    expect(Array.isArray(s.consumers) && s.consumers.length > 0).toBe(true);
+    expect(typeof s.cache_contract).toBe('object');
+    expect(typeof s.error_contract).toBe('object');
+    expect(s.drift_check_command).toContain('select(.name == "get_sr_zones")');
+    for (const f of ['outcome_return_pct', 'outcome_price', 'call', 'verdict', 'probability', 'target']) expect(s.forbidden_keys, f).toContain(f);
+  });
+
+  it('a response with overlaps and an unserved row matches every declared key list, and carries no forbidden key', async () => {
+    const s = snap();
+    const r = okOf(await runGetSrZones({ coin: 'TWIN', timeframes: ['1d', '4h', '1h'] }, keyed(), deps()));
+    expect(r.unserved.length, 'vacuity guard: an unserved row must be checked').toBeGreaterThan(0);
+    expect(Object.keys(r)).toEqual(s.allowed_keys);
+    let zones = 0;
+    let overlaps = 0;
+    for (const res of r.results) {
+      expect(Object.keys(res)).toEqual(s.results_row_keys);
+      for (const f of res.flags) expect(s.flag_values).toContain(f);
+      for (const z of [...res.support, ...res.resistance]) {
+        zones++;
+        expect(Object.keys(z)).toEqual(s.zone_keys);
+        expect(s.state_values).toContain(z.state);
+        for (const o of z.overlaps) {
+          overlaps++;
+          expect(Object.keys(o)).toEqual(s.overlaps_row_keys);
+        }
+      }
+    }
+    expect(zones, 'vacuity guard: zones must be checked').toBeGreaterThan(0);
+    expect(overlaps, 'vacuity guard: overlap rows must be checked').toBeGreaterThan(0);
+    for (const u of r.unserved) expect(Object.keys(u)).toEqual(s.unserved_row_keys);
+    for (const k of Object.keys(r._algovault)) expect(s.algovault_keys, `_algovault.${k}`).toContain(k);
+    for (const k of s.algovault_required_keys) expect(r._algovault, `_algovault.${k}`).toHaveProperty(k);
+    const text = JSON.stringify(r);
+    for (const f of s.forbidden_keys) expect(text, f).not.toContain(`"${f}":`);
+  });
+
+  it('every declared refusal is one the handler emits, with the declared status and fields', async () => {
+    const s = snap();
+    expect(s.refusal_errors).toEqual(['quota_exhausted', 'no_timeframe_served']);
+    const none = s.error_contract.no_timeframe_served;
+    const permanent = refusalOf(await runGetSrZones({ coin: 'NOPE', timeframes: ['1d'] }, keyed(), deps()));
+    const transient = refusalOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), deps({
+      getCandles: async () => { throw new Error('Binance API 503: Service Unavailable'); },
+    })));
+    expect([permanent.status, transient.status]).toEqual(none.status);
+    for (const o of [permanent, transient]) {
+      expect(o.payload.error).toBe('no_timeframe_served');
+      expect(Object.keys(o.payload)).toEqual(none.fields);
+    }
+    const lic = keyed();
+    for (let i = 0; i < FREE_DAILY_CALLS; i++) trackCall(lic);
+    const wall = refusalOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, lic, deps()));
+    expect(wall.status).toBe(s.error_contract.quota_exhausted.status);
+    expect(wall.payload.error).toBe('quota_exhausted');
+    for (const f of s.error_contract.quota_exhausted.fields) expect(wall.payload, f).toHaveProperty(f);
   });
 });
 

@@ -1,0 +1,100 @@
+{
+  "wave": "SR-ZONES-W1",
+  "endpoint": "get_sr_zones (MCP tool)",
+  "snapshot_date": "2026-11-15",
+  "captured_at_utc": "2026-11-15",
+  "change_class": "NEW SURFACE — support and resistance zones for one coin on Binance perpetuals, facts only. MCP only (no HTTP or x402 route); not publicly listed (publicListing false).",
+  "change_note": "One result per served timeframe (one to three of 15m 30m 1h 2h 4h 8h 12h 1d): up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward, each with its low and high, the distance from price to its near edge, the candles that formed it, bars touched in the last 90, tests in the last 30, the last touch, its state, and the zones of the other requested timeframes it overlaps. Zones come from closed candles only (up to the last 1000); `price` is the close of the newest candle read (the forming candle). The response is built field by field from the formula's frame (src/lib/sr-zones), never by spreading a stored object. A timeframe that cannot be served goes to `unserved` with its reason and is not billed; with none served the call is refused, unbilled.",
+  "source": "src/tools/get-sr-zones.ts (runGetSrZones) + src/lib/sr-zones/zones.ts (computeSrZones, attachSrZoneOverlaps) + src/lib/sr-zones/summary.ts (the summary template, ORDER and NOTE) + src/lib/tool-call-pipeline.ts (the get_sr_zones row); pre-deploy capture, pinned by tests/unit/sr-zones-handler.test.ts",
+  "allowed_keys": [
+    "coin",
+    "venue",
+    "price",
+    "order",
+    "note",
+    "results",
+    "unserved",
+    "timestamp",
+    "_algovault"
+  ],
+  "results_row_keys": ["timeframe", "summary", "volume_vs_20", "flags", "support", "resistance"],
+  "results_note": "`summary` is one factual sentence from the template in src/lib/sr-zones/summary.ts. `volume_vs_20` is the last closed candle's volume divided by the mean volume of the 20 candles before it, or null. `support` and `resistance` each hold at most 3 zones.",
+  "zone_keys": [
+    "rank",
+    "low",
+    "high",
+    "distance_pct",
+    "formed_from",
+    "formed_to",
+    "members",
+    "touch_bars_90",
+    "tests_30",
+    "last_touch",
+    "state",
+    "broke_at",
+    "overlaps"
+  ],
+  "zone_note": "`rank` 1 is the zone nearest price on its side; each next rank formed earlier and sits further from price. `distance_pct` is the gap from price to the zone's near edge in percent of price (2 decimals), 0 when price is inside the zone. `formed_from`, `formed_to`, `last_touch` and `broke_at` are candle open times (ISO 8601, UTC); `last_touch` and `broke_at` may be null. `members` counts the turning points in the zone. `touch_bars_90` counts closed candles among the last 90 whose range meets the zone; `tests_30` counts closed candles among the last 30 that entered the zone and closed back on the side they came from.",
+  "unserved_row_keys": ["timeframe", "reason"],
+  "overlaps_row_keys": ["timeframe", "side", "rank"],
+  "overlaps_note": "One entry per zone of ANOTHER requested timeframe whose price range intersects this zone; `side` is support or resistance. Empty when one timeframe is requested.",
+  "state_values": ["intact", "former_support", "former_resistance"],
+  "state_note": "A zone turns former_support or former_resistance after 2 consecutive closes through it with price now on the other side; `broke_at` is the open time of the candle whose close was the second, else null.",
+  "flag_values": ["no_zone_above", "no_zone_below", "price_inside_zone"],
+  "flags_note": "`no_zone_above` / `no_zone_below`: no zone was found on that side in the candle history read; `price_inside_zone`: price is inside at least one listed zone.",
+  "algovault_keys": ["tool", "version", "quota", "session_id", "auth", "claim_url", "claim_hint"],
+  "algovault_required_keys": ["tool", "version", "quota", "session_id", "auth"],
+  "algovault_note": "`quota` is the caller's meter after this call is billed (buildScanQuotaState); `claim_url` and `claim_hint` appear only for an anonymous session (withAuthState).",
+  "billing": "per-verdict: one unit per entry in `results`. An unserved timeframe and every refusal are unbilled.",
+  "error_contract": {
+    "transport": "MCP only (tools/call): a refusal is a structured JSON text payload with isError: true. get_sr_zones has no HTTP or x402 route.",
+    "invalid input": {
+      "status": null,
+      "billed": false,
+      "note": "The MCP SDK's input-schema check (strictToolInput, src/index.ts) refuses before the handler runs: a timeframe outside 15m 30m 1h 2h 4h 8h 12h 1d, fewer than one or more than three timeframes, a venue other than BINANCE, or an unknown key."
+    },
+    "quota_exhausted": {
+      "status": 429,
+      "code": "TIER_LIMIT_REACHED",
+      "fields": ["error", "code", "message", "quota", "usage_display", "resets_at", "retry_after_days", "limit", "suggested_action", "_algovault"],
+      "billed": false,
+      "note": "The scan quota wall (buildScanQuotaWall), as scan_trade_calls and scan_market_regimes render it, checked before any candle read. retry_after_hours (daily wall), recommended_path, referral_hint and suggested_x402 appear only when they apply."
+    },
+    "no_timeframe_served": {
+      "status": [422, 503],
+      "fields": ["error", "code", "coin", "venue", "message", "unserved", "suggested_action", "_algovault"],
+      "billed": false,
+      "note": "503 when any requested timeframe failed for a reason a retry can change (a venue error, a rate limit, or a stale, empty or budget-skipped read), else 422. `unserved` gives each timeframe's reason."
+    },
+    "order": "input schema → quota wall → candle reads → no_timeframe_served. Nothing is billed unless a timeframe is served; then one unit per served timeframe."
+  },
+  "refusal_errors": ["quota_exhausted", "no_timeframe_served"],
+  "forbidden_keys": [
+    "call",
+    "verdict",
+    "reasoning",
+    "signal_hash",
+    "descriptionRef",
+    "price_at_signal",
+    "outcome_return_pct",
+    "outcome_price",
+    "win_rate",
+    "probability",
+    "target",
+    "strength",
+    "score",
+    "prediction"
+  ],
+  "forbidden_keys_note": "get_sr_zones reports where price clustered before, as facts. It never emits a trade call, a direction, a win rate, a probability, a target, a strength score or a prediction (the facts-only lint over every emitted string, tests/unit/sr-zones-facts-lint.test.ts). `signal_hash` and `descriptionRef` are internal identifiers; the outcome_* fields are internal.",
+  "consumers": [
+    "MCP tools/list + tools/call (served on /mcp; not publicly listed: no docs page, nav entry, llms.txt line or LobeHub row until its release wave)",
+    "GET /capabilities (projectCapabilities: tool metadata, not this response)",
+    "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs",
+    "scripts/sr-zones-smoke.mjs (the post-deploy production smoke: shape, ORDER, zone ages, facts lint)"
+  ],
+  "cache_contract": {
+    "description": "Candle history is cached in process per venue × coin × timeframe until that timeframe's next candle close (at most 256 windows). Inside that candle a read less than 60 s old is served with no venue request; an older one re-reads the newest page (one request: the 100-candle trade_call window), merges it over the cached history and moves `timestamp`; a failed re-read serves the cached window with its older `timestamp`, never as unserved. A window with no candles is never cached. A failed full read is remembered for 20 to 30 s (jittered), during which a repeat call gets the same `unserved` reason with no venue request (at most 1024 remembered). History pages read in Binance's batch weight class; the newest page reads in the interactive class.",
+    "client_cache_refresh": "an open MCP session sees get_sr_zones after it re-fetches tools/list"
+  },
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"get_sr_zones\") | .inputSchema | (.properties | has(\"coin\") and has(\"timeframes\") and has(\"venue\")) and .properties.timeframes.maxItems == 3 and .additionalProperties == false' >/dev/null && echo SHAPE_OK"
+}
