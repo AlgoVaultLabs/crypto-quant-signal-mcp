@@ -563,6 +563,131 @@ describe('SR-ZONES-W1 R7 #4 — a window with no candles is never cached', () =>
   });
 });
 
+describe('SR-ZONES-W1 R8 — a full read not finished within 10 s: unserved for that call, finished in the background', () => {
+  const SLOW = 'BINANCE candle history did not load within 10 s; the read continues in the background';
+  beforeEach(() => {
+    // The file-level beforeEach fakes Date only, and vi.useFakeTimers is a no-op while time is already faked.
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(new Date(NOW));
+  });
+  /** One real macrotask turn: every microtask (the background read's whole chain) has run by then. */
+  const turn = () => new Promise<void>((r) => setImmediate(r));
+
+  /** A counted fake whose `tf` reads hang until the gate opens (or fails); every other read answers at once. */
+  function gated(tf: string) {
+    let open: () => void = () => {};
+    let fail: (e: unknown) => void = () => {};
+    const gate = new Promise<void>((res, rej) => { open = res; fail = rej; });
+    gate.catch(() => {}); // observed through the read that awaits it
+    const d = deps({
+      getCandles: async (coin, t, startTime) => {
+        if (t === tf) await gate;
+        return binanceLike(coin, t, startTime);
+      },
+    });
+    return { d, open: () => open(), fail: (e: unknown) => fail(e) };
+  }
+
+  /** Collects unhandled rejections while `body` runs. */
+  async function unhandledDuring(body: () => Promise<void>): Promise<unknown[]> {
+    const seen: unknown[] = [];
+    const listener = (e: unknown) => { seen.push(e); };
+    process.on('unhandledRejection', listener);
+    try {
+      await body();
+      await turn();
+      await turn();
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+    return seen;
+  }
+
+  it('at 10 s the slow timeframe is unserved for this call (unbilled, not remembered as a failure); the other is served', async () => {
+    const { d } = gated('4h');
+    const lic = keyed();
+    let settled = false;
+    const call = runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, lic, d).finally(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const r = okOf(await call);
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    expect(r.unserved).toEqual([{ timeframe: '4h', reason: SLOW }]);
+    expect(used(lic)).toBe(1);
+    expect(d.failures.size).toBe(0);
+  });
+
+  it('the read finishes in the background and caches its window: the next call is served from it, with no request', async () => {
+    const { d, open } = gated('4h');
+    const first = runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const refused = refusalOf(await first);
+    expect(refused.status).toBe(503);
+    expect(refused.payload).toMatchObject({ unserved: [{ timeframe: '4h', reason: SLOW }] });
+    open();
+    await turn();
+    expect(d.cache.get('BINANCE:BTC:4h')!.candles).toHaveLength(1001);
+    const before = d.calls.length;
+    const lic = keyed();
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, lic, d));
+    expect(d.calls.length).toBe(before);
+    expect(r.results.map((x) => x.timeframe)).toEqual(['4h']);
+    expect(used(lic)).toBe(1);
+  });
+
+  it('stays single-flight: a call during the background read joins it, makes no request, and is served when it lands', async () => {
+    const { d, open } = gated('4h');
+    const first = runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d);
+    await vi.advanceTimersByTimeAsync(10_000);
+    refusalOf(await first);
+    const lic = keyed();
+    const second = runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, lic, d);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(d.calls).toHaveLength(1); // the one head page, still waiting on the gate
+    open();
+    const r = okOf(await second);
+    expect(r.results.map((x) => x.timeframe)).toEqual(['4h']);
+    expect(d.calls).toHaveLength(6); // one full read: the head page + 5 history pages
+    expect(used(lic)).toBe(1);
+  });
+
+  it('a background failure is remembered per R7 #2, and no rejection goes unhandled', async () => {
+    const { d, fail } = gated('4h');
+    const seen = await unhandledDuring(async () => {
+      const first = runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await first;
+      expect(d.failures.size).toBe(0);
+      fail(new Error('Binance API 503: Service Unavailable'));
+      await turn();
+      expect(d.failures.has('BINANCE:BTC:4h')).toBe(true);
+      const before = d.calls.length;
+      const again = refusalOf(await runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d));
+      expect(d.calls.length).toBe(before);
+      expect(again.payload).toMatchObject({ unserved: [{ timeframe: '4h', reason: 'BINANCE candle request failed' }] });
+    });
+    expect(seen).toEqual([]);
+  });
+
+  it('a read that lands inside 10 s is served, and nothing goes unhandled once 10 s pass', async () => {
+    const { d, open } = gated('4h');
+    const seen = await unhandledDuring(async () => {
+      const lic = keyed();
+      const call = runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, lic, d);
+      await vi.advanceTimersByTimeAsync(9_000);
+      open();
+      const r = okOf(await call);
+      expect(r.unserved).toEqual([]);
+      expect(used(lic)).toBe(1);
+      expect(vi.getTimerCount()).toBe(0); // the 10 s timer was cleared when the read won
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(seen).toEqual([]);
+  });
+});
+
 describe('SR-ZONES-W1 — the §0 response shape', () => {
   it('carries exactly the §0 fields, the frozen strings and at most 3 zones a side', async () => {
     const r = okOf(await runGetSrZones({ coin: 'btc', timeframes: ['1d', '4h'] }, keyed(), deps()));

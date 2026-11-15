@@ -64,7 +64,7 @@
       "status": [422, 503],
       "fields": ["error", "code", "coin", "venue", "message", "unserved", "suggested_action", "_algovault"],
       "billed": false,
-      "note": "503 when any requested timeframe failed for a reason a retry can change (a venue error, a rate limit, or a stale, empty or budget-skipped read), else 422. `unserved` gives each timeframe's reason."
+      "note": "503 when any requested timeframe failed for a reason a retry can change (a venue error, a rate limit, a stale, empty or budget-skipped read, or a full read not finished within 10 s), else 422. `unserved` gives each timeframe's reason."
     },
     "order": "input schema → quota wall → candle reads → no_timeframe_served. Nothing is billed unless a timeframe is served; then one unit per served timeframe."
   },
@@ -90,10 +90,10 @@
     "MCP tools/list + tools/call (served on /mcp; not publicly listed: no docs page, nav entry, llms.txt line or LobeHub row until its release wave)",
     "GET /capabilities (projectCapabilities: tool metadata, not this response)",
     "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs",
-    "scripts/sr-zones-smoke.mjs (the post-deploy production smoke: shape, ORDER, zone ages, facts lint)"
+    "scripts/sr-zones-smoke.mjs (the post-deploy production smoke, https://api.algovault.com/mcp only: tools/list, the §0 shape on BTC 1d+4h, ETH 1h served, a young listing served with flags, and the facts lint on every returned string)"
   ],
   "cache_contract": {
-    "description": "Candle history is cached in process per venue × coin × timeframe until that timeframe's next candle close (at most 256 windows). Inside that candle a read less than 60 s old is served with no venue request; an older one re-reads the newest page (one request: the 100-candle trade_call window), merges it over the cached history and moves `timestamp`; a failed re-read serves the cached window with its older `timestamp`, never as unserved. A window with no candles is never cached. A failed full read is remembered for 20 to 30 s (jittered), during which a repeat call gets the same `unserved` reason with no venue request (at most 1024 remembered). History pages read in Binance's batch weight class; the newest page reads in the interactive class.",
+    "description": "Candle history is cached in process per venue × coin × timeframe until that timeframe's next candle close (at most 256 windows). Inside that candle a read less than 60 s old is served with no venue request; an older one re-reads the newest page (one request: the 100-candle trade_call window), merges it over the cached history and moves `timestamp`; a failed re-read serves the cached window with its older `timestamp`, never as unserved. A window with no candles is never cached. A failed full read is remembered for 20 to 30 s (jittered), during which a repeat call gets the same `unserved` reason with no venue request (at most 1024 remembered). A call waits at most 10 s for a full read: past that, the timeframe is `unserved` for that call (unbilled, not remembered as a failure) while the read finishes in the background, single-flight, and caches its window for the next call. History pages read in Binance's batch weight class; the newest page reads in the interactive class.",
     "client_cache_refresh": "an open MCP session sees get_sr_zones after it re-fetches tools/list"
   },
   "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"get_sr_zones\") | .inputSchema | (.properties | has(\"coin\") and has(\"timeframes\") and has(\"venue\")) and .properties.timeframes.maxItems == 3 and .additionalProperties == false' >/dev/null && echo SHAPE_OK"

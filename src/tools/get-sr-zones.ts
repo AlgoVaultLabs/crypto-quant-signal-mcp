@@ -19,6 +19,10 @@
  * Failures (R7 #2, #4). A window with no candles is never cached. A failed full read (an unknown coin, a throttled or
  * empty read) is remembered for 20 to 30 s (jittered), and a repeat call inside that time gets the same `unserved`
  * reason with no venue request. History pages read in the batch weight class (see fetchWindow).
+ *
+ * Load-timeout (R8). A call waits at most 10 s for a full read; past that, the timeframe is `unserved` for that call
+ * (unbilled, not remembered as a failure) while the read finishes in the background, single-flight, and caches its
+ * window (or has its failure remembered) for the next call. See boundedWait.
  */
 import type { Candle, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
@@ -53,6 +57,8 @@ const HEAD_REFRESH_MS = 60_000;
 const FAILED_READ_TTL_MS = 20_000;
 /** Failed reads remembered at once (the key holds a caller-chosen coin); past this the oldest is dropped first. */
 const MAX_FAILED_READS = 1024;
+/** A call waits this long for a full read; past it the timeframe is unserved for that call and the read goes on (R8). */
+const FULL_READ_TIMEOUT_MS = 10_000;
 
 export interface GetSrZonesParams {
   coin: string;
@@ -148,6 +154,35 @@ class EmptyCandleWindowError extends Error {
   }
 }
 
+/** This call stopped waiting for a full read that is still running. Not a failure: nothing is remembered (R8). */
+class FullReadTimeoutError extends Error {
+  constructor() {
+    super(`${VENUE} full read still running after ${FULL_READ_TIMEOUT_MS} ms`);
+    this.name = 'FullReadTimeoutError';
+  }
+}
+
+/**
+ * A call's wait on a shared full read, bounded at FULL_READ_TIMEOUT_MS (R8; the build-and-runtime load-timeout, not a
+ * throw-only fallback, which never fires while the batch lane WAITS for capacity). Past the bound this call throws
+ * FullReadTimeoutError and the read goes on in the background, still single-flight: it caches its window, or its
+ * failure is remembered (R7 #2), for the next call. The timer resolves (it never rejects) and is cleared when the read
+ * wins; a rejection of the read after the bound is handled, because Promise.race subscribed to it.
+ */
+async function boundedWait(read: Promise<SrZonesWindow>): Promise<SrZonesWindow> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), FULL_READ_TIMEOUT_MS);
+  });
+  try {
+    const first = await Promise.race([read, bound]);
+    if (first === null) throw new FullReadTimeoutError();
+    return first;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const ident = (): SrZonesIdentity => ({ tool: GET_SR_ZONES_TOOL, version: PKG_VERSION, session_id: getRequestSessionId() ?? null });
 
 /**
@@ -235,7 +270,8 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
   // A full read that failed moments ago answers again with the same failure, and no venue request (R7 #2).
   const failed = deps.failures.get(key);
   if (failed && now < failed.untilMs) throw failed.error;
-  return shared(deps, `${key}#full`, () =>
+  // The store and the failure record live inside the shared read, so they happen whether or not a caller still waits.
+  return boundedWait(shared(deps, `${key}#full`, () =>
     fetchWindow(deps, coin, timeframe, stepMs).then(
       (w) => {
         for (const [k, v] of deps.cache) if (v.validUntilMs <= w.readAtMs) deps.cache.delete(k);
@@ -255,7 +291,7 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
         throw err;
       },
     ),
-  );
+  ));
 }
 
 /** Why a timeframe was not served, from what its read threw; `transient` when a retry can change the answer. */
@@ -270,6 +306,9 @@ function unservedReason(err: unknown, coin: string): { reason: string; transient
     return { reason: `${VENUE} candle history was skipped: the shared request budget was full`, transient: true };
   }
   if (err instanceof EmptyCandleWindowError) return { reason: `${VENUE} returned no candles for this timeframe`, transient: true };
+  if (err instanceof FullReadTimeoutError) {
+    return { reason: `${VENUE} candle history did not load within ${FULL_READ_TIMEOUT_MS / 1000} s; the read continues in the background`, transient: true };
+  }
   const message = err instanceof Error ? err.message : String(err);
   if (/\bAPI 400\b/.test(message)) return { reason: `${VENUE} refused the candle request for ${coin} (HTTP 400)`, transient: false };
   return { reason: `${VENUE} candle request failed`, transient: true };
