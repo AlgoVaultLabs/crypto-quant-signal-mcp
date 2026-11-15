@@ -2,8 +2,7 @@
 /**
  * sr-zones-smoke.mjs — SR-ZONES-W1 AC2.4. A live smoke of get_sr_zones over MCP (streamable HTTP), reused at release.
  *
- *   node scripts/sr-zones-smoke.mjs --prod                 # https://api.algovault.com/mcp
- *   node scripts/sr-zones-smoke.mjs --url <mcp-url>        # any other deployment
+ *   node scripts/sr-zones-smoke.mjs --prod                 # https://api.algovault.com/mcp, the only target
  *   node scripts/sr-zones-smoke.mjs --prod --young CT      # the young listing to probe (default CT, 1d)
  *   node scripts/sr-zones-smoke.mjs --self-test            # the checks below over built-in bodies; no key, no network
  *
@@ -20,6 +19,9 @@
  *
  * Auth: the internal key from ~/.config/algovault/internal.env (ALGOVAULT_INTERNAL_BYPASS_KEY), sent as
  * X-AlgoVault-Internal-Key. The key is NEVER printed: no header, request or key-bearing value reaches stdout/stderr.
+ * It goes to one place only (R7 #1, Mr.1 2026-11-15): there is no target flag, every POST goes to PROD_URL, and every
+ * POST refuses redirects (`redirect: 'error'`), so the key header never follows a redirect to another host. Any other
+ * flag, `--url` included, is a usage error (exit 2) raised before the key file is opened.
  *
  * Verdict: exactly one terminal `SR_ZONES_SMOKE_VERDICT=PASS|FAIL|INDETERMINATE`.
  * Exit: 0 PASS · 1 FAIL (a check ran and failed) · 2 usage · 3 INDETERMINATE (could not verify: no key, unreachable).
@@ -49,14 +51,13 @@ function verdict(token, code) {
 
 function parseArgs(argv) {
   if (argv.length === 1 && argv[0] === '--self-test') return { selfTest: true };
-  const out = { url: null, young: 'CT' };
+  const out = { prod: false, young: 'CT' };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--prod') out.url = PROD_URL;
-    else if (argv[i] === '--url') out.url = argv[++i] ?? null;
+    if (argv[i] === '--prod') out.prod = true;
     else if (argv[i] === '--young') out.young = (argv[++i] ?? '').toUpperCase();
-    else return null;
+    else return null; // `--url` and every other flag: usage error, before the key file is opened
   }
-  return out.url && out.young ? out : null;
+  return out.prod && out.young ? out : null;
 }
 
 /** The internal key, or null. Read from the file only; never echoed. */
@@ -73,12 +74,16 @@ function readKey() {
 
 class Unreachable extends Error {}
 
-/** One JSON-RPC POST; the body may come back as JSON or as an SSE stream of `data:` lines. */
-async function rpc(url, key, payload) {
+/**
+ * One JSON-RPC POST to PROD_URL, the only fetch call site; the body may come back as JSON or as an SSE stream of
+ * `data:` lines. A redirect is refused (fetch rejects), so it ends INDETERMINATE and the key goes nowhere else.
+ */
+async function rpc(key, payload) {
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetch(PROD_URL, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
@@ -88,7 +93,7 @@ async function rpc(url, key, payload) {
       signal: AbortSignal.timeout(60_000),
     });
   } catch (e) {
-    throw new Unreachable(`POST ${url} failed: ${e instanceof Error ? e.name : 'error'}`);
+    throw new Unreachable(`POST ${PROD_URL} failed: ${e instanceof Error ? e.name : 'error'}`);
   }
   const raw = await res.text();
   if (payload.id === undefined) return null; // a notification
@@ -106,8 +111,8 @@ async function rpc(url, key, payload) {
 }
 
 /** tools/call → the tool's JSON payload (content[0].text parsed) and whether the server marked it an error. */
-async function callTool(url, key, id, name, args) {
-  const result = await rpc(url, key, { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+async function callTool(key, id, name, args) {
+  const result = await rpc(key, { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
   const text = result?.content?.[0]?.text;
   let body = null;
   try {
@@ -176,8 +181,27 @@ function sampleBody(coin, timeframes) {
   };
 }
 
+/**
+ * rpc() against a stubbed fetch (no network; a dummy key, never printed): the one POST it makes goes to PROD_URL,
+ * as a POST, with redirects refused.
+ */
+async function postIsPinned() {
+  const seen = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), method: init?.method, redirect: init?.redirect });
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await rpc('x'.repeat(32), { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+  } finally {
+    globalThis.fetch = real;
+  }
+  return seen.length === 1 && seen[0].url === 'https://api.algovault.com/mcp' && seen[0].method === 'POST' && seen[0].redirect === 'error';
+}
+
 /** Two-way: every clean case must pass and every planted defect must be caught. */
-function selfTest() {
+async function selfTest() {
   const edit = (body, f) => { const b = structuredClone(body); f(b); return b; };
   const btc = sampleBody('BTC', ['1d', '4h']);
   const predict = sampleBody('PREDICT', ['1d']);
@@ -196,11 +220,12 @@ function selfTest() {
     ['top-level keys out of §0 order are caught', () => shapeProblems(edit(btc, (b) => { const { coin, ...rest } = b; Object.keys(b).forEach((k) => delete b[k]); Object.assign(b, rest, { coin }); }), ['1d', '4h']).length > 0],
     ['another venue is caught', () => shapeProblems(edit(btc, (b) => { b.venue = 'BYBIT'; }), ['1d', '4h']).length > 0],
     ['a zero price is caught', () => shapeProblems(edit(btc, (b) => { b.price = 0; }), ['1d', '4h']).length > 0],
+    ['every POST goes to https://api.algovault.com/mcp with redirects refused', postIsPinned],
   ];
   let failed = 0;
   for (const [name, fn] of cases) {
     let ok = false;
-    try { ok = fn() === true; } catch { ok = false; }
+    try { ok = (await fn()) === true; } catch { ok = false; }
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`);
     if (!ok) failed++;
   }
@@ -211,10 +236,10 @@ function selfTest() {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args) {
-    console.error('usage: node scripts/sr-zones-smoke.mjs (--prod | --url <mcp-url>) [--young <COIN>] | --self-test');
+    console.error('usage: node scripts/sr-zones-smoke.mjs --prod [--young <COIN>] | --self-test');
     process.exit(2);
   }
-  if (args.selfTest) selfTest();
+  if (args.selfTest) await selfTest();
   const key = readKey();
   if (!key) {
     console.log('INDETERMINATE: no internal key in ~/.config/algovault/internal.env (ALGOVAULT_INTERNAL_BYPASS_KEY)');
@@ -229,28 +254,28 @@ async function main() {
   };
 
   try {
-    await rpc(args.url, key, {
+    await rpc(key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
       params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'sr-zones-smoke', version: '1' } },
     });
-    await rpc(args.url, key, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    await rpc(key, { jsonrpc: '2.0', method: 'notifications/initialized' });
 
-    const list = await rpc(args.url, key, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const list = await rpc(key, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
     const tool = (list?.tools ?? []).find((t) => t.name === 'get_sr_zones');
     check(!!tool, `tools/list lists get_sr_zones (${(list?.tools ?? []).length} tools)`);
     if (tool) lintTargets.push(['tools/list get_sr_zones', { description: tool.description, inputSchema: tool.inputSchema }, null]);
 
-    const btc = await callTool(args.url, key, 3, 'get_sr_zones', { coin: 'BTC', timeframes: ['1d', '4h'] });
+    const btc = await callTool(key, 3, 'get_sr_zones', { coin: 'BTC', timeframes: ['1d', '4h'] });
     const btcProblems = btc.body && !btc.isError ? shapeProblems(btc.body, ['1d', '4h']) : [`refused: ${btc.text}`];
     check(btcProblems.length === 0, `BTC 1d+4h: 2 results, ≤3 zones a side, §0 fields${btcProblems.length ? ` — ${btcProblems.join('; ')}` : ''}`);
     if (btc.body) lintTargets.push(['BTC 1d+4h', btc.body, 'BTC']);
 
-    const eth = await callTool(args.url, key, 4, 'get_sr_zones', { coin: 'ETH', timeframes: ['1h'] });
+    const eth = await callTool(key, 4, 'get_sr_zones', { coin: 'ETH', timeframes: ['1h'] });
     const ethProblems = eth.body && !eth.isError ? shapeProblems(eth.body, ['1h']) : [`refused: ${eth.text}`];
     check(ethProblems.length === 0, `ETH 1h served${ethProblems.length ? ` — ${ethProblems.join('; ')}` : ''}`);
     if (eth.body) lintTargets.push(['ETH 1h', eth.body, 'ETH']);
 
-    const young = await callTool(args.url, key, 5, 'get_sr_zones', { coin: args.young, timeframes: ['1d'] });
+    const young = await callTool(key, 5, 'get_sr_zones', { coin: args.young, timeframes: ['1d'] });
     const youngResult = young.body?.results?.[0];
     const youngServed = !young.isError && !!youngResult && Array.isArray(youngResult.flags);
     check(
