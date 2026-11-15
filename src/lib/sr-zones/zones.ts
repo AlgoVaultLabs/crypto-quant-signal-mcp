@@ -14,7 +14,9 @@
  *  2. Ladder. Turning points are walked newest → oldest: by the date they are dated at, then by the date of the
  *     candle that printed them, then nearest to price first. Per side, the first point beyond price seeds zone 1.
  *     Each next seed is dated before the previous zone's oldest candle and sits beyond its far edge by at least
- *     seedSpacingAtr × ATR. At most maxZonesPerSide zones per side.
+ *     seedSpacingAtr × ATR, and the zone it builds must sit strictly further from price at its near edge than the
+ *     previous zone, as distance_pct states it (R6 #2: ORDER's "each next zone ... sits further from price"); a seed
+ *     whose zone does not is skipped and the walk goes on older. At most maxZonesPerSide zones per side.
  *  3. Members. A zone's members are the seed, the points dated with it that sit within g_r × ATR of the seed price,
  *     then the points of each older date in turn while that date has at least one point within the band: the walk
  *     stops at the first older date that has turning points but none in the band. (A cluster is a run of nearby
@@ -22,7 +24,7 @@
  *  4. Edges. Over the members' candles: support = [lowest low, median body bottom]; resistance = [median body top,
  *     highest high]. A zone narrower than minWidthAtr × ATR is widened away from price.
  *  5. Facts per zone: distance from price to the near edge, the candles that formed it, touches, tests, last touch,
- *     and the flip state — see `zoneFacts`.
+ *     and the flip state — see `zoneFacts` and `zoneState`.
  */
 import type { Candle } from '../../types.js';
 import { SR_ZONES_PARAMS } from './params.js';
@@ -44,7 +46,7 @@ export interface SrZone {
   rank: number;
   low: number;
   high: number;
-  /** Distance from price to the zone's near edge, in percent of price; 0 when price is inside the zone. */
+  /** Distance from price to the zone's near edge, in percent of price (2 decimals); 0 when price is inside the zone. */
   distance_pct: number;
   /** Open time (ISO 8601, UTC) of the oldest candle that formed the zone. */
   formed_from: string;
@@ -197,6 +199,24 @@ function rangePoints(candles: readonly Candle[], atr: ReadonlyArray<number | nul
   return pts;
 }
 
+const iso = (ms: number): string => new Date(ms).toISOString();
+const roundPrice = (x: number): number => Number(x.toPrecision(7));
+const round2 = (x: number): number => Math.round(x * 100) / 100;
+
+/** distance_pct: price to the zone's near edge, in percent of price, 2 decimals; 0 when price is at or past that edge. */
+function nearDistancePct(zone: { low: number; high: number }, side: SrSide, price: number): number {
+  const gap = side === 'support' ? price - zone.high : zone.low - price;
+  return gap > 0 ? round2((gap / price) * 100) : 0;
+}
+
+/**
+ * Price is inside a zone when low <= price <= high, on the zone's emitted edges. The ONE predicate behind both the
+ * price_inside_zone flag and the summary's "price inside" (R6 #3): neither re-derives it from a rounded distance.
+ */
+export function isPriceInsideZone(zone: { low: number; high: number }, price: number): boolean {
+  return zone.low <= price && price <= zone.high;
+}
+
 function median(xs: readonly number[]): number {
   const s = [...xs].sort((a, b) => a - b);
   const n = s.length;
@@ -213,19 +233,19 @@ function buildLadder(
   side: SrSide,
 ): Cluster[] {
   const isSupport = side === 'support';
+  const spacing = P.seedSpacingAtr * atr;
   const out: Cluster[] = [];
   let olderThan = Infinity;
   let farEdge: number | null = null;
-  for (let r = 0; r < P.maxZonesPerSide; r++) {
-    const spacing = P.seedSpacingAtr * atr;
-    const seed = ordered.find(
-      (p) =>
-        (isSupport ? p.price < price : p.price > price) &&
-        p.date < olderThan &&
-        (farEdge === null || (isSupport ? p.price <= farEdge - spacing : p.price >= farEdge + spacing)),
-    );
-    if (!seed) break;
-    const band = P.memberBandAtr[r] * atr;
+  let nearDistance = -Infinity;
+  // One pass newest → oldest: once a zone is taken, no earlier point can seed the next one (every earlier point is
+  // dated at or after the seed, so not before the zone's oldest candle).
+  for (const seed of ordered) {
+    if (out.length >= P.maxZonesPerSide) break;
+    if (!(isSupport ? seed.price < price : seed.price > price)) continue;
+    if (!(seed.date < olderThan)) continue;
+    if (farEdge !== null && !(isSupport ? seed.price <= farEdge - spacing : seed.price >= farEdge + spacing)) continue;
+    const band = P.memberBandAtr[out.length] * atr;
     const inBand = (p: TurningPoint): boolean => Math.abs(p.price - seed.price) <= band;
     const members = (byDate.get(seed.date) ?? []).filter(inBand);
     for (let di = datesDesc.indexOf(seed.date) + 1; di < datesDesc.length; di++) {
@@ -249,23 +269,25 @@ function buildLadder(
       if (isSupport) low = high - minWidth;
       else high = low + minWidth;
     }
+    // R6 #2: a zone no further from price at its near edge than the previous one is skipped; the walk goes on older.
+    const distance = nearDistancePct({ low, high }, side, price);
+    if (out.length > 0 && !(distance > nearDistance)) continue;
     const from = Math.min(...bars);
     out.push({ low, high, from, to: Math.max(...bars), members: members.length });
     olderThan = from;
     farEdge = isSupport ? low : high;
+    nearDistance = distance;
   }
   return out;
 }
 
-const iso = (ms: number): string => new Date(ms).toISOString();
-const roundPrice = (x: number): number => Number(x.toPrecision(7));
-const round2 = (x: number): number => Math.round(x * 100) / 100;
-
 /**
  * The flip state of a zone. The side a zone formed on is the side of the last close outside it before its oldest
- * candle (where price came from). After its newest candle, 2 consecutive closes beyond the zone on the other side flip
- * it. A zone is former_support / former_resistance when it has flipped and price is now on the other side, i.e. it
- * is listed on the side opposite to the one it formed on; broke_at is the candle of the second close of that flip.
+ * candle (where price came from). Every closed candle after its oldest candle counts (R6 #1 — members can straddle a
+ * break): 2 consecutive closes beyond the zone on the other side flip it, and a close inside it resets the run. A zone
+ * is former_support / former_resistance when it has flipped and price is now on the other side, i.e. it is listed on
+ * the side opposite to the one it formed on; broke_at is the open time of the candle whose close was the second close
+ * of that flip.
  */
 function zoneState(
   candles: readonly Candle[],
@@ -282,7 +304,7 @@ function zoneState(
   let current = formedOn;
   let run = 0;
   let flipAt = -1;
-  for (let j = zone.to + 1; j <= t; j++) {
+  for (let j = zone.from + 1; j <= t; j++) {
     const s = sideOf(candles[j].close);
     if (s !== null && s !== current) {
       run++;
@@ -321,13 +343,12 @@ function zoneFacts(candles: readonly Candle[], t: number, price: number, zone: C
       break;
     }
   }
-  const gap = side === 'support' ? price - zone.high : zone.low - price;
   const { state, broke_at } = zoneState(candles, t, zone, side);
   return {
     rank,
     low: roundPrice(zone.low),
     high: roundPrice(zone.high),
-    distance_pct: gap > 0 ? round2((gap / price) * 100) : 0,
+    distance_pct: nearDistancePct(zone, side, price),
     formed_from: iso(candles[zone.from].time),
     formed_to: iso(candles[zone.to].time),
     members: zone.members,
@@ -378,7 +399,7 @@ export function computeSrZones(candles: readonly Candle[], t: number, price: num
   const flags: SrZoneFlag[] = [];
   if (resistance.length === 0) flags.push('no_zone_above');
   if (support.length === 0) flags.push('no_zone_below');
-  if ([...support, ...resistance].some((z) => z.low <= price && price <= z.high)) flags.push('price_inside_zone');
+  if ([...support, ...resistance].some((z) => isPriceInsideZone(z, price))) flags.push('price_inside_zone');
 
   let volumeVs20: number | null = null;
   if (t >= P.volumeWindowBars) {

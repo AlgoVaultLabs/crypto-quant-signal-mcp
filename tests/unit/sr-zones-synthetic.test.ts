@@ -214,3 +214,166 @@ describe('SR-ZONES-W1 — volume, short history, overlaps, summary', () => {
     expect(text).toMatch(/resistance zone 1 at 102–[\d.]+, [\d.]+% above \(support until \d{4}-\d{2}-\d{2}\)/);
   });
 });
+
+/**
+ * SR-ZONES-W1 R6 (CH3 audit) — the formula rules the audit found unpinned or wrong, each on a series whose answer is
+ * known by construction. Every case below ends with its decisive candles inside the last 3, where no swing point is
+ * confirmed yet, so the zone under test stays the one the formula lists.
+ */
+describe('SR-ZONES-W1 R6 #1 — a break is judged from the zone\'s oldest candle', () => {
+  it('a two-close break, then an in-band retest that becomes the newest member → broke_at is the breakout\'s second close', () => {
+    const b = new SeriesBuilder(60).trendTo(96);
+    const first = b.candles.length;
+    for (let i = 0; i < 6; i++) b.push(102, 103, 99, 101); // red base: support edges [99, 101.5] with the retest
+    const breakout = b.candles.length; // closes 102.5 and 102.6, above the zone, without a new swing high
+    b.push(101, 102.6, 100.9, 102.5).push(102.5, 102.7, 101.8, 102.6).push(102.6, 102.8, 101.9, 102.7).push(102.7, 102.9, 102, 102.8);
+    const retest = b.candles.length; // dips back into the zone from above and closes above it
+    b.push(102.8, 102.85, 100.5, 102);
+    b.trendTo(132);
+    const z = frameOf(b.candles, 133).support[0];
+    expect(z.formed_from).toBe(iso(b.candles[first].time));
+    expect(z.formed_to).toBe(iso(b.candles[retest].time)); // the retest is the newest member
+    expect(z.state).toBe('former_resistance');
+    expect(z.broke_at).toBe(iso(b.candles[breakout + 1].time));
+  });
+});
+
+describe('SR-ZONES-W1 R6 #6 — the state rule: 2 consecutive closes beyond, with price now on the other side', () => {
+  it('two closes beyond, then back on the original side → intact, broke_at null', () => {
+    const b = new SeriesBuilder(210).trendTo(108);
+    const first = b.candles.length;
+    b.base(99, 6); // support edges [99, 101]; price came from above
+    b.push(102, 102.4, 97.4, 97.5).push(97.5, 98, 96.5, 97); // two closes below
+    b.push(97, 103.5, 96.9, 103); // back above, where the zone formed from
+    const f = frameOf(b.candles, 103.5);
+    const z = f.support[0];
+    expect(z.formed_from).toBe(iso(b.candles[first].time));
+    expect(edges(z)).toEqual([99, 101]);
+    expect(z.state).toBe('intact');
+    expect(z.broke_at).toBeNull();
+  });
+
+  it('beyond, inside, beyond → intact (a close inside the zone resets the run)', () => {
+    const b = new SeriesBuilder(210).trendTo(108);
+    const first = b.candles.length;
+    b.base(99, 6); // listed above price, as resistance: edges [102, 102 + 0.25 × ATR]
+    b.push(102, 102.4, 100.6, 101); // below
+    b.push(101, 102.8, 100.8, 102.5); // inside
+    b.push(102.5, 102.6, 100.7, 101); // below
+    const f = frameOf(b.candles, 100.9);
+    const z = f.resistance[0];
+    expect(z.formed_from).toBe(iso(b.candles[first].time));
+    expect(z.low).toBe(102);
+    expect(z.state).toBe('intact');
+    expect(z.broke_at).toBeNull();
+  });
+});
+
+describe('SR-ZONES-W1 R6 #7 — the tests_30 and volume_vs_20 windows', () => {
+  it('a test 31 to 90 candles back is not in tests_30', () => {
+    const b = new SeriesBuilder(210).trendTo(108);
+    const first = b.candles.length;
+    b.base(99, 6).trendTo(306); // the six base tests end 34 candles before the last closed one
+    const z = frameOf(b.candles, 307).support[0];
+    expect(z.formed_from).toBe(iso(b.candles[first].time));
+    expect(z.touch_bars_90).toBe(6);
+    expect(z.tests_30).toBe(0);
+  });
+
+  it('an entry from above that closes inside the zone is not a test', () => {
+    const b = new SeriesBuilder(210).trendTo(108);
+    b.base(99, 6).trendTo(108);
+    b.push(108, 108.5, 99.8, 100.5); // enters [99, 101] from above and closes inside it
+    b.push(100.5, 106.9, 100.4, 106.5);
+    const z = frameOf(b.candles, 107).support[0];
+    expect(edges(z)).toEqual([99, 101]);
+    expect(z.tests_30).toBe(6); // the six base candles only
+  });
+
+  it('mirror: a resistance zone tested from below counts each test', () => {
+    const b = new SeriesBuilder(6).trendTo(102);
+    const first = b.candles.length;
+    for (let i = 0; i < 6; i++) b.push(109, 111, 107, 108); // top base: resistance edges [109, 111]
+    b.trendTo(90);
+    const z = frameOf(b.candles, 89.5).resistance[0];
+    expect(z.formed_from).toBe(iso(b.candles[first].time));
+    expect(edges(z)).toEqual([109, 111]);
+    expect(z.tests_30).toBe(6); // each top-base candle came from a close below 109, traded up to it and closed back below
+  });
+
+  it('volume_vs_20 averages exactly the 20 candles before the last closed one', () => {
+    const b = new SeriesBuilder(210).trendTo(108).base(99, 6).trendTo(132);
+    const t = b.candles.length - 1;
+    for (let j = t - 20; j <= t - 11; j++) b.candles[j].volume = 300;
+    for (let j = t - 10; j <= t - 1; j++) b.candles[j].volume = 100;
+    b.candles[t].volume = 200;
+    expect(frameOf(b.candles, 133).volume_vs_20).toBe(1); // 200 ÷ mean(10 × 300, 10 × 100)
+  });
+});
+
+describe('SR-ZONES-W1 R6 #8 — each next seed is older than the previous zone\'s oldest candle', () => {
+  it('a turning point beyond zone 1\'s far edge but newer than its oldest candle does not seed zone 2', () => {
+    const b = new SeriesBuilder(210).trendTo(108);
+    const first = b.candles.length;
+    b.base(99, 6);
+    const wick = b.candles.length; // two deep lower wicks: the range low (60) is dated at the last candle
+    b.push(101, 103, 60, 101.5).push(101.5, 103, 60, 102.6).push(102.5, 103.2, 102, 103);
+    const t = b.candles.length - 1;
+    const atr = wilderAtr(b.candles, t)[t] as number;
+    const f = frameOf(b.candles, 104);
+    const z1 = f.support[0];
+    expect(z1.formed_from).toBe(iso(b.candles[first].time)); // zone 1 spans the base and the last candle
+    expect(z1.formed_to).toBe(iso(b.candles[t].time));
+    expect(b.candles[wick].low).toBe(60);
+    expect(60).toBeLessThanOrEqual(z1.low - 0.5 * atr); // the wick low sits beyond zone 1's far edge by >= 0.5 × ATR
+    // The zone it would seed ([60, 101], the wick candle's low and body bottom) is further from price than zone 1 at
+    // its near edge too, so only the age clause keeps it out.
+    expect(((104 - 101) / 104) * 100).toBeGreaterThan(z1.distance_pct);
+    expect(f.support).toHaveLength(1); // nothing older than the base lies below it
+  });
+});
+
+describe('SR-ZONES-W1 R6 #3 — "price inside" in the summary is the flag\'s predicate, low <= price <= high', () => {
+  const zone = (low: number, high: number, distance_pct: number): SrZone => ({
+    rank: 1, low, high, distance_pct, formed_from: '2026-08-13T00:00:00.000Z', formed_to: '2026-08-13T00:00:00.000Z',
+    members: 1, touch_bars_90: 1, tests_30: 0, last_touch: null, state: 'intact', broke_at: null, overlaps: [],
+  });
+  const frame = (support: SrZone[], resistance: SrZone[]): SrZonesFrame => ({ support, resistance, flags: [], volume_vs_20: null });
+
+  it('a gap under 0.005% rounds distance_pct to 0, and the summary still says below, not inside', () => {
+    const text = buildSrZonesSummary('BTC', '1d', 63_456.7, frame([zone(62_800, 63_454.6, 0)], []));
+    expect(text).toContain('support zone 1 at 62800–63454.6, 0% below');
+    expect(text).not.toContain('price inside');
+  });
+
+  it('price on an edge or between the edges is inside', () => {
+    expect(buildSrZonesSummary('BTC', '1d', 63_454.6, frame([zone(62_800, 63_454.6, 0)], []))).toContain('price inside support zone 1 at 62800–63454.6');
+    expect(buildSrZonesSummary('BTC', '1d', 70_000, frame([], [zone(69_900, 70_100, 0)]))).toContain('price inside resistance zone 1 at 69900–70100');
+  });
+
+  it('mirror: a resistance zone a hair above price is above, not inside', () => {
+    const text = buildSrZonesSummary('BTC', '1d', 69_899, frame([], [zone(69_900, 70_100, 0)]));
+    expect(text).toContain('resistance zone 1 at 69900–70100, 0% above');
+    expect(text).not.toContain('price inside');
+  });
+});
+
+describe('SR-ZONES-W1 R6 #5 — overlaps list only the OTHER timeframes', () => {
+  it('two intersecting zones of the same timeframe never list each other', () => {
+    const z = (low: number, high: number, rank: number): SrZone => ({
+      rank, low, high, distance_pct: 0, formed_from: '', formed_to: '', members: 1, touch_bars_90: 0,
+      tests_30: 0, last_touch: null, state: 'intact', broke_at: null, overlaps: [],
+    });
+    const frames = attachSrZoneOverlaps([
+      { timeframe: '1d', support: [z(100, 110, 1)], resistance: [z(108, 115, 1)] }, // intersect each other
+      { timeframe: '4h', support: [z(109, 109.5, 1)], resistance: [z(200, 210, 1)] },
+    ]);
+    expect(frames[0].support[0].overlaps).toEqual([{ timeframe: '4h', side: 'support', rank: 1 }]);
+    expect(frames[0].resistance[0].overlaps).toEqual([{ timeframe: '4h', side: 'support', rank: 1 }]);
+    expect(frames[1].support[0].overlaps).toEqual([
+      { timeframe: '1d', side: 'support', rank: 1 },
+      { timeframe: '1d', side: 'resistance', rank: 1 },
+    ]);
+    expect(frames[1].resistance[0].overlaps).toEqual([]);
+  });
+});

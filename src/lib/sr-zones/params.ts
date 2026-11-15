@@ -12,6 +12,9 @@
  * his chart does not mark. Anchor result with these knobs (ATR14 2,452):
  *   support 1 62,484–63,235 (2026-08-13…08-14) · support 2 57,759–59,189 (2026-06-25…07-01) ·
  *   support 3 52,511–54,384 (2024-09-06…09-09) · resistance 1 75,836–76,449 (2026-11-08).
+ * R6 (the CH3 audit) then changed the formula, not the knobs: the flip walk starts after a zone's oldest candle, and a
+ * ladder seed whose zone is not strictly further from price at its near edge is skipped. The anchor result above is
+ * unchanged with these knobs (the anchor test locks it); the grid was not re-run.
  *
  * Read with zones.ts for what each knob does. All ATR multiples use ATR14 (Wilder) at the last closed candle.
  */

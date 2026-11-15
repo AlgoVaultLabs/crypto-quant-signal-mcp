@@ -21,6 +21,7 @@ import { FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import { intervalMsFor } from '../../src/lib/candle-guard.js';
 import { StaleUpstreamWindowError, UpstreamRateLimitError } from '../../src/lib/errors.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
+import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00.000Z');
@@ -57,6 +58,8 @@ const DATA: Record<string, Record<string, Candle[]>> = {
   BTC: { '1d': walk('1d', 1500, 1), '4h': walk('4h', 1500, 2), '1h': walk('1h', 1500, 3) },
   YOUNG: { '1d': walk('1d', 46, 4) },
   NEWBORN: { '1d': walk('1d', 15, 5) },
+  // The same price path on two timeframes (same seed), so every zone of one has a twin on the other.
+  TWIN: { '1d': walk('1d', 1500, 7), '4h': walk('4h', 1500, 7) },
 };
 
 /** Binance-shaped klines: up to 200 candles from startTime on; endTime ignored. */
@@ -324,6 +327,70 @@ describe('SR-ZONES-W1 AC2.2 — the per-candle history cache and the 60 s head r
   });
 });
 
+describe('SR-ZONES-W1 R6 #4 — only closed candles reach the formula', () => {
+  it('an extreme forming candle sets the price and changes no zone, flag or volume_vs_20', async () => {
+    const series = DATA.BTC['1d'].map((c) => ({ ...c }));
+    const forming = series[series.length - 1];
+    forming.high = forming.close * 3;
+    forming.low = forming.close * 0.3;
+    forming.volume *= 1000;
+    const d = deps({ getCandles: async (_coin, _tf, startTime) => series.filter((c) => c.time >= startTime).slice(0, 200) });
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
+    const closed = series.slice(-1001, -1); // the window's 1000 closed candles, the forming one excluded
+    const expected = computeSrZones(closed, closed.length - 1, forming.close);
+    if (!expected.ok) throw new Error(expected.reason);
+    expect(r.price).toBe(forming.close);
+    const [res] = r.results;
+    expect(res.support).toEqual(expected.frame.support);
+    expect(res.resistance).toEqual(expected.frame.resistance);
+    expect(res.flags).toEqual(expected.frame.flags);
+    expect(res.volume_vs_20).toBe(expected.frame.volume_vs_20);
+  });
+});
+
+describe('SR-ZONES-W1 R6 #5 — overlaps reach the response', () => {
+  it('every zone lists exactly the intersecting zones of the other requested timeframe, both ways', async () => {
+    const r = okOf(await runGetSrZones({ coin: 'TWIN', timeframes: ['1d', '4h'] }, keyed(), deps()));
+    type Res = (typeof r.results)[number];
+    const zonesOf = (res: Res) => (['support', 'resistance'] as const).flatMap((side) => res[side].map((zone: SrZone) => ({ side, zone })));
+    const meets = (x: SrZone, y: SrZone): boolean => x.low <= y.high && y.low <= x.high;
+    const [a, b] = r.results;
+    let pairs = 0;
+    for (const [self, other] of [[a, b], [b, a]] as const) {
+      for (const { zone } of zonesOf(self)) {
+        const expected = zonesOf(other)
+          .filter((o) => meets(zone, o.zone))
+          .map((o) => ({ timeframe: other.timeframe, side: o.side, rank: o.zone.rank }));
+        expect(zone.overlaps).toEqual(expected);
+        pairs += expected.length;
+      }
+    }
+    expect(pairs).toBeGreaterThan(0); // the twin series share zones, so the check is not vacuous
+  });
+});
+
+describe('SR-ZONES-W1 R6 #9 — price comes from the freshest read', () => {
+  it('one window served from cache, the other re-read: price and timestamp are the re-read\'s', async () => {
+    let now = NOW;
+    const d = deps({
+      nowMs: () => now,
+      getCandles: async (coin, tf, startTime, endTime) => {
+        const page = binanceLike(coin, tf, startTime);
+        return tf === '1d' && now > NOW && endTime === undefined ? withFormingPrice(page, 61_111.1) : page;
+      },
+    });
+    await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d); // 1d read at NOW
+    now = NOW + 50_000;
+    await runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d); // 4h read at NOW + 50 s
+    now = NOW + 70_000; // 1d is 70 s old (re-read), 4h 20 s old (cached)
+    const before = d.calls.length;
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['4h', '1d'] }, keyed(), d));
+    expect(d.calls.slice(before).map(([, tf]) => tf)).toEqual(['1d']);
+    expect(r.price).toBe(61_111.1);
+    expect(r.timestamp).toBe(now / 1000);
+  });
+});
+
 describe('SR-ZONES-W1 — the §0 response shape', () => {
   it('carries exactly the §0 fields, the frozen strings and at most 3 zones a side', async () => {
     const r = okOf(await runGetSrZones({ coin: 'btc', timeframes: ['1d', '4h'] }, keyed(), deps()));
@@ -384,6 +451,20 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
     // The head page is a serving read (no endTime); every later page is a history read.
     expect(fakeAdapterCandles.mock.calls[0][4]).toBeUndefined();
     expect(fakeAdapterCandles.mock.calls.slice(1).every((c) => typeof c[4] === 'number')).toBe(true);
+  });
+
+  it('R6 #10: 2 timeframes through the pipeline row → 2 results and exactly 2 units', async () => {
+    const lic = keyed();
+    const outcome = await callTool({
+      tool: 'get_sr_zones',
+      input: { coin: 'BTC', timeframes: ['1d', '4h'] } as unknown as ValidatedToolInput,
+      channel: 'mcp',
+      license: lic,
+    });
+    expect(outcome.ok).toBe(true);
+    const body = JSON.parse((toMcpToolResult(outcome).content[0] as { text: string }).text);
+    expect(body.results.map((x: { timeframe: string }) => x.timeframe)).toEqual(['1d', '4h']);
+    expect(used(lic)).toBe(2);
   });
 
   it('a call with nothing served is an in-band MCP error', async () => {

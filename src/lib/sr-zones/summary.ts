@@ -5,7 +5,7 @@
  * facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks every string literal in src/lib/sr-zones/**, NOTE, ORDER
  * and this template's output on the last 365 fixture candles.
  */
-import type { SrZone, SrZonesFrame } from './zones.js';
+import { isPriceInsideZone, type SrZone, type SrZonesFrame } from './zones.js';
 
 export const SR_ZONES_NOTE = 'Zones mark where price has clustered before. Price can move through any zone.';
 
@@ -25,11 +25,14 @@ function formatTime(isoTime: string, timeframe: string): string {
   return timeframe === '1d' ? isoTime.slice(0, 10) : `${isoTime.slice(0, 16).replace('T', ' ')} UTC`;
 }
 
-function nearestPart(zone: SrZone | undefined, side: 'support' | 'resistance', timeframe: string): string {
+function nearestPart(zone: SrZone | undefined, side: 'support' | 'resistance', timeframe: string, price: number): string {
   const where = side === 'support' ? 'below' : 'above';
   if (!zone) return `no ${side} zone ${where} in the loaded history`;
   const range = `${formatPrice(zone.low)}–${formatPrice(zone.high)}`;
-  const position = zone.distance_pct === 0 ? `price inside ${side} zone 1 at ${range}` : `${side} zone 1 at ${range}, ${zone.distance_pct}% ${where}`;
+  // R6 #3: "inside" is the flag's predicate on the zone's edges, never a rounded distance_pct of 0.
+  const position = isPriceInsideZone(zone, price)
+    ? `price inside ${side} zone 1 at ${range}`
+    : `${side} zone 1 at ${range}, ${zone.distance_pct}% ${where}`;
   if (zone.state === 'intact' || zone.broke_at === null) return position;
   const was = zone.state === 'former_support' ? 'support' : 'resistance';
   return `${position} (${was} until ${formatTime(zone.broke_at, timeframe)})`;
@@ -39,8 +42,8 @@ function nearestPart(zone: SrZone | undefined, side: 'support' | 'resistance', t
 export function buildSrZonesSummary(coin: string, timeframe: string, price: number, frame: SrZonesFrame): string {
   const parts = [
     `${frame.support.length} support and ${frame.resistance.length} resistance zones`,
-    nearestPart(frame.support[0], 'support', timeframe),
-    nearestPart(frame.resistance[0], 'resistance', timeframe),
+    nearestPart(frame.support[0], 'support', timeframe, price),
+    nearestPart(frame.resistance[0], 'resistance', timeframe, price),
   ];
   if (frame.volume_vs_20 !== null) parts.push(`last closed candle volume ${frame.volume_vs_20}× its 20-candle average`);
   return `${coin} ${timeframe} at ${formatPrice(price)}: ${parts.join('; ')}.`;

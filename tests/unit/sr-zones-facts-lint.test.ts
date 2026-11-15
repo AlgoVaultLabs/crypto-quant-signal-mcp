@@ -1,6 +1,7 @@
 /**
  * SR-ZONES-W1 AC1.4 — the facts-only lint. get_sr_zones states where zones are; it never says what price will do.
- * Every string literal under src/lib/sr-zones/**, the tool description and its param strings, NOTE, ORDER and the
+ * Every string literal under src/lib/sr-zones/** and in the handler src/tools/get-sr-zones.ts (unserved reasons, the
+ * refusal message and suggested_action — R6 #11), the tool description and its param strings, NOTE, ORDER and the
  * summary on each of the last 365 fixture candles must match none of FORBIDDEN. scripts/sr-zones-smoke.mjs runs the
  * same pattern over live responses; a test below pins the two patterns equal.
  *
@@ -59,6 +60,10 @@ const libLiterals: Array<[string, string]> = walk(LIB).flatMap((f) =>
   stringLiterals(f).map((s): [string, string] => [relative(REPO, f), s]),
 );
 
+/** R6 #11: the handler emits strings too — every unserved reason, the refusal message and its suggested_action. */
+const HANDLER = join(REPO, 'src', 'tools', 'get-sr-zones.ts');
+const handlerLiterals: Array<[string, string]> = stringLiterals(HANDLER).map((s): [string, string] => [relative(REPO, HANDLER), s]);
+
 const candles = loadBtcFixture();
 const summaries: string[] = [];
 for (let t = candles.length - 365; t < candles.length; t++) {
@@ -100,6 +105,20 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
   });
 
   it.each(libLiterals)('%s literal has no prediction word: %s', (_file, s) => {
+    expect(s.match(FORBIDDEN)).toBeNull();
+  });
+
+  it('read the handler\'s emitted strings (non-vacuity)', () => {
+    const texts = handlerLiterals.map(([, s]) => s);
+    expect(texts).toContain(
+      'Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.',
+    );
+    expect(texts).toContain(' is rate-limiting requests');
+    expect(texts).toContain('No requested timeframe could be served for ');
+    expect(texts).toContain(' candle request failed');
+  });
+
+  it.each(handlerLiterals)('%s literal has no prediction word: %s', (_file, s) => {
     expect(s.match(FORBIDDEN)).toBeNull();
   });
 
