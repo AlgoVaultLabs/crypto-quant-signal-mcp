@@ -62,6 +62,16 @@ describe('sr-zones-smoke --self-test', () => {
     expect(r.status).toBe(0);
   });
 
+  it('R10 #2: a FAIL then an unreachable call is the run\'s FAIL; an unreachable first call is INDETERMINATE', { timeout: 30_000 }, () => {
+    const r = run('--self-test');
+    for (const line of [
+      'end to end: a FAIL then an unreachable call is the run\'s FAIL',
+      'end to end: an unreachable first call is the run\'s INDETERMINATE, with nothing to lint',
+    ]) expect(r.stdout, line).toContain(`PASS  ${line}`);
+    expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=PASS');
+    expect(r.status).toBe(0);
+  });
+
   it('R7 #1: rpc() is the only fetch call site, so the self-test above covers every POST', () => {
     const src = readFileSync(SMOKE, 'utf8');
     expect(src.match(ANY_FETCH_CALL)).toHaveLength(1);

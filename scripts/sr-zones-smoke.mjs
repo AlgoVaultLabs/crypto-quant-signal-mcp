@@ -221,9 +221,10 @@ function finalVerdict(failures, unverified) {
 
 /**
  * Checks 1-5 through `rpcCall(payload)` (JSON-RPC) and `toolCall(args)` (get_sr_zones), waiting with `sleep(ms)`. It
- * never exits: main() and the self-test both read its findings through finalVerdict. An unreachable host is rethrown
- * (Unreachable: nothing could be verified); any other error is a failed check. → { failures, unverified, verdict },
- * where `verdict` (finalVerdict, derived once here) is what main() exits with.
+ * neither exits nor rethrows: an unreachable host (Unreachable) is recorded as not verified and stops the remaining
+ * checks (R10 #2), so a check that already failed keeps the run FAIL; any other error is a failed check. The facts lint
+ * judges only what was collected. → { failures, unverified, verdict }, where `verdict` (finalVerdict, derived once
+ * here) is what main() exits with.
  */
 async function runChecks({ rpcCall, toolCall, sleep, young, log = console.log }) {
   const failures = [];
@@ -269,12 +270,14 @@ async function runChecks({ rpcCall, toolCall, sleep, young, log = console.log })
     );
     lintAll(`${young} 1d`, yl, young);
   } catch (e) {
-    if (e instanceof Unreachable) throw e;
-    check(false, e instanceof Error ? e.message : String(e));
+    if (e instanceof Unreachable) report('indeterminate', e.message);
+    else check(false, e instanceof Error ? e.message : String(e));
   }
 
+  // No string collected: tools/list or the first call after it already failed or went unverified, so a skip is never a PASS.
   const lint = lintHits(lintTargets);
-  check(lint.count > 0 && lint.hits.length === 0, `facts lint on ${lint.count} returned strings (requested coin symbol masked)${lint.hits.length ? ` — ${lint.hits.map(([p, s]) => `${p}: ${s}`).join(' | ')}` : ''}`);
+  if (lint.count === 0) log('SKIP  facts lint: nothing was collected');
+  else check(lint.hits.length === 0, `facts lint on ${lint.count} returned strings (requested coin symbol masked)${lint.hits.length ? ` — ${lint.hits.map(([p, s]) => `${p}: ${s}`).join(' | ')}` : ''}`);
   return { failures, unverified, verdict: finalVerdict(failures, unverified) };
 }
 
@@ -338,13 +341,15 @@ async function selfTest() {
   };
   // R9 #3 end to end: runChecks (what main() runs) over scripted answers per coin, a silent log, an instant sleep.
   const TOOLS = { tools: [{ name: 'get_sr_zones', description: 'Returns support and resistance zones for one coin.', inputSchema: {} }] };
-  const endToEnd = async (perCoin) => {
+  const endToEnd = async (perCoin, rpcCall = async (p) => (p.method === 'tools/list' ? TOOLS : {})) => {
     const seen = {};
     const found = await runChecks({
-      rpcCall: async (p) => (p.method === 'tools/list' ? TOOLS : {}),
+      rpcCall,
       toolCall: async (a) => {
         seen[a.coin] = (seen[a.coin] ?? -1) + 1;
-        return perCoin[a.coin][Math.min(seen[a.coin], perCoin[a.coin].length - 1)];
+        const next = perCoin[a.coin][Math.min(seen[a.coin], perCoin[a.coin].length - 1)];
+        if (next instanceof Error) throw next; // a scripted unreachable call
+        return next;
       },
       sleep: async () => {},
       young: 'CT',
@@ -407,6 +412,11 @@ async function selfTest() {
       const eth = [answer(edit(sampleBody('ETH', ['1h']), (b) => { b.results[0].summary += ' Price will hold.'; }))];
       return (await endToEnd({ BTC: [answer(loadingBody(['1d'], ['4h']))], ETH: eth, CT: ctOk })) === '["FAIL",1]';
     }],
+    // R10 #2: an unreachable call is could-not-verify and ends the run; a check that already failed keeps it FAIL.
+    ['end to end: a FAIL then an unreachable call is the run\'s FAIL', async () =>
+      (await endToEnd({ BTC: [answer(edit(btc, (b) => { b.venue = 'BYBIT'; }))], ETH: [new Unreachable('POST failed')], CT: ctOk })) === '["FAIL",1]'],
+    ['end to end: an unreachable first call is the run\'s INDETERMINATE, with nothing to lint', async () =>
+      (await endToEnd({}, async () => { throw new Unreachable('POST failed'); })) === '["INDETERMINATE",3]'],
   ];
   let failed = 0;
   for (const [name, fn] of cases) {
@@ -433,19 +443,13 @@ async function main() {
   }
 
   let nextId = 3;
-  try {
-    const found = await runChecks({
-      rpcCall: (payload) => rpc(key, payload),
-      toolCall: (a) => callTool(key, nextId++, 'get_sr_zones', a),
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      young: args.young,
-    });
-    verdict(...found.verdict);
-  } catch (e) {
-    // runChecks rethrows only Unreachable: the host could not be asked, so nothing was verified.
-    console.log(`INDETERMINATE: ${e instanceof Error ? e.message : String(e)}`);
-    verdict('INDETERMINATE', 3);
-  }
+  const found = await runChecks({
+    rpcCall: (payload) => rpc(key, payload),
+    toolCall: (a) => callTool(key, nextId++, 'get_sr_zones', a),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    young: args.young,
+  });
+  verdict(...found.verdict); // the one verdict, derived in runChecks
 }
 
 main();
