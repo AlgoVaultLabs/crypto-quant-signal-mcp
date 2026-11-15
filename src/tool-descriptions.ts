@@ -113,6 +113,15 @@ export const GET_EQUITY_REGIME_DESCRIPTION =
 export const GET_TRACK_RECORD_DESCRIPTION =
   'Returns the AlgoVault track record — aggregated PFE win rates by call type, timeframe and asset tier, plus the evaluation methodology and window. The same verified aggregate the performance://signal-performance resource serves, callable from harnesses that bridge tools only. Defaults to the compact aggregate; use include for the per-asset, per-venue or recent-signal breakdowns. Read-only, no side effects.';
 
+// SR-ZONES-W1: get_sr_zones. The description and the coin / timeframes strings are the wave spec's frozen §0 copy,
+// verbatim (Prompt/SR-ZONES-W1.md); the facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks all four.
+// Unlisted (publicListing false), so outside the TOP_20 keyword canary and its length budget.
+export const GET_SR_ZONES_DESCRIPTION =
+  'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.';
+export const PARAM_DESC_SR_ZONES_COIN = 'Coin symbol, e.g. BTC or ETH.';
+export const PARAM_DESC_SR_ZONES_TIMEFRAMES = 'One to three candle timeframes, e.g. ["1h", "4h"]. One result per timeframe.';
+export const PARAM_DESC_SR_ZONES_VENUE = 'Venue: BINANCE, the default and the only value.';
+
 // Param describe() strings — type + units + allowed values + example; ≤80 chars
 // each for the 3 BM25-audited tools (length-locked by the keyword canary).
 export const PARAM_DESC_TRACK_RECORD_INCLUDE =

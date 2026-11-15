@@ -23,6 +23,8 @@ const LIVE_TOOLS = [
   'get_track_record', 'scan_market_regimes',
   // DECISION-CALL-V1-W2 R8: pre_trade_check (11 → 12 declared, 9 → 10 live).
   'pre_trade_check',
+  // SR-ZONES-W1: get_sr_zones (12 → 13 declared, 10 → 11 live).
+  'get_sr_zones',
 ].sort();
 
 // Price-key tolerant of CH3's re-keying (alias-keyed today → canonical after CH3).
@@ -31,7 +33,7 @@ const price = (canonical: string, alias?: string): number | undefined =>
   (alias ? (TOOL_PRICING as Record<string, number>)[alias] : undefined);
 
 describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
-  it('(a) name ∪ aliases == the declared tool set (12 names, alias included)', () => {
+  it('(a) name ∪ aliases == the declared tool set (13 names, alias included)', () => {
     expect([...allToolNames()].sort()).toEqual(LIVE_TOOLS);
   });
 
@@ -60,7 +62,7 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(json).not.toMatch(/outcome_|eligible_non_hold|descriptionRef|trackCall|owner_key|ipHash/);
   });
 
-  it('(c2) projection lists all 12 callable names with public fields only', () => {
+  it('(c2) projection lists all 13 callable names with public fields only', () => {
     const proj = projectCapabilities().tools;
     expect(proj.map((t) => t.name).sort()).toEqual(LIVE_TOOLS);
     const BASE = ['canonical', 'channels', 'description', 'enabled', 'name', 'quota', 'x402'];
@@ -93,10 +95,15 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(getFeature('nonexistent_tool')).toBeUndefined();
   });
 
-  it('registry has 11 canonical specs; chat/search/track-record are rate-limited (not call-metered)', () => {
+  it('registry has 12 canonical specs; chat/search/track-record are rate-limited (not call-metered)', () => {
     // SCAN-MARKET-REGIMES-W1-V2 CH2: 9 → 10 (scan_market_regimes, billed per returned row).
     // DECISION-CALL-V1-W2 R8: 10 → 11 (pre_trade_check, one unit per decision).
-    expect(FEATURE_REGISTRY).toHaveLength(11);
+    // SR-ZONES-W1: 11 → 12 (get_sr_zones, one unit per served timeframe; MCP only, unpriced, unlisted).
+    expect(FEATURE_REGISTRY).toHaveLength(12);
+    expect(getFeature('get_sr_zones')!.quota).toEqual({ unit: 'per-verdict', holdFree: false });
+    expect(getFeature('get_sr_zones')!.x402).toBeNull();
+    expect(getFeature('get_sr_zones')!.publicListing).toBe(false);
+    expect(getFeature('get_sr_zones')!.residency).toBe('any');
     expect(getFeature('pre_trade_check')!.quota.unit).toBe('per-call');
     expect(getFeature('scan_market_regimes')!.quota.unit).toBe('per-verdict');
     expect(getFeature('chat_knowledge')!.quota.unit).toBe('rate-limited');

@@ -361,6 +361,20 @@ export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+// get_sr_zones — SR-ZONES-W1
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/*
+ * get_sr_zones' enum-valued parameters, imported BY NAME by the Zod schema in src/index.ts (the REL-3 static parser
+ * resolves a named import, not a member path). Not in `PUBLIC_TOOL_ENUM_PARAMS`: the tool is unlisted until a release
+ * wave gives it a docs partial, and every entry there must render into one.
+ */
+/** `timeframes`: the candle timeframes get_sr_zones serves; a call names 1 to 3 of them. */
+export const SR_ZONES_TIMEFRAMES = ['15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'] as const;
+/** `venue`: get_sr_zones' one venue, which is also the default. */
+export const SR_ZONES_VENUES = ['BINANCE'] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 // pre_trade_check — DECISION-CALL-V1-W2 R4
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 

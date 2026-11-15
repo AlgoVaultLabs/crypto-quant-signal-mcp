@@ -165,7 +165,8 @@ describe('class preservation — tags moved, classes did not', () => {
     // `runAsCaller(processScopedTag('scan_market_regimes'), …)` — interactive, like every other tool
     // row; the pipeline's single `runAsBatch` (scan_trade_calls' background lane) is unchanged.
     // DECISION-CALL-V1-W2 R6: the pre_trade_check row adds one more class-neutral runAsCaller (12 → 13).
-    'src/lib/tool-call-pipeline.ts': { runAsCaller: 13, runAsBatch: 1 },
+    // SR-ZONES-W1 CH2: the get_sr_zones row adds one more class-neutral runAsCaller (13 → 14).
+    'src/lib/tool-call-pipeline.ts': { runAsCaller: 14, runAsBatch: 1 },
     // OPS-ASSET-CLASS-TOTALITY-W1: the daily census/check reads every active venue's instrument list
     // under ONE batch scope — a monitoring job must never spend a venue's interactive reserve.
     'src/scripts/asset-class-totality.ts': { runAsBatch: 1 },

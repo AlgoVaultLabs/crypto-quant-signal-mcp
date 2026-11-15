@@ -20,6 +20,7 @@ import {
   GET_TRACK_RECORD_DESCRIPTION,
   SCAN_MARKET_REGIMES_DESCRIPTION,
   PRE_TRADE_CHECK_DESCRIPTION,
+  GET_SR_ZONES_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
 } from '../tool-descriptions.js';
 // SCAN-RANKBY-W1: the rankBy lens set is advertised on /capabilities from the SINGLE
@@ -129,6 +130,7 @@ const DESCRIPTIONS: Record<string, string> = {
   GET_TRACK_RECORD_DESCRIPTION,
   SCAN_MARKET_REGIMES_DESCRIPTION,
   PRE_TRADE_CHECK_DESCRIPTION,
+  GET_SR_ZONES_DESCRIPTION,
 };
 
 /**
@@ -319,6 +321,23 @@ const FEATURE_REGISTRY_LITERAL = [
     quota: { unit: 'rate-limited', holdFree: false },
     x402: null,
     descriptionRef: 'GET_TRACK_RECORD_DESCRIPTION',
+    enabled: true,
+    publicListing: false,
+    residency: 'any',
+  },
+  {
+    // SR-ZONES-W1 — support/resistance zones, facts only, Binance perpetuals.
+    //   • `per-verdict`: one unit per SERVED timeframe (one `results` entry); an unserved timeframe and a call
+    //     with none served are unbilled (src/tools/get-sr-zones.ts).
+    //   • MCP only, `x402: null`: every other channel stays off until a release wave prices it.
+    //   • `publicListing: false`: kept off nav, /tools and docs until that release wave flips it.
+    //   • `residency: 'any'`: reads Binance candles only, no hosted state.
+    name: 'get_sr_zones',
+    aliases: [],
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    quota: { unit: 'per-verdict', holdFree: false },
+    x402: null,
+    descriptionRef: 'GET_SR_ZONES_DESCRIPTION',
     enabled: true,
     publicListing: false,
     residency: 'any',

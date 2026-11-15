@@ -1,8 +1,8 @@
 /**
  * SR-ZONES-W1 AC1.4 — the facts-only lint. get_sr_zones states where zones are; it never says what price will do.
- * Every string literal under src/lib/sr-zones/**, NOTE, ORDER and the summary on each of the last 365 fixture
- * candles must match none of FORBIDDEN. (The tool description and its param strings join this list in CH2, when they
- * land in src/tool-descriptions.ts.)
+ * Every string literal under src/lib/sr-zones/**, the tool description and its param strings, NOTE, ORDER and the
+ * summary on each of the last 365 fixture candles must match none of FORBIDDEN. scripts/sr-zones-smoke.mjs runs the
+ * same pattern over live responses; a test below pins the two patterns equal.
  *
  * The lint is a gate that could pass vacuously, so it carries a two-way self-test of the regex and a floor on how
  * many strings it read.
@@ -14,6 +14,12 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSrZones } from '../../src/lib/sr-zones/zones.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import {
+  GET_SR_ZONES_DESCRIPTION,
+  PARAM_DESC_SR_ZONES_COIN,
+  PARAM_DESC_SR_ZONES_TIMEFRAMES,
+  PARAM_DESC_SR_ZONES_VENUE,
+} from '../../src/tool-descriptions.js';
 import { loadBtcFixture } from './sr-zones-helpers.js';
 
 const FORBIDDEN =
@@ -95,6 +101,25 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
 
   it.each(libLiterals)('%s literal has no prediction word: %s', (_file, s) => {
     expect(s.match(FORBIDDEN)).toBeNull();
+  });
+
+  it('the description and param strings are the frozen §0 copy and carry no prediction word', () => {
+    expect(GET_SR_ZONES_DESCRIPTION).toBe(
+      'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.',
+    );
+    expect(PARAM_DESC_SR_ZONES_COIN).toBe('Coin symbol, e.g. BTC or ETH.');
+    expect(PARAM_DESC_SR_ZONES_TIMEFRAMES).toBe('One to three candle timeframes, e.g. ["1h", "4h"]. One result per timeframe.');
+    for (const s of [GET_SR_ZONES_DESCRIPTION, PARAM_DESC_SR_ZONES_COIN, PARAM_DESC_SR_ZONES_TIMEFRAMES, PARAM_DESC_SR_ZONES_VENUE]) {
+      expect(s.match(FORBIDDEN)).toBeNull();
+    }
+  });
+
+  it('the live smoke lints with the same pattern', () => {
+    const smoke = readFileSync(join(REPO, 'scripts', 'sr-zones-smoke.mjs'), 'utf8');
+    const m = smoke.match(/const FORBIDDEN =\s*\n?\s*\/(.+)\/([a-z]*);/);
+    expect(m, 'scripts/sr-zones-smoke.mjs declares FORBIDDEN').not.toBeNull();
+    expect(m![1]).toBe(FORBIDDEN.source);
+    expect(m![2]).toBe(FORBIDDEN.flags);
   });
 
   it('NOTE and ORDER are the frozen §0 strings and carry no prediction word', () => {

@@ -838,7 +838,13 @@ describe('tool-call parity — every channel against MCP', () => {
 describe('unknown argument keys — refused on every channel, never billed (OPS-TOOL-PARAM-TRUTH-W1)', () => {
   const UNKNOWN = { venue: 'BINANCE' };
   /** A valid value for every key some tool REQUIRES; a new required key fails loudly below. */
-  const REQUIRED_SAMPLE: Record<string, unknown> = { coin: 'BTC', symbol: 'AAPL', query: 'market regime', question: 'What does AlgoVault do?', side: 'long', sizeUsd: 10_000 };
+  const REQUIRED_SAMPLE: Record<string, unknown> = { coin: 'BTC', symbol: 'AAPL', query: 'market regime', question: 'What does AlgoVault do?', side: 'long', sizeUsd: 10_000, timeframes: ['1d'] };
+  /**
+   * SR-ZONES-W1: get_sr_zones DECLARES `venue` (its frozen contract), so `venue` is not unknown to it. A tool
+   * that declares `venue` is probed with `exchange` instead (the key every other tool uses), so each call
+   * still carries exactly one unknown key. Every other tool keeps the original `venue` probe.
+   */
+  const unknownKeyFor = (t: Listed): string => (Object.hasOwn(t.inputSchema.properties ?? {}, 'venue') ? 'exchange' : 'venue');
   const FREE_LICENSE = { tier: 'free' as const, key: null, outcome: 'RESOLVED' as const };
   const freeCtx = () => ({ ...ctxFor(), license: FREE_LICENSE, ipHash: 'v2:unknownkeyfree000' });
   type Listed = { name: string; inputSchema: { properties?: Record<string, unknown>; required?: string[] } };
@@ -867,12 +873,13 @@ describe('unknown argument keys — refused on every channel, never billed (OPS-
       for (const t of listed) {
         const before = meters();
         logSpy.mockClear();
-        const r = await license.requestContext.run(ctxFor() as never, () => mcpClient.callTool({ name: t.name, arguments: { ...requiredArgs(t), ...UNKNOWN } })) as { content: Array<{ text: string }>; isError?: boolean };
+        const unknownKey = unknownKeyFor(t);
+        const r = await license.requestContext.run(ctxFor() as never, () => mcpClient.callTool({ name: t.name, arguments: { ...requiredArgs(t), [unknownKey]: UNKNOWN.venue } })) as { content: Array<{ text: string }>; isError?: boolean };
         const text = r.content[0].text;
         expect(r.isError, `${t.name} served an unknown key`).toBe(true);
-        expect(text).toContain(`Unknown parameter(s): venue. Valid parameters: ${Object.keys(t.inputSchema.properties ?? {}).join(', ')}.`);
+        expect(text).toContain(`Unknown parameter(s): ${unknownKey}. Valid parameters: ${Object.keys(t.inputSchema.properties ?? {}).join(', ')}.`);
         expect(issuesOf(text).map((i) => i.code), `${t.name}: the unknown key must be the call's only defect`).toEqual(['unrecognized_keys']);
-        expect(logSpy.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[tool-args]'))).toEqual([`[tool-args] refused tool=${t.name} unknown=venue keyed=n`]);
+        expect(logSpy.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[tool-args]'))).toEqual([`[tool-args] refused tool=${t.name} unknown=${unknownKey} keyed=n`]);
         expect(meters(), `${t.name}: a refused call wrote or dispatched something`).toEqual(before);
       }
     } finally {

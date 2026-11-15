@@ -93,6 +93,7 @@ import { runGetTrackRecord } from '../tools/get-track-record.js';
 import { runScanMarketRegimes } from '../tools/scan-market-regimes.js';
 import { runPreTradeCheck } from '../tools/pre-trade-check.js';
 import { recordPreTradeCheck } from './pre-trade-check-log.js';
+import { runGetSrZones } from '../tools/get-sr-zones.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor } from '../tools/knowledge-tools.js';
 import { formatSearchKnowledgeResponse } from './search-knowledge-formatter.js';
 import { chatQuotaApiKey, buildChatQuotaNotice } from './chat-rate-limit.js';
@@ -626,6 +627,35 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logOnRefusal: false,
     cohort: true,
     timeframes: REGIME_TIMEFRAMES,
+    enrich: null,
+    mcpText: null,
+    refusalJson: 'compact',
+  },
+  get_sr_zones: {
+    // SR-ZONES-W1 CH2: refuses in-band (structured payload + isError), unbilled — the quota wall, and a call with no
+    // requested timeframe served. A served call bills one unit per served timeframe inside the handler. The input
+    // takes `timeframes` (plural), so the single-`timeframe` admission row does not apply.
+    run: async (input, license, attribute, served) => {
+      const out = await runAsCaller(processScopedTag('get_sr_zones'), () => attribute(served, () => runGetSrZones(
+        {
+          coin: input.coin as string,
+          timeframes: input.timeframes as string[],
+          venue: input.venue as string | undefined,
+        },
+        license,
+      )));
+      return out.kind === 'ok'
+        ? { kind: 'ok', result: out.response }
+        : { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
+    },
+    logSuccess: (_input, result) => ({
+      asset: (result as { coin: string }).coin,
+      exchange: (result as { venue: string }).venue,
+    }),
+    logError: null,
+    logOnRefusal: false,
+    cohort: false,
+    timeframes: null,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',

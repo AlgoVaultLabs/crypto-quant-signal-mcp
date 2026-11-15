@@ -103,5 +103,7 @@
     "required": true,
     "description": "A tool was ADDED. MCP clients cache tools/list at session start, so an open session does not see pre_trade_check until it reconnects (or the client re-fetches tools/list). No existing tool's input or output changed, so nothing an existing session calls breaks."
   },
-  "no_add_remove_rename_note": "This snapshot ADDS one tool (pre_trade_check). Nothing is removed or renamed, and no existing tool's input contract changes; the predecessors' `true` was about the routing contract, which this snapshot carries forward unchanged."
+  "no_add_remove_rename_note": "This snapshot ADDS one tool (pre_trade_check). Nothing is removed or renamed, and no existing tool's input contract changes; the predecessors' `true` was about the routing contract, which this snapshot carries forward unchanged.",
+  "superseded_by": "trade-call-routing-shape-snapshot-2026-11-15.json",
+  "superseded_reason": "SR-ZONES-W1 CH2 added get_sr_zones to the live tool set (10 -> 11); the routing contract is carried forward verbatim into the 2026-11-15 successor."
 }
