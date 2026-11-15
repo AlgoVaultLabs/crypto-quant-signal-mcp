@@ -54,9 +54,10 @@ const ZONE_KEYS = [
   'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
 ];
 
+/** The terminal token. process.exitCode, never process.exit(): a queued pipe write would lose the token. */
 function verdict(token, code) {
   console.log(`SR_ZONES_SMOKE_VERDICT=${token}`);
-  process.exit(code);
+  process.exitCode = code;
 }
 
 function parseArgs(argv) {
@@ -426,20 +427,21 @@ async function selfTest() {
     if (!ok) failed++;
   }
   console.log(`SR_ZONES_SMOKE_SELFTEST=${failed === 0 ? 'PASS' : 'FAIL'}`);
-  process.exit(failed === 0 ? 0 : 1);
+  process.exitCode = failed === 0 ? 0 : 1;
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args) {
     console.error('usage: node scripts/sr-zones-smoke.mjs --prod [--young <COIN>] | --self-test');
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
-  if (args.selfTest) await selfTest();
+  if (args.selfTest) return selfTest();
   const key = readKey();
   if (!key) {
     console.log('INDETERMINATE: no internal key in ~/.config/algovault/internal.env (ALGOVAULT_INTERNAL_BYPASS_KEY)');
-    verdict('INDETERMINATE', 3);
+    return verdict('INDETERMINATE', 3);
   }
 
   let nextId = 3;
