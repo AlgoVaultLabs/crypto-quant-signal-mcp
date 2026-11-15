@@ -645,6 +645,11 @@ describe('SR-ZONES-W1 R8 — a full read not finished within 10 s: unserved for 
     expect(r.unserved).toEqual([{ timeframe: '4h', reason: SLOW }]);
     expect(used(lic)).toBe(1);
     expect(d.failures.size).toBe(0);
+    // R9 #3: the prod smoke retries on exactly this reason; its pattern must match what the handler serves.
+    const smoke = readFileSync(join(__dirname, '..', '..', 'scripts', 'sr-zones-smoke.mjs'), 'utf8');
+    const declared = smoke.match(/^const LOAD_TIMEOUT = \/(.+)\/;$/m);
+    expect(declared, 'scripts/sr-zones-smoke.mjs declares LOAD_TIMEOUT').not.toBeNull();
+    expect(new RegExp(declared![1]).test(r.unserved[0].reason)).toBe(true);
   });
 
   it('the read finishes in the background and caches its window: the next call is served from it, with no request', async () => {

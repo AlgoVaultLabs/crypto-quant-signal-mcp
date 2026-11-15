@@ -13,6 +13,11 @@
  *   4. the young listing is served (a result carrying its flags), not refused;
  *   5. the facts lint passes on every string of every response.
  *
+ * Right after a deploy the cache is cold. A timeframe can then come back unserved with the server's load-timeout reason
+ * (R8: its full read goes on in the background and caches the window). Checks 2-4 treat that answer as a retry (R9 #3):
+ * they wait RETRY_WAIT_MS and call once more. A timeframe still loading after that is could-not-verify (INDETERMINATE),
+ * never a FAIL; whatever was served is still checked, and any other unserved reason still FAILs.
+ *
  * The requested coin symbol is the caller's own input echoed back (in `coin` and in the summary), not our
  * wording, so it is masked before the lint: PREDICTUSDT is a real Binance perp, and its ticker alone matches
  * `predict\w*`. Every other character of every string is linted.
@@ -23,8 +28,9 @@
  * POST refuses redirects (`redirect: 'error'`), so the key header never follows a redirect to another host. Any other
  * flag, `--url` included, is a usage error (exit 2) raised before the key file is opened.
  *
- * Verdict: exactly one terminal `SR_ZONES_SMOKE_VERDICT=PASS|FAIL|INDETERMINATE`.
- * Exit: 0 PASS · 1 FAIL (a check ran and failed) · 2 usage · 3 INDETERMINATE (could not verify: no key, unreachable).
+ * Verdict: exactly one terminal `SR_ZONES_SMOKE_VERDICT=PASS|FAIL|INDETERMINATE`, FAIL over INDETERMINATE over PASS.
+ * Exit: 0 PASS · 1 FAIL (a check ran and failed) · 2 usage · 3 INDETERMINATE (could not verify: no key, unreachable,
+ * or a timeframe still loading after one retry).
  * --self-test: exactly one terminal `SR_ZONES_SMOKE_SELFTEST=PASS|FAIL` (exit 0 / 1). Clean bodies must pass and
  * every planted defect must be caught, so a check that stopped checking turns the self-test red.
  */
@@ -37,6 +43,10 @@ const FORBIDDEN =
   /\b(will|likely|unlikely|expect\w*|predict\w*|forecast\w*|target\w*|probab\w*|chances?|should|bounce\w*|revers\w*|may hold|must hold|strong(er|est)?|weak(er|est)?)\b/i;
 
 const PROD_URL = 'https://api.algovault.com/mcp';
+/** The server's load-timeout unserved reason (src/tools/get-sr-zones.ts, R8); a handler test pins this pattern to it. */
+const LOAD_TIMEOUT = /candle history did not load within \d+ s/;
+/** How long a check waits before calling once more on a load-timeout answer (R9 #3). */
+const RETRY_WAIT_MS = 15_000;
 const RESULT_KEYS = ['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance'];
 const TOP_KEYS = ['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
 const ZONE_KEYS = [
@@ -162,6 +172,112 @@ function shapeProblems(body, expectedTimeframes) {
   return p;
 }
 
+/** Timeframes unserved only because their first full read was still loading (the read goes on and caches, R8). */
+function loadingTimeframes(body) {
+  const rows = Array.isArray(body?.unserved) ? body.unserved : [];
+  return rows.filter((u) => typeof u?.reason === 'string' && LOAD_TIMEOUT.test(u.reason)).map((u) => u.timeframe);
+}
+
+/** The young listing's check: its result is served and carries flags. */
+function youngProblems(body) {
+  const r = body?.results?.[0];
+  return r && Array.isArray(r.flags) ? [] : ['no result carrying flags'];
+}
+
+/**
+ * One get_sr_zones check (R9 #3). `call(args)` performs tools/call and `sleep(ms)` waits; the self-test stubs both.
+ * A load-timeout answer is called once more after RETRY_WAIT_MS. Timeframes still loading after that are not
+ * verified (`indeterminate`); every timeframe that was served is checked by `verify(body, servedTimeframes)`, and a
+ * refusal for any other reason is a problem. → { outcome: 'pass' | 'fail' | 'indeterminate', detail, body, bodies }
+ */
+async function checkZones(call, sleep, args, verify) {
+  let res = await call(args);
+  const bodies = [res.body];
+  let loading = loadingTimeframes(res.body);
+  const retried = loading.length > 0;
+  if (retried) {
+    await sleep(RETRY_WAIT_MS);
+    res = await call(args);
+    bodies.push(res.body);
+    loading = loadingTimeframes(res.body);
+  }
+  const want = args.timeframes.filter((tf) => !loading.includes(tf));
+  const problems = want.length === 0 ? [] : res.body && !res.isError ? verify(res.body, want) : [`refused: ${res.text}`];
+  const outcome = problems.length > 0 ? 'fail' : loading.length > 0 ? 'indeterminate' : 'pass';
+  const notes = [
+    ...(retried ? [`called again after ${RETRY_WAIT_MS / 1000} s on a load-timeout answer`] : []),
+    ...(loading.length > 0 ? [`${loading.join(', ')} still loading`] : []),
+    ...problems,
+  ];
+  return { outcome, detail: notes.length > 0 ? ` — ${notes.join('; ')}` : '', body: res.body, bodies };
+}
+
+/** FAIL when a check failed, else INDETERMINATE when something could not be verified, else PASS. */
+function finalVerdict(failures, unverified) {
+  if (failures.length > 0) return ['FAIL', 1];
+  if (unverified.length > 0) return ['INDETERMINATE', 3];
+  return ['PASS', 0];
+}
+
+/**
+ * Checks 1-5 through `rpcCall(payload)` (JSON-RPC) and `toolCall(args)` (get_sr_zones), waiting with `sleep(ms)`. It
+ * never exits: main() and the self-test both read its findings through finalVerdict. An unreachable host is rethrown
+ * (Unreachable: nothing could be verified); any other error is a failed check. → { failures, unverified, verdict },
+ * where `verdict` (finalVerdict, derived once here) is what main() exits with.
+ */
+async function runChecks({ rpcCall, toolCall, sleep, young, log = console.log }) {
+  const failures = [];
+  const unverified = [];
+  const lintTargets = [];
+  const check = (ok, line) => {
+    log(`${ok ? 'PASS' : 'FAIL'}  ${line}`);
+    if (!ok) failures.push(line);
+  };
+  const report = (outcome, line) => {
+    log(`${outcome === 'pass' ? 'PASS' : outcome === 'fail' ? 'FAIL' : 'INDETERMINATE'}  ${line}`);
+    if (outcome === 'fail') failures.push(line);
+    if (outcome === 'indeterminate') unverified.push(line);
+  };
+  const lintAll = (label, r, coin) => r.bodies.forEach((b, i) => { if (b) lintTargets.push([`${label}${i > 0 ? ' (retry)' : ''}`, b, coin]); });
+
+  try {
+    await rpcCall({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'sr-zones-smoke', version: '1' } },
+    });
+    await rpcCall({ jsonrpc: '2.0', method: 'notifications/initialized' });
+
+    const list = await rpcCall({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const tool = (list?.tools ?? []).find((t) => t.name === 'get_sr_zones');
+    check(!!tool, `tools/list lists get_sr_zones (${(list?.tools ?? []).length} tools)`);
+    if (tool) lintTargets.push(['tools/list get_sr_zones', { description: tool.description, inputSchema: tool.inputSchema }, null]);
+
+    const btc = await checkZones(toolCall, sleep, { coin: 'BTC', timeframes: ['1d', '4h'] }, shapeProblems);
+    report(btc.outcome, `BTC 1d+4h: 2 results, ≤3 zones a side, §0 fields${btc.detail}`);
+    lintAll('BTC 1d+4h', btc, 'BTC');
+
+    const eth = await checkZones(toolCall, sleep, { coin: 'ETH', timeframes: ['1h'] }, shapeProblems);
+    report(eth.outcome, `ETH 1h served${eth.detail}`);
+    lintAll('ETH 1h', eth, 'ETH');
+
+    const yl = await checkZones(toolCall, sleep, { coin: young, timeframes: ['1d'] }, youngProblems);
+    const yr = yl.outcome === 'pass' ? yl.body.results[0] : null;
+    report(
+      yl.outcome,
+      `young listing ${young} 1d served with flags` +
+        `${yr ? ` ${JSON.stringify(yr.flags)} (support ${yr.support.length}, resistance ${yr.resistance.length})` : ''}${yl.detail}`,
+    );
+    lintAll(`${young} 1d`, yl, young);
+  } catch (e) {
+    if (e instanceof Unreachable) throw e;
+    check(false, e instanceof Error ? e.message : String(e));
+  }
+
+  const lint = lintHits(lintTargets);
+  check(lint.count > 0 && lint.hits.length === 0, `facts lint on ${lint.count} returned strings (requested coin symbol masked)${lint.hits.length ? ` — ${lint.hits.map(([p, s]) => `${p}: ${s}`).join(' | ')}` : ''}`);
+  return { failures, unverified, verdict: finalVerdict(failures, unverified) };
+}
+
 /** A §0-shaped body for the self-test: one support and one resistance zone per timeframe. */
 function sampleBody(coin, timeframes) {
   const zone = (rank, low, high) => ({
@@ -205,6 +321,39 @@ async function selfTest() {
   const edit = (body, f) => { const b = structuredClone(body); f(b); return b; };
   const btc = sampleBody('BTC', ['1d', '4h']);
   const predict = sampleBody('PREDICT', ['1d']);
+  // R9 #3: checkZones over scripted answers, with a recorded (instant) sleep.
+  const LOADING = 'BINANCE candle history did not load within 10 s; the read continues in the background';
+  const BTC2 = { coin: 'BTC', timeframes: ['1d', '4h'] };
+  const answer = (body, isError = false) => ({ isError, body, text: JSON.stringify(body) });
+  const loadingBody = (served, loading) => ({ ...sampleBody('BTC', served), unserved: loading.map((timeframe) => ({ timeframe, reason: LOADING })) });
+  const refusalBody = (loading) => ({
+    error: 'no_timeframe_served', code: 'no_timeframe_served', coin: 'BTC', venue: 'BINANCE', message: 'none served',
+    unserved: loading.map((timeframe) => ({ timeframe, reason: LOADING })), suggested_action: 'retry', _algovault: { tool: 'get_sr_zones' },
+  });
+  const scripted = async (answers, args = BTC2, verify = shapeProblems) => {
+    const waits = [];
+    let calls = 0;
+    const r = await checkZones(async () => answers[Math.min(calls++, answers.length - 1)], async (ms) => { waits.push(ms); }, args, verify);
+    return { ...r, calls, waits: JSON.stringify(waits) };
+  };
+  // R9 #3 end to end: runChecks (what main() runs) over scripted answers per coin, a silent log, an instant sleep.
+  const TOOLS = { tools: [{ name: 'get_sr_zones', description: 'Returns support and resistance zones for one coin.', inputSchema: {} }] };
+  const endToEnd = async (perCoin) => {
+    const seen = {};
+    const found = await runChecks({
+      rpcCall: async (p) => (p.method === 'tools/list' ? TOOLS : {}),
+      toolCall: async (a) => {
+        seen[a.coin] = (seen[a.coin] ?? -1) + 1;
+        return perCoin[a.coin][Math.min(seen[a.coin], perCoin[a.coin].length - 1)];
+      },
+      sleep: async () => {},
+      young: 'CT',
+      log: () => {},
+    });
+    return JSON.stringify(found.verdict);
+  };
+  const ethOk = [answer(sampleBody('ETH', ['1h']))];
+  const ctOk = [answer(sampleBody('CT', ['1d']))];
   const cases = [
     ['clean BTC body passes the shape check', () => shapeProblems(btc, ['1d', '4h']).length === 0],
     ['clean BTC body passes the facts lint', () => { const l = lintHits([['btc', btc, 'BTC']]); return l.count > 0 && l.hits.length === 0; }],
@@ -221,6 +370,43 @@ async function selfTest() {
     ['another venue is caught', () => shapeProblems(edit(btc, (b) => { b.venue = 'BYBIT'; }), ['1d', '4h']).length > 0],
     ['a zero price is caught', () => shapeProblems(edit(btc, (b) => { b.price = 0; }), ['1d', '4h']).length > 0],
     ['every POST goes to https://api.algovault.com/mcp with redirects refused', postIsPinned],
+    ['a load-timeout unserved row is a retry: called again after 15 s, then served', async () => {
+      const r = await scripted([answer(loadingBody(['1d'], ['4h'])), answer(btc)]);
+      return r.outcome === 'pass' && r.calls === 2 && r.waits === '[15000]';
+    }],
+    ['still loading after the retry is INDETERMINATE, not FAIL', async () => {
+      const r = await scripted([answer(loadingBody(['1d'], ['4h'])), answer(loadingBody(['1d'], ['4h']))]);
+      return r.outcome === 'indeterminate' && r.calls === 2 && r.waits === '[15000]';
+    }],
+    ['every timeframe still loading (the call refused) is INDETERMINATE', async () => {
+      const r = await scripted([answer(refusalBody(['1d', '4h']), true), answer(refusalBody(['1d', '4h']), true)]);
+      return r.outcome === 'indeterminate' && r.calls === 2;
+    }],
+    ['another unserved reason is not retried, and FAILs', async () => {
+      const failed = { ...sampleBody('BTC', ['1d']), unserved: [{ timeframe: '4h', reason: 'BINANCE candle request failed' }] };
+      const r = await scripted([answer(failed)]);
+      return r.outcome === 'fail' && r.calls === 1 && r.waits === '[]';
+    }],
+    ['a defect in what was served FAILs while another timeframe is loading', async () => {
+      const bad = edit(loadingBody(['1d'], ['4h']), (b) => { delete b.results[0].support[0].overlaps; });
+      const r = await scripted([answer(bad), answer(bad)]);
+      return r.outcome === 'fail' && r.calls === 2;
+    }],
+    ['a clean first answer is not retried', async () => {
+      const r = await scripted([answer(btc)]);
+      return r.outcome === 'pass' && r.calls === 1 && r.waits === '[]';
+    }],
+    ['the verdict: FAIL over INDETERMINATE over PASS', () =>
+      JSON.stringify([finalVerdict(['f'], ['u']), finalVerdict([], ['u']), finalVerdict([], [])]) ===
+        JSON.stringify([['FAIL', 1], ['INDETERMINATE', 3], ['PASS', 0]])],
+    ['end to end: BTC 4h still loading after the retry is the run\'s INDETERMINATE', async () =>
+      (await endToEnd({ BTC: [answer(loadingBody(['1d'], ['4h']))], ETH: ethOk, CT: ctOk })) === '["INDETERMINATE",3]'],
+    ['end to end: loading, then served on the retry, is the run\'s PASS', async () =>
+      (await endToEnd({ BTC: [answer(loadingBody(['1d'], ['4h'])), answer(btc)], ETH: ethOk, CT: ctOk })) === '["PASS",0]'],
+    ['end to end: a forbidden word beside a loading timeframe is the run\'s FAIL', async () => {
+      const eth = [answer(edit(sampleBody('ETH', ['1h']), (b) => { b.results[0].summary += ' Price will hold.'; }))];
+      return (await endToEnd({ BTC: [answer(loadingBody(['1d'], ['4h']))], ETH: eth, CT: ctOk })) === '["FAIL",1]';
+    }],
   ];
   let failed = 0;
   for (const [name, fn] of cases) {
@@ -246,57 +432,20 @@ async function main() {
     verdict('INDETERMINATE', 3);
   }
 
-  const failures = [];
-  const lintTargets = [];
-  const check = (ok, line) => {
-    console.log(`${ok ? 'PASS' : 'FAIL'}  ${line}`);
-    if (!ok) failures.push(line);
-  };
-
+  let nextId = 3;
   try {
-    await rpc(key, {
-      jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'sr-zones-smoke', version: '1' } },
+    const found = await runChecks({
+      rpcCall: (payload) => rpc(key, payload),
+      toolCall: (a) => callTool(key, nextId++, 'get_sr_zones', a),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      young: args.young,
     });
-    await rpc(key, { jsonrpc: '2.0', method: 'notifications/initialized' });
-
-    const list = await rpc(key, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    const tool = (list?.tools ?? []).find((t) => t.name === 'get_sr_zones');
-    check(!!tool, `tools/list lists get_sr_zones (${(list?.tools ?? []).length} tools)`);
-    if (tool) lintTargets.push(['tools/list get_sr_zones', { description: tool.description, inputSchema: tool.inputSchema }, null]);
-
-    const btc = await callTool(key, 3, 'get_sr_zones', { coin: 'BTC', timeframes: ['1d', '4h'] });
-    const btcProblems = btc.body && !btc.isError ? shapeProblems(btc.body, ['1d', '4h']) : [`refused: ${btc.text}`];
-    check(btcProblems.length === 0, `BTC 1d+4h: 2 results, ≤3 zones a side, §0 fields${btcProblems.length ? ` — ${btcProblems.join('; ')}` : ''}`);
-    if (btc.body) lintTargets.push(['BTC 1d+4h', btc.body, 'BTC']);
-
-    const eth = await callTool(key, 4, 'get_sr_zones', { coin: 'ETH', timeframes: ['1h'] });
-    const ethProblems = eth.body && !eth.isError ? shapeProblems(eth.body, ['1h']) : [`refused: ${eth.text}`];
-    check(ethProblems.length === 0, `ETH 1h served${ethProblems.length ? ` — ${ethProblems.join('; ')}` : ''}`);
-    if (eth.body) lintTargets.push(['ETH 1h', eth.body, 'ETH']);
-
-    const young = await callTool(key, 5, 'get_sr_zones', { coin: args.young, timeframes: ['1d'] });
-    const youngResult = young.body?.results?.[0];
-    const youngServed = !young.isError && !!youngResult && Array.isArray(youngResult.flags);
-    check(
-      youngServed,
-      `young listing ${args.young} 1d served with flags ${youngServed ? JSON.stringify(youngResult.flags) : ''}` +
-        `${youngServed ? ` (support ${youngResult.support.length}, resistance ${youngResult.resistance.length})` : ` — ${young.text}`}`,
-    );
-    if (young.body) lintTargets.push([`${args.young} 1d`, young.body, args.young]);
+    verdict(...found.verdict);
   } catch (e) {
-    if (e instanceof Unreachable) {
-      console.log(`INDETERMINATE: ${e.message}`);
-      verdict('INDETERMINATE', 3);
-    }
-    check(false, e instanceof Error ? e.message : String(e));
+    // runChecks rethrows only Unreachable: the host could not be asked, so nothing was verified.
+    console.log(`INDETERMINATE: ${e instanceof Error ? e.message : String(e)}`);
+    verdict('INDETERMINATE', 3);
   }
-
-  const lint = lintHits(lintTargets);
-  check(lint.count > 0 && lint.hits.length === 0, `facts lint on ${lint.count} returned strings (requested coin symbol masked)${lint.hits.length ? ` — ${lint.hits.map(([p, s]) => `${p}: ${s}`).join(' | ')}` : ''}`);
-
-  if (failures.length) verdict('FAIL', 1);
-  verdict('PASS', 0);
 }
 
 main();
