@@ -189,8 +189,11 @@ const ident = (): SrZonesIdentity => ({ tool: GET_SR_ZONES_TOOL, version: PKG_VE
  * One timeframe's window, newest WINDOW_BARS candles, ascending. The head page is a serving read (no endTime) of the
  * trade_call@100 window src/lib/serving-windows.ts already declares on every timeframe, so the getAdapter seam checks
  * its head and contract-suite S tests this exact read on every venue. Older candles come from history pages
- * (endTime set) stepping back 200 candles at a time, assembled by the shared serving-window assembler; a young
- * listing stops at its first candle. A read with no candles at all throws, so it is never cached.
+ * (endTime set) stepping back 200 candles at a time, assembled by the shared serving-window assembler. Binance answers
+ * a history page with 200 candles from startTime (endTime ignored), so a gap inside the page also comes back short:
+ * a short page is not the listing start (R9 #2). Only a page that adds no older candle ends the walk; with the
+ * assembler's no-progress stop and MAX_PAGES that costs a young listing one extra request at most. A read with no
+ * candles at all throws, so it is never cached.
  *
  * Weight classes (R7 #2): the head page reads in the caller's class (interactive for an MCP call). Every history page
  * reads in the batch class under `get_sr_zones`, so it spends only the Binance weight the interactive reserve leaves
@@ -211,7 +214,7 @@ async function fetchWindow(deps: SrZonesDeps, coin: string, timeframe: string, s
         processScopedTag('get_sr_zones'),
       );
       const older = page.filter((c) => c.time < oldestOpenMs);
-      return { bars: older, exhausted: older.length < PAGE_BARS };
+      return { bars: older, exhausted: older.length === 0 };
     },
   });
   if (bars.length === 0) throw new EmptyCandleWindowError();

@@ -563,6 +563,34 @@ describe('SR-ZONES-W1 R7 #4 — a window with no candles is never cached', () =>
   });
 });
 
+describe('SR-ZONES-W1 R9 #2 — a short history page is not the listing start', () => {
+  const STEP_1D = 86_400_000;
+  /** Binance-shaped klines over `series`: up to 200 candles from startTime on, endTime ignored. */
+  const pagesOf = (series: Candle[]) => async (_coin: string, _tf: string, startTime: number) =>
+    series.filter((c) => c.time >= startTime).slice(0, 200);
+
+  it('one candle missing inside the second history page: the read keeps paging back to the window start', async () => {
+    const full = DATA.BTC['1d'];
+    // The head page holds D-99..D, history page 1 D-299..D-100, history page 2 D-499..D-300: drop D-350.
+    const holed = full.filter((_, i) => i !== full.length - 351);
+    const d = deps({ getCandles: pagesOf(holed) });
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    const w = d.cache.get('BINANCE:BTC:1d')!;
+    expect(w.candles).toHaveLength(1001);
+    expect(w.candles[0].time).toBeLessThanOrEqual(NOW - 1001 * STEP_1D);
+    expect(d.calls).toHaveLength(6); // the head page + 5 history pages, the same as with no gap
+  });
+
+  it('a young listing costs at most one extra request: the page that adds no older candle ends the walk', async () => {
+    const listing = walk('1d', 250, 9);
+    const d = deps({ getCandles: pagesOf(listing) });
+    okOf(await runGetSrZones({ coin: 'MID', timeframes: ['1d'] }, keyed(), d));
+    expect(d.cache.get('BINANCE:MID:1d')!.candles).toHaveLength(250);
+    expect(d.calls).toHaveLength(3); // the head page, the page reaching the first candle, one that adds nothing
+  });
+});
+
 describe('SR-ZONES-W1 R8 — a full read not finished within 10 s: unserved for that call, finished in the background', () => {
   const SLOW = 'BINANCE candle history did not load within 10 s; the read continues in the background';
   beforeEach(() => {
