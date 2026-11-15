@@ -15,6 +15,10 @@
  * 60 s old is served as is (no venue request); an older one first re-reads the newest page (one getCandles call, the
  * trade_call 100-candle window) and merges it over the cached tail, so the price stays live. A failed re-read serves
  * the cached window with its older timestamp, never as unserved. The full history is never re-read inside a candle.
+ *
+ * Failures (R7 #2, #4). A window with no candles is never cached. A failed full read (an unknown coin, a throttled or
+ * empty read) is remembered for 20 to 30 s (jittered), and a repeat call inside that time gets the same `unserved`
+ * reason with no venue request. History pages read in the batch weight class (see fetchWindow).
  */
 import type { Candle, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
@@ -22,6 +26,8 @@ import { assembleServingWindow } from '../lib/adapters/_history-plan.js';
 import { intervalMsFor } from '../lib/candle-guard.js';
 import { TRADE_CALL_CANDLE_COUNT } from '../lib/serving-windows.js';
 import { StaleUpstreamWindowError, TimeframeUnservedError, UpstreamRateLimitError, VenueMarketClosedError } from '../lib/errors.js';
+import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
+import { processScopedTag } from '../lib/caller-tags.js';
 import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
 import { referralCodeForKey } from '../lib/referral-store.js';
 import { buildScanQuotaWall, buildScanQuotaState, type ScanQuotaWallBody } from '../lib/scan-shared.js';
@@ -43,6 +49,10 @@ const MAX_PAGES = 1 + Math.ceil((WINDOW_BARS - TRADE_CALL_CANDLE_COUNT) / PAGE_B
 const MAX_CACHED_WINDOWS = 256;
 /** A cached window whose newest page is at least this old re-reads that page before it is served (R5 Q3). */
 const HEAD_REFRESH_MS = 60_000;
+/** A failed full read answers repeat calls for this long plus up to half again (jitter), with no venue request (R7 #2). */
+const FAILED_READ_TTL_MS = 20_000;
+/** Failed reads remembered at once (the key holds a caller-chosen coin); past this the oldest is dropped first. */
+const MAX_FAILED_READS = 1024;
 
 export interface GetSrZonesParams {
   coin: string;
@@ -116,16 +126,27 @@ export interface SrZonesDeps {
   nowMs: () => number;
   /** venue × coin × timeframe → window, valid until the timeframe's next candle close. */
   cache: Map<string, SrZonesWindow>;
+  /** venue × coin × timeframe → what the last full read threw, and until when that answers instead of a new read. */
+  failures: Map<string, { error: unknown; untilMs: number }>;
 }
 
 export const DEFAULT_SR_ZONES_DEPS: SrZonesDeps = {
   getCandles: (coin, timeframe, startTime, endTime) => getAdapter(VENUE).getCandles(coin, timeframe, startTime, undefined, endTime),
   nowMs: () => Date.now(),
   cache: new Map(),
+  failures: new Map(),
 };
 
 /** Concurrent reads of one key share one read: `<key>#full` for the whole window, `<key>#head` for the newest page. */
 const inflight = new WeakMap<Map<string, SrZonesWindow>, Map<string, Promise<SrZonesWindow>>>();
+
+/** A full read that came back with no candles at all: there is nothing to serve, so nothing is cached (R7 #4). */
+class EmptyCandleWindowError extends Error {
+  constructor() {
+    super(`${VENUE} returned no candles`);
+    this.name = 'EmptyCandleWindowError';
+  }
+}
 
 const ident = (): SrZonesIdentity => ({ tool: GET_SR_ZONES_TOOL, version: PKG_VERSION, session_id: getRequestSessionId() ?? null });
 
@@ -134,7 +155,11 @@ const ident = (): SrZonesIdentity => ({ tool: GET_SR_ZONES_TOOL, version: PKG_VE
  * trade_call@100 window src/lib/serving-windows.ts already declares on every timeframe, so the getAdapter seam checks
  * its head and contract-suite S tests this exact read on every venue. Older candles come from history pages
  * (endTime set) stepping back 200 candles at a time, assembled by the shared serving-window assembler; a young
- * listing stops at its first candle.
+ * listing stops at its first candle. A read with no candles at all throws, so it is never cached.
+ *
+ * Weight classes (R7 #2): the head page reads in the caller's class (interactive for an MCP call). Every history page
+ * reads in the batch class under `get_sr_zones`, so it spends only the Binance weight the interactive reserve leaves
+ * and never get_trade_call's share. A history page the budget or Binance throttles fails the whole window.
  */
 async function fetchWindow(deps: SrZonesDeps, coin: string, timeframe: string, stepMs: number): Promise<SrZonesWindow> {
   const now = deps.nowMs();
@@ -146,11 +171,15 @@ async function fetchWindow(deps: SrZonesDeps, coin: string, timeframe: string, s
     nowMs: now,
     maxPages: MAX_PAGES,
     backward: async (oldestOpenMs) => {
-      const page = await deps.getCandles(coin, timeframe, oldestOpenMs - PAGE_BARS * stepMs, oldestOpenMs - 1);
+      const page = await runAsBatch(
+        () => deps.getCandles(coin, timeframe, oldestOpenMs - PAGE_BARS * stepMs, oldestOpenMs - 1),
+        processScopedTag('get_sr_zones'),
+      );
       const older = page.filter((c) => c.time < oldestOpenMs);
       return { bars: older, exhausted: older.length < PAGE_BARS };
     },
   });
+  if (bars.length === 0) throw new EmptyCandleWindowError();
   return { candles: bars.slice(-WINDOW_BARS), readAtMs: now, validUntilMs: (Math.floor(now / stepMs) + 1) * stepMs };
 }
 
@@ -186,7 +215,8 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
   const key = `${VENUE}:${coin}:${timeframe}`;
   const now = deps.nowMs();
   const hit = deps.cache.get(key);
-  if (hit && now < hit.validUntilMs) {
+  // A cached window with no candles has no tail to merge a newer page over, so it goes to a full read (R7 #4).
+  if (hit && hit.candles.length > 0 && now < hit.validUntilMs) {
     if (now - hit.readAtMs < HEAD_REFRESH_MS) return hit;
     return shared(deps, `${key}#head`, () =>
       refreshHead(deps, coin, timeframe, stepMs, hit).then(
@@ -202,15 +232,29 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
       ),
     );
   }
+  // A full read that failed moments ago answers again with the same failure, and no venue request (R7 #2).
+  const failed = deps.failures.get(key);
+  if (failed && now < failed.untilMs) throw failed.error;
   return shared(deps, `${key}#full`, () =>
-    fetchWindow(deps, coin, timeframe, stepMs).then((w) => {
-      for (const [k, v] of deps.cache) if (v.validUntilMs <= w.readAtMs) deps.cache.delete(k);
-      deps.cache.delete(key);
-      deps.cache.set(key, w);
-      // Map order is insertion order, so the first key is the oldest read.
-      while (deps.cache.size > MAX_CACHED_WINDOWS) deps.cache.delete(deps.cache.keys().next().value as string);
-      return w;
-    }),
+    fetchWindow(deps, coin, timeframe, stepMs).then(
+      (w) => {
+        for (const [k, v] of deps.cache) if (v.validUntilMs <= w.readAtMs) deps.cache.delete(k);
+        deps.cache.delete(key);
+        deps.cache.set(key, w);
+        // Map order is insertion order, so the first key is the oldest read.
+        while (deps.cache.size > MAX_CACHED_WINDOWS) deps.cache.delete(deps.cache.keys().next().value as string);
+        return w;
+      },
+      (err: unknown) => {
+        const at = deps.nowMs();
+        for (const [k, v] of deps.failures) if (v.untilMs <= at) deps.failures.delete(k);
+        deps.failures.delete(key);
+        // Jittered, so failures that land together are not all read again in the same instant.
+        deps.failures.set(key, { error: err, untilMs: at + FAILED_READ_TTL_MS * (1 + Math.random() / 2) });
+        while (deps.failures.size > MAX_FAILED_READS) deps.failures.delete(deps.failures.keys().next().value as string);
+        throw err;
+      },
+    ),
   );
 }
 
@@ -222,6 +266,10 @@ function unservedReason(err: unknown, coin: string): { reason: string; transient
     return { reason: `${VENUE} served a candle window that ends ${err.headGapBars} closed candles before now`, transient: true };
   }
   if (err instanceof UpstreamRateLimitError) return { reason: `${VENUE} is rate-limiting requests`, transient: true };
+  if (err instanceof WeightBudgetSkipError) {
+    return { reason: `${VENUE} candle history was skipped: the shared request budget was full`, transient: true };
+  }
+  if (err instanceof EmptyCandleWindowError) return { reason: `${VENUE} returned no candles for this timeframe`, transient: true };
   const message = err instanceof Error ? err.message : String(err);
   if (/\bAPI 400\b/.test(message)) return { reason: `${VENUE} refused the candle request for ${coin} (HTTP 400)`, transient: false };
   return { reason: `${VENUE} candle request failed`, transient: true };

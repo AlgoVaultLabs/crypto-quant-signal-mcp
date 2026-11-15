@@ -186,6 +186,11 @@ describe('class preservation — tags moved, classes did not', () => {
     // S2 row's pre-entry bars, read THROUGH the adapters under ONE batch scope so the nightly canary can never
     // spend a venue's interactive reserve; its own entrypoint, literal name `book-liveness-probe`.
     'src/scripts/book-liveness-probe.ts': { runAsBatch: 1 },
+    // SR-ZONES-W1 R7 #2: get_sr_zones reads each uncached window's history pages (every page past the newest) under
+    // ONE batch scope, so a burst of uncached windows spends only what Binance's interactive reserve leaves and never
+    // get_trade_call's share; the newest page stays interactive. processScopedTag('get_sr_zones'), not a literal:
+    // the handler is reachable from 3 entrypoints, so a literal fails B_SHARED; in PID 1 it emits `get_sr_zones`.
+    'src/tools/get-sr-zones.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

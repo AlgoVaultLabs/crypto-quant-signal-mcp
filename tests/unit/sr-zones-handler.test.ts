@@ -23,6 +23,8 @@ import { StaleUpstreamWindowError, UpstreamRateLimitError } from '../../src/lib/
 import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
 import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
+import { currentCaller, currentWeightClass, runAsCaller, WeightBudgetSkipError } from '../../src/lib/upstream-weight-budget.js';
+import { processScopedTag } from '../../src/lib/caller-tags.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00.000Z');
 
@@ -78,6 +80,7 @@ function deps(over: Partial<SrZonesDeps> = {}): SrZonesDeps & { calls: CallLog }
   return {
     nowMs: over.nowMs ?? (() => NOW),
     cache: over.cache ?? new Map(),
+    failures: over.failures ?? new Map(),
     getCandles: async (coin, tf, startTime, endTime) => {
       calls.push([coin, tf, startTime, endTime]);
       return answer(coin, tf, startTime, endTime);
@@ -391,6 +394,161 @@ describe('SR-ZONES-W1 R6 #9 — price comes from the freshest read', () => {
   });
 });
 
+describe('SR-ZONES-W1 R7 #2 — a failed full read is remembered for a short, jittered TTL', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a repeat unknown-coin call inside the TTL makes 0 getCandles calls and refuses the same way, unbilled', async () => {
+    let now = NOW;
+    const d = deps({ nowMs: () => now });
+    const lic = keyed();
+    const first = refusalOf(await runGetSrZones({ coin: 'NOPE', timeframes: ['1d', '4h'] }, lic, d));
+    expect(d.calls).toHaveLength(2); // one head page per timeframe, each refused with HTTP 400
+    now = NOW + 1_000;
+    const again = refusalOf(await runGetSrZones({ coin: 'NOPE', timeframes: ['1d', '4h'] }, lic, d));
+    expect(d.calls).toHaveLength(2);
+    expect(again.status).toBe(first.status);
+    expect(again.payload).toEqual(first.payload);
+    expect(used(lic)).toBe(0);
+  });
+
+  it.each([
+    [0, 19_999, 20_000],
+    [0.999_999, 29_999, 30_000],
+  ])('the TTL is 20 s plus up to half again (Math.random() = %s): held at +%s ms, read again at +%s ms', async (rnd, held, again) => {
+    vi.spyOn(Math, 'random').mockReturnValue(rnd);
+    let now = NOW;
+    const d = deps({ nowMs: () => now });
+    await runGetSrZones({ coin: 'NOPE', timeframes: ['1d'] }, keyed(), d);
+    expect(d.calls).toHaveLength(1);
+    now = NOW + held;
+    await runGetSrZones({ coin: 'NOPE', timeframes: ['1d'] }, keyed(), d);
+    expect(d.calls).toHaveLength(1);
+    now = NOW + again;
+    await runGetSrZones({ coin: 'NOPE', timeframes: ['1d'] }, keyed(), d);
+    expect(d.calls).toHaveLength(2);
+  });
+
+  it('a timeframe that failed does not hold back another timeframe of the same coin', async () => {
+    let now = NOW;
+    let fail4h = true;
+    const d = deps({
+      nowMs: () => now,
+      getCandles: async (coin, tf, startTime) => {
+        if (tf === '4h' && fail4h) throw new Error('Binance API 503: Service Unavailable');
+        return binanceLike(coin, tf, startTime);
+      },
+    });
+    await runGetSrZones({ coin: 'BTC', timeframes: ['4h'] }, keyed(), d);
+    fail4h = false;
+    now = NOW + 1_000;
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, keyed(), d));
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    expect(r.unserved).toEqual([{ timeframe: '4h', reason: 'BINANCE candle request failed' }]);
+    expect(d.calls.filter(([, tf]) => tf === '4h')).toHaveLength(1); // the held 4h failure made no request
+  });
+
+  it('remembers at most 1024 failed reads, and an expired one is swept by the next failure', async () => {
+    let now = NOW;
+    const d = deps({ nowMs: () => now });
+    for (let i = 0; i < 1030; i++) await runGetSrZones({ coin: `NOPE${i}`, timeframes: ['1d'] }, keyed(), d);
+    expect(d.failures.size).toBe(1024);
+    expect(d.failures.has('BINANCE:NOPE0:1d')).toBe(false); // the oldest went first
+    expect(d.failures.has('BINANCE:NOPE1029:1d')).toBe(true);
+    now = NOW + 31_000; // every entry above has expired
+    await runGetSrZones({ coin: 'NOPEX', timeframes: ['1d'] }, keyed(), d);
+    expect([...d.failures.keys()]).toEqual(['BINANCE:NOPEX:1d']);
+  });
+});
+
+describe('SR-ZONES-W1 R7 #2 — history pages read in the batch weight class; the newest page stays interactive', () => {
+  type Seen = { endTime: number | undefined; cls: string; caller: string };
+  const watch = (seen: Seen[]) => async (coin: string, tf: string, startTime: number, endTime?: number) => {
+    seen.push({ endTime, cls: currentWeightClass(), caller: currentCaller() });
+    return binanceLike(coin, tf, startTime);
+  };
+
+  it('a full read: the head page interactive under the caller\'s tag, every history page batch under get_sr_zones', async () => {
+    const seen: Seen[] = [];
+    let now = NOW;
+    const d = deps({ nowMs: () => now, getCandles: watch(seen) });
+    await runAsCaller('outer_scope', () => runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
+    const head = seen.filter((s) => s.endTime === undefined);
+    const history = seen.filter((s) => s.endTime !== undefined);
+    expect(head).toEqual([{ endTime: undefined, cls: 'interactive', caller: 'outer_scope' }]);
+    expect(history).toHaveLength(5);
+    for (const h of history) expect([h.cls, h.caller]).toEqual(['batch', processScopedTag('get_sr_zones')]);
+    // The 60 s re-read of the newest page is interactive too.
+    now = NOW + 61_000;
+    await runAsCaller('outer_scope', () => runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
+    expect(seen.slice(6)).toEqual([{ endTime: undefined, cls: 'interactive', caller: 'outer_scope' }]);
+  });
+
+  it.each([
+    ['the batch budget skipped it', new WeightBudgetSkipError('Binance', 2), 'BINANCE candle history was skipped: the shared request budget was full'],
+    ['Binance rate-limited it', new UpstreamRateLimitError('Binance', 30), 'BINANCE is rate-limiting requests'],
+  ])('a throttled history page (%s): that timeframe is unserved, unbilled, uncached, and held for the TTL', async (_label, failure, reason) => {
+    let now = NOW;
+    const d = deps({
+      nowMs: () => now,
+      getCandles: async (coin, tf, startTime, endTime) => {
+        if (tf === '4h' && endTime !== undefined) throw failure;
+        return binanceLike(coin, tf, startTime);
+      },
+    });
+    const lic = keyed();
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, lic, d));
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    expect(r.unserved).toEqual([{ timeframe: '4h', reason }]);
+    expect(used(lic)).toBe(1);
+    expect(d.cache.has('BINANCE:BTC:4h')).toBe(false);
+    const before = d.calls.length;
+    now = NOW + 1_000;
+    const again = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, keyed(), d));
+    expect(again.unserved).toEqual([{ timeframe: '4h', reason }]);
+    expect(d.calls.length).toBe(before);
+  });
+});
+
+describe('SR-ZONES-W1 R7 #4 — a window with no candles is never cached', () => {
+  it('Binance answers [] and then the series: unserved and uncached at first, and the call after 60 s is served', async () => {
+    let now = NOW;
+    let empty = true;
+    const d = deps({
+      nowMs: () => now,
+      getCandles: async (coin, tf, startTime) => (empty ? [] : binanceLike(coin, tf, startTime)),
+    });
+    const lic = keyed();
+    const o = refusalOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, lic, d));
+    expect(o.status).toBe(503);
+    expect(o.payload).toMatchObject({ unserved: [{ timeframe: '1d', reason: 'BINANCE returned no candles for this timeframe' }] });
+    expect(d.cache.size).toBe(0);
+    expect(used(lic)).toBe(0);
+    empty = false;
+    now = NOW + 60_000;
+    const before = d.calls.length;
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, lic, d));
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    expect(r.unserved).toEqual([]);
+    expect(d.calls.length - before).toBe(6); // a full read: the head page + 5 history pages
+    expect(used(lic)).toBe(1);
+  });
+
+  it.each([
+    ['fresh', 1_000],
+    ['older than 60 s', 61_000],
+  ])('a cached window with no candles (%s) goes to a full read', async (_label, age) => {
+    const cache = new Map([['BINANCE:BTC:1d', { candles: [] as Candle[], readAtMs: NOW, validUntilMs: NOW + 86_400_000 }]]);
+    const d = deps({ nowMs: () => NOW + age, cache });
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
+    expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+    expect(d.calls).toHaveLength(6);
+    expect(d.calls.slice(1).every(([, , , endTime]) => typeof endTime === 'number')).toBe(true);
+    expect(d.cache.get('BINANCE:BTC:1d')!.candles).toHaveLength(1001);
+  });
+});
+
 describe('SR-ZONES-W1 — the §0 response shape', () => {
   it('carries exactly the §0 fields, the frozen strings and at most 3 zones a side', async () => {
     const r = okOf(await runGetSrZones({ coin: 'btc', timeframes: ['1d', '4h'] }, keyed(), deps()));
@@ -431,6 +589,7 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
 describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
   beforeEach(() => {
     DEFAULT_SR_ZONES_DEPS.cache.clear();
+    DEFAULT_SR_ZONES_DEPS.failures.clear();
     fakeAdapterCandles.mockReset();
     fakeAdapterCandles.mockImplementation(async (coin: string, tf: string, startTime: number) => binanceLike(coin, tf, startTime));
   });
@@ -451,6 +610,28 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
     // The head page is a serving read (no endTime); every later page is a history read.
     expect(fakeAdapterCandles.mock.calls[0][4]).toBeUndefined();
     expect(fakeAdapterCandles.mock.calls.slice(1).every((c) => typeof c[4] === 'number')).toBe(true);
+  });
+
+  it('R7 #2: through the row, the head page reads interactive and every history page batch, all tagged get_sr_zones', async () => {
+    const seen: Array<[number | undefined, string, string]> = [];
+    fakeAdapterCandles.mockImplementation(async (coin: string, tf: string, startTime: number, _dex: unknown, endTime?: number) => {
+      seen.push([endTime, currentWeightClass(), currentCaller()]);
+      return binanceLike(coin, tf, startTime);
+    });
+    const outcome = await callTool({
+      tool: 'get_sr_zones',
+      input: { coin: 'BTC', timeframes: ['1d'] } as unknown as ValidatedToolInput,
+      channel: 'mcp',
+      license: keyed(),
+    });
+    expect(outcome.ok).toBe(true);
+    const tag = processScopedTag('get_sr_zones');
+    expect(seen[0]).toEqual([undefined, 'interactive', tag]);
+    expect(seen.slice(1)).toHaveLength(5);
+    for (const [endTime, cls, caller] of seen.slice(1)) {
+      expect(typeof endTime).toBe('number');
+      expect([cls, caller]).toEqual(['batch', tag]);
+    }
   });
 
   it('R6 #10: 2 timeframes through the pipeline row → 2 results and exactly 2 units', async () => {
