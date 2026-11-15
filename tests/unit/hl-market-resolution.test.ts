@@ -256,6 +256,8 @@ describe('AC1 — every HL call site hands the adapter the coin, never a market'
   const SEAMS: { file: string; receiver: string; method: string; why: string }[] = [
     { file: 'src/scripts/adapter-history-contiguity.ts', receiver: 'o', method: 'getCandles',
       why: '(venue, tf, from, to) test seam; its production binding is the adapter call `getCandles(COIN, tf, from, undefined, to)`, censused itself' },
+    { file: 'src/tools/get-sr-zones.ts', receiver: 'deps', method: 'getCandles',
+      why: '(coin, tf, start, end) SrZonesDeps seam; its production binding is the adapter call `getCandles(coin, timeframe, startTime, undefined, endTime)`, censused itself' },
   ];
   const isSeam = (s: Site): boolean => SEAMS.some((x) => x.file === s.file && x.receiver === s.receiver && x.method === s.method);
   /** The 0-based argument that used to carry a market, per method. */
