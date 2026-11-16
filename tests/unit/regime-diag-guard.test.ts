@@ -1,6 +1,7 @@
 // tests/unit/regime-diag-guard.test.ts — EDGE-REGIME-DIAG-W1 CH2: the outcome guard, the hold-out seal and the run
 // (AC2.3: an unlanded registration, a pin mismatch and a second hold-out read are refused; AC2.4: the seal's
-// mutation proof). Everything runs in a sandbox repository with a bare origin, on synthetic archives.
+// mutation proof). Everything runs in a sandbox repository with a bare origin, on synthetic archives, and the
+// synthetic study keeps its seal in the sandbox: no test reads or writes the registered study's seal home.
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,6 +48,7 @@ const withFile = <T>(file: string, change: (s: string) => string, fn: () => T): 
   fs.writeFileSync(file, change(keep));
   try { return fn(); } finally { fs.writeFileSync(file, keep); }
 };
+const within = (p: string, root: string): boolean => { const rel = path.relative(root, p); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 const corrupt = (fixture: string): string => fixture.replace(/"confidence": (\d+)/, (_, c: string) => `"confidence": ${Number(c) + 1}`);
 
 async function mutated<T>(lever: string, fn: (m: typeof guard) => T): Promise<T> {
@@ -61,12 +63,12 @@ async function mutated<T>(lever: string, fn: (m: typeof guard) => T): Promise<T>
 }
 
 describe('regime-diag: the outcome guard, the seal and the run, in a sandbox repository', () => {
-  let dir = '', repo = '', store = '', censusFile = '';
+  let dir = '', repo = '', store = '', home = '', censusFile = '';
   let archives: ArchiveStore = { cache: '', overlay: '' };
   let unlanded: guard.DiagGuardResult, unlandedRun: run.RunResult;
   const lines: string[] = [];
-  const study = (): run.Study => ({ span: SYNTH_SPAN, fit: FIT, holdout: HOLD, load: synthLoad, counts: () => ({ boot: 200, shuffle: 100, perm: 50 }), floorClusters: 25, log: (l) => lines.push(l) });
-  const inp = (registration: string, mode: 'fit' | 'holdout' = 'fit'): guard.DiagGuardInput => ({ repo, registration, store, censusFile, archives, mode });
+  const study = (): run.Study => ({ span: SYNTH_SPAN, fit: FIT, holdout: HOLD, load: synthLoad, counts: () => ({ boot: 200, shuffle: 100, perm: 50 }), floorClusters: 25, log: (l) => lines.push(l), sealHome: home });
+  const inp = (registration: string, mode: 'fit' | 'holdout' = 'fit'): guard.DiagGuardInput => ({ repo, registration, store, sealHome: home, censusFile, archives, mode });
   const go = (mode: 'fit' | 'holdout', out: string, more: Partial<run.RunInput> = {}): run.RunResult => {
     lines.length = 0;
     return run.outcomeRun({ mode, repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, out), study: study(), ...more });
@@ -81,7 +83,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
 
   beforeAll(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'regime-diag-guard-'));
-    repo = path.join(dir, 'repo'); store = path.join(dir, 'store'); censusFile = path.join(dir, 'census.json');
+    repo = path.join(dir, 'repo'); store = path.join(dir, 'store'); home = path.join(dir, 'seal-home'); censusFile = path.join(dir, 'census.json');
     archives = { cache: path.join(dir, 'cache'), overlay: path.join(dir, 'overlay') };
     for (const d of [archives.cache, archives.overlay, path.join(dir, 'no-hooks')]) fs.mkdirSync(d, { recursive: true });
     git(dir, 'init', '-q', '--bare', '--initial-branch=main', 'origin.git');
@@ -220,15 +222,20 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     for (const f of guard.HARNESS_FILES) expect(fs.existsSync(path.join(REPO, f)), f).toBe(true);
   });
 
-  /** One claim is permitted; the second is refused and leaves the first record in place. */
+  /**
+   * One claim is permitted; the second is refused and leaves the first record in place — from the same store or
+   * from another one. The seal sits in its home, never in a store; each store logs its own claim or refusal.
+   */
   const sealOnce = (m: typeof guard): void => {
-    const s = fs.mkdtempSync(path.join(dir, 'seal-'));
-    const first = m.claimSeal(s, { n: 1 }), second = m.claimSeal(s, { n: 2 });
-    const kept = (JSON.parse(fs.readFileSync(m.sealFile(s), 'utf8')) as { n: number; wave: string });
-    expect([first.ok, second.ok, kept.n, kept.wave]).toEqual([true, false, 1, 'EDGE-REGIME-DIAG-W1']);
-    expect(second.reason).toMatch(/seal exists/);
-    const log = fs.readFileSync(m.guardLog(s), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { ok: boolean; leg: string });
-    expect(log.map((l) => [l.ok, l.leg])).toEqual([[true, 'seal'], [false, 'seal']]);
+    const h = path.join(fs.mkdtempSync(path.join(dir, 'seal-')), 'home', 'not-yet-made'), s1 = fs.mkdtempSync(path.join(dir, 'seal-store-')), s2 = fs.mkdtempSync(path.join(dir, 'seal-store-'));
+    const first = m.claimSeal(h, s1, { n: 1 }), second = m.claimSeal(h, s1, { n: 2 }), third = m.claimSeal(h, s2, { n: 3 });
+    const kept = (JSON.parse(fs.readFileSync(m.sealFile(h), 'utf8')) as { n: number; wave: string });
+    expect([first.ok, second.ok, third.ok, kept.n, kept.wave]).toEqual([true, false, false, 1, 'EDGE-REGIME-DIAG-W1']);
+    expect([second.reason, third.reason]).toEqual([expect.stringMatching(/seal exists/), expect.stringMatching(/seal exists/)]);
+    expect(m.sealFile(h)).toBe(path.join(h, 'holdout.seal'));
+    expect([s1, s2].map((s) => fs.readdirSync(s))).toEqual([['guard.log'], ['guard.log']]);
+    const log = (s: string): Array<[boolean, string]> => fs.readFileSync(m.guardLog(s), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { ok: boolean; leg: string }).map((l) => [l.ok, l.leg]);
+    expect([log(s1), log(s2)]).toEqual([[[true, 'seal'], [false, 'seal']], [[false, 'seal']]]);
   };
   it('AC2.4 the seal permits exactly one claim (red when the seal is broken, green restored)', { timeout: 60_000 }, async () => {
     await expect(mutated('seal', (m) => sealOnce(m))).rejects.toThrow(/to deeply equal/);
@@ -307,7 +314,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(at('floors: fit')).toBeGreaterThan(at('skeleton: equal'));
     expect(at('outcomes: fit')).toBeGreaterThan(at('floors: fit'));
     expect(lines.some((l) => l.startsWith('outcomes: holdout'))).toBe(false);
-    expect(fs.existsSync(guard.sealFile(store))).toBe(false);
+    expect(fs.existsSync(guard.sealFile(home))).toBe(false);
     const j = json(fitFile);
     expect([j.kind, j.study, j.line, j.floor_clusters]).toEqual(['fit', 'injected', r.line, 25]);
     expect(Date.parse(j.clocks.outcome_read_at)).toBeGreaterThanOrEqual(Date.parse(j.clocks.registration_landed_at.first_seen));
@@ -389,7 +396,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect([missing.verdict, missing.reason]).toEqual(['REFUSED', expect.stringMatching(/fit result/)]);
     expect(missing.reason).not.toBe(other.reason);
     expect(logged().at(-1)).toMatchObject({ ok: false, leg: 'fit-result', mode: 'holdout', reason: missing.reason });
-    expect(fs.existsSync(guard.sealFile(store))).toBe(false);
+    expect(fs.existsSync(guard.sealFile(home))).toBe(false);
     expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
   });
 
@@ -407,7 +414,10 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(at('outcomes: holdout')).toBeGreaterThan(at('seal: claimed'));
     expect(lines.some((l) => l.startsWith('outcomes: fit'))).toBe(false);
     const j = json(holdFile), fit = json(fitFile);
-    const seal = json(guard.sealFile(store));
+    const seal = json(guard.sealFile(home));
+    // the seal is in its home and nowhere in the store
+    expect(fs.readdirSync(home)).toEqual(['holdout.seal']);
+    expect(fs.existsSync(path.join(store, 'holdout.seal'))).toBe(false);
     expect(seal).toMatchObject({ wave: 'EDGE-REGIME-DIAG-W1', registration_commit: fit.registration.commit, fit_result_sha256: sha256(fs.readFileSync(fitFile)) });
     expect(Date.parse(j.clocks.outcome_read_at)).toBeGreaterThanOrEqual(Date.parse(seal.claimed_at));
     expect([j.kind, j.study, j.line]).toEqual(['holdout', 'injected', r.line]);
@@ -443,20 +453,68 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
   });
 
   it('AC2.3 a second hold-out read is refused: the seal exists', { timeout: 60_000 }, () => {
-    const before = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(store), 'utf8');
+    const before = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home), 'utf8');
     const r = go('holdout', 'out-hold-2', { fitResult: fitFile });
     expect(r.verdict).toBe('REFUSED');
     expect(r.reason).toMatch(/^guard \(seal\): the hold-out seal exists/);
     expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'out-hold-2'))).toBe(false);
-    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(store), 'utf8')]).toEqual([before, seal]);
+    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home), 'utf8')]).toEqual([before, seal]);
     expect(guard.checkDiagGuard(inp('audits/reg-good.md', 'holdout')).leg).toBe('seal');
     // the fit window can still be read: the seal guards the hold-out alone
     expect(guard.checkDiagGuard(inp('audits/reg-good.md', 'fit')).ok).toBe(true);
     expect(logged().filter((l) => l.leg === 'seal').map((l) => l.ok)).toEqual([true, false, false]);
   });
 
-  const cli = (...args: string[]): Promise<{ code: number; stdout: string }> =>
+  it('AC2.3 the seal has one place: a second store directory that reproduces both pinned manifests does not re-open the hold-out', { timeout: 120_000 }, () => {
+    const store2 = path.join(dir, 'store-2');
+    const made = guard.initStore(store2, archives, parseCensus(SYNTH_CENSUS_TEXT).panel);
+    const first = guard.checkDiagGuard(inp('audits/reg-good.md', 'fit'));
+    // the second store reproduces both pinned manifests: only the seal stands between it and a second read
+    expect([made.archivesSha256, made.guardStoreSha256]).toEqual([first.pins[guard.ARCHIVES_PIN], first.pins[storePin(VENUE)]]);
+    expect(guard.checkDiagGuard({ ...inp('audits/reg-good.md', 'fit'), store: store2 }).ok).toBe(true);
+    expect(fs.existsSync(path.join(store2, 'holdout.seal'))).toBe(false);
+    const held = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home), 'utf8');
+    const r = go('holdout', 'out-hold-3', { fitResult: fitFile, store: store2 });
+    expect(r.verdict).toBe('REFUSED');
+    expect(r.reason).toMatch(/^guard \(seal\): the hold-out seal exists/);
+    expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'out-hold-3'))).toBe(false);
+    expect(fs.existsSync(path.join(store2, 'holdout.seal'))).toBe(false);
+    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home), 'utf8')]).toEqual([held, seal]);
+    expect(guard.checkDiagGuard({ ...inp('audits/reg-good.md', 'holdout'), store: store2 }).leg).toBe('seal');
+    // the refusal is logged in the store the run named, and no outcome was read from it
+    const log2 = fs.readFileSync(guard.guardLog(store2), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(log2.at(-1)).toMatchObject({ ok: false, leg: 'seal', mode: 'holdout' });
+    expect(log2.some((l) => l.leg === 'outcomes')).toBe(false);
+  });
+
+  it('the registered study\'s seal home is one fixed directory: no store, and no HOME, moves it', { timeout: 60_000 }, () => {
+    const fixed = path.join(os.userInfo().homedir, '.cache', 'algovault', 'regime-diag', 'store');
+    expect(guard.sealHome()).toBe(fixed);
+    expect(path.isAbsolute(fixed)).toBe(true);
+    expect(guard.sealHome.length).toBe(0); // it takes no argument: a run has nothing to pass it
+    const keep = process.env.HOME;
+    process.env.HOME = path.join(dir, 'another-home');
+    try { expect(guard.sealHome()).toBe(fixed); } finally { if (keep === undefined) delete process.env.HOME; else process.env.HOME = keep; }
+    expect(guard.sealFile(guard.sealHome())).toBe(path.join(fixed, 'holdout.seal'));
+    // the sandbox's seal is not there: the synthetic study names its own home
+    expect(within(home, dir)).toBe(true);
+    expect(within(guard.sealHome(), dir)).toBe(false);
+  });
+
+  it('a synthetic study that names no seal home is refused before the guard: it can never reach the registered study\'s seal', { timeout: 60_000 }, () => {
+    const before = logged().length;
+    for (const mode of ['fit', 'holdout'] as const) {
+      const r = go(mode, 'out-no-home', { fitResult: fitFile, study: { ...study(), sealHome: undefined } });
+      expect([r.verdict, r.reason, r.line, r.file]).toEqual(['REFUSED', 'a synthetic study must name its own seal home', null, null]);
+    }
+    expect(logged().slice(before)).toMatchObject([{ ok: false, leg: 'seal-home', mode: 'fit' }, { ok: false, leg: 'seal-home', mode: 'holdout' }]);
+    expect(lines).toEqual([]);
+    expect(fs.existsSync(path.join(dir, 'out-no-home'))).toBe(false);
+  });
+
+  const cli =(...args: string[]): Promise<{ code: number; stdout: string }> =>
     promisify(execFile)(path.join(REPO, 'node_modules/.bin/tsx'), [path.join(REPO, 'src/scripts/regime-diag/run.ts'), ...args], { cwd: REPO, timeout: 80_000 })
       .then((x) => ({ code: 0, stdout: x.stdout }), (e: { code: number; stdout: string }) => ({ code: e.code, stdout: e.stdout }));
 

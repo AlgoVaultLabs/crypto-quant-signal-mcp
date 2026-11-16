@@ -10,9 +10,11 @@
 //   (v)   the core-parity fixture reproduces, label for label;
 //   (vi)  for a hold-out run, the seal does not exist yet.
 // The seal is created atomically, immediately before the hold-out is computed: it permits exactly one read and
-// records it. The pins are read from the registration AS IT STANDS ON origin/main, never from the working tree.
+// records it. It has one place, which no argument of a run moves: a second store directory holds no second
+// hold-out. The pins are read from the registration AS IT STANDS ON origin/main, never from the working tree.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { checkOutcomeGuard, pinsOf, storePin } from '../sr-backtest/guard.js';
 import { buildManifest, manifestFile, manifestText, planFile, writeAtomic, type StorePlan } from '../sr-backtest/store.js';
@@ -34,7 +36,12 @@ export const HARNESS_FILES: readonly string[] = Object.freeze([
 export const CENSUS_PIN = 'census:regime-census-2026-11-16.json';
 export const ARCHIVES_PIN = 'store:regime-diag-archives.json';
 export const archivesFile = (store: string): string => path.join(store, 'regime-diag-archives.json');
-export const sealFile = (store: string): string => path.join(store, 'holdout.seal');
+/**
+ * The seal home of the registered study: one directory, whatever store a run names. The home directory is read
+ * from the user database, never from `HOME`, so no argument and no environment variable moves the seal.
+ */
+export const sealHome = (): string => path.join(os.userInfo().homedir, '.cache', 'algovault', 'regime-diag', 'store');
+export const sealFile = (home: string): string => path.join(home, 'holdout.seal');
 export const guardLog = (store: string): string => path.join(store, 'guard.log');
 const seenFile = (store: string): string => path.join(store, 'registration-seen.json');
 
@@ -63,8 +70,10 @@ export interface DiagGuardInput {
   repo: string;
   /** Repo-relative path of the registration. */
   registration: string;
-  /** The study's store directory (manifests, guard log, seal). Outside the repository. */
+  /** The study's store directory (manifests, guard log). Outside the repository. */
   store: string;
+  /** The directory that holds the hold-out seal: `sealHome()` for the registered study. Never derived from `store`. */
+  sealHome: string;
   censusFile: string;
   archives: ArchiveStore;
   mode: 'fit' | 'holdout';
@@ -136,7 +145,7 @@ export function checkDiagGuard(input: DiagGuardInput): DiagGuardResult {
   if (!parity.ok) return done('parity', parity.reason);
 
   // (vi) the hold-out seal
-  if (input.mode === 'holdout' && fs.existsSync(sealFile(input.store))) return done('seal', 'the hold-out seal exists: the hold-out has been read');
+  if (input.mode === 'holdout' && fs.existsSync(sealFile(input.sealHome))) return done('seal', 'the hold-out seal exists: the hold-out has been read');
 
   // the two clocks' first half: the landing commit's time, and the first time this store saw it on origin/main
   const commit = first.registrationCommit as string;
@@ -147,13 +156,15 @@ export function checkDiagGuard(input: DiagGuardInput): DiagGuardResult {
 }
 
 /**
- * Claims the hold-out: creates the seal exclusively and writes the read's record into it. A second claim is
- * refused — the file exists. Called immediately before the hold-out's first outcome computation.
+ * Claims the hold-out: creates the seal exclusively in its home and writes the read's record into it. A second
+ * claim is refused — the file exists — whatever store it comes from. Called immediately before the hold-out's
+ * first outcome computation; the claim and the refusal are logged in the store of the run that made them.
  */
-export function claimSeal(store: string, record: Record<string, unknown>): { ok: boolean; reason: string } {
+export function claimSeal(home: string, store: string, record: Record<string, unknown>): { ok: boolean; reason: string } {
+  fs.mkdirSync(home, { recursive: true });
   let fd: number;
   try {
-    fd = fs.openSync(sealFile(store), MUTATE === 'seal' ? 'w' : 'wx');
+    fd = fs.openSync(sealFile(home), MUTATE === 'seal' ? 'w' : 'wx');
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     const reason = 'the hold-out seal exists: the hold-out has been read';

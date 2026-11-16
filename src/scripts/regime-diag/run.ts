@@ -9,7 +9,8 @@
 // Tables 2a–2e from the archives and compares them with the registration: labels and cardinalities only.
 // `--fit` and `--holdout` are the only modes that compute an outcome, and only behind the guard
 // (`checkDiagGuard`): guard → skeleton → floors and identifiability → outcomes. The hold-out is read once, behind
-// the seal, and needs the fit result. `S` and `DIR` sit outside the repository: no figure is written into it.
+// the seal, and needs the fit result. The seal has one place (`sealHome()`), which `--store` does not move.
+// `S` and `DIR` sit outside the repository: no figure is written into it.
 // The registered study is read only by this file as the registration pins it (tsx on the source): a compiled or
 // copied harness is refused before the guard is asked.
 //
@@ -30,7 +31,7 @@ import {
   N_TF, ROW_SETS, buildFrames, confBin, diffSkeleton, parseCensus, posName, registeredSkeleton, skeletonOf, withOutcomes,
   type Census, type Frame, type Lab, type Loaded, type Skeleton,
 } from './frame.js';
-import { ARCHIVES_PIN, checkDiagGuard, claimSeal, initStore, logGuard } from './guard.js';
+import { ARCHIVES_PIN, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from './guard.js';
 import { PHASE_UP, keyBLead } from './keys.js';
 import { OUT_NULL } from './labeler.js';
 import { attainableOf, bhOf, floorClusters, prims, seedsFor } from './prims.js';
@@ -56,6 +57,11 @@ export interface Study {
   counts?: (id: string) => Counts;
   floorClusters?: number;
   log?: (line: string) => void;
+  /**
+   * Where a synthetic study keeps its hold-out seal. A study injected by a test must name it; the registered
+   * study has none, and its seal is at `sealHome()` whatever store the run names.
+   */
+  sealHome?: string;
 }
 export function registeredStudy(archives: ArchiveStore, panel: readonly string[]): Study {
   return { span: SPAN, fit: FIT, holdout: HOLDOUT, load: (pos) => {
@@ -489,13 +495,20 @@ export function outcomeRun(input: RunInput): RunResult {
     logGuard(store, { mode, ok: false, leg: 'source', reason });
     return stop('REFUSED', reason);
   }
+  // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
+  const home = input.study ? input.study.sealHome : sealHome();
+  if (!home) {
+    const reason = 'a synthetic study must name its own seal home';
+    logGuard(store, { mode, ok: false, leg: 'seal-home', reason });
+    return stop('REFUSED', reason);
+  }
   if (mode === 'holdout' && !input.fitResult) {
     const reason = 'a hold-out run needs the fit result';
     logGuard(store, { mode, ok: false, leg: 'fit-result', reason });
     return stop('REFUSED', reason);
   }
 
-  const g = checkDiagGuard({ repo: input.repo, registration: input.registration, store, censusFile: input.censusFile, archives: input.archives, mode });
+  const g = checkDiagGuard({ repo: input.repo, registration: input.registration, store, sealHome: home, censusFile: input.censusFile, archives: input.archives, mode });
   if (!g.ok) return stop('REFUSED', `guard (${g.leg}): ${g.reason}`);
   log('guard: ok');
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, { mode, ok: false, leg, reason }); return stop(verdict, reason); };
@@ -528,7 +541,7 @@ export function outcomeRun(input: RunInput): RunResult {
   let seal: Record<string, unknown> | null = null;
   if (mode === 'holdout') {
     seal = { registration_commit: g.registrationCommit, origin_main: g.originMain, fit_result_sha256: fitSha, claimed_at: new Date().toISOString() };
-    const claim = claimSeal(store, seal);
+    const claim = claimSeal(home, store, seal);
     if (!claim.ok) return stop('REFUSED', `seal: ${claim.reason}`);
     log('seal: claimed');
   }
