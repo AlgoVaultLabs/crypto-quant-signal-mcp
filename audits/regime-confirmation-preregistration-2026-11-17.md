@@ -357,3 +357,88 @@ The archives of the outcome months cannot be pinned: they do not exist yet. They
 **Not pinned byte for byte.** T3 §10 names the files that the core's and the guard's import closures reach and that T3 did not pin byte for byte (T3 §8, correction 16). They are not pinned here either, and this file does not enumerate the closure again. The core-parity fixture covers the behaviour: the guard refuses the read if a label of the fixture changes for any reason (leg `parity`).
 
 **Who enforces what.** `checkOutcomeGuard` enforces the file rows and its own store manifest. The harness's legs enforce the carried fit result, the census, the archive-store manifest, the outcome-month archives, the core-parity fixture, the clock and the seal. A test of the repository (`tests/unit/regime-diag-guard.test.ts`) holds this table to the harness's own list and to T3's pins.
+
+## Amendment 2026-11-17 — audit fixes (amendment 1): the `floors` line carries every primary under every reading, the archives of the outcome months are fetched for the read, what the guard log holds, five readings, and the re-pins (pre-read; recorded per §1 and §8 / PROCEDURE §8 with its reason)
+
+**Write-time clock (live `date -u`):** 2026-11-16T23:52:20Z (2026-11-17 local: the heading's date is the local date, as the file name's is: §8, point 10).
+
+Below, "the body" is everything before this section, and the parts of this section are G1 … G5.
+
+**Ordering.** Pre-read. No kline row after `T_END` has been fetched for this study: at the write-time clock neither archive store holds an archive of a month after 2026-10 or an absence record, as at §2, E8. No label, skeleton or outcome of the window has been computed. Since this file landed (commit `feceb059181133d6a7ae3447eb7ea21259973aca`), this wave has run no mode of the harness on real archives: the study has no store, no guard log line, no seal and no result. The audit's evidence and every test of the changes below are on synthetic series. The body is unchanged: the first 61,673 bytes of this file (sha256 `68b80e6f33aea74717b511885cc38938270ba52f17b0581a7cae9a7fa729d7ed`, as landed at that commit) open it, and this section is appended after them.
+
+**Reason.** An independent audit of the harness against this file, made before any read (wave spec, chapter 3), returned three findings. In two the pinned harness did not do what this file says (G1, G2): the code is brought to the registered text and re-pinned (G5), and the registered text stands, with one step of the read procedure made specific. In one the body says more than the harness does (G3): the text is settled here, and no code changes. The audit also named places where the body is silent or loosely worded: G4 settles each in words, with no code change. Each is fixed while no row of the window exists, so none can be chosen by a result. PROCEDURE §7 does not apply: there is no result to respecify after.
+
+### G1. The `floors` line carries every primary under every reading (the code is brought to §5 and the Support stress-test)
+
+§5 ("Floors are checked before outcomes, and logged") and the opening paragraph of the Support stress-test stand as written: a check whose support is known only at the read has its achieved effective clusters logged against the floor before the seal is claimed.
+
+The harness pinned in §10 wrote a `floors` line that held the row sets of T3's Table 2d and A3's fit-selected cell. Two primaries are counted on rows that are no Table 2d set: A4 on the TRENDING rows whose last closed bar has a dated key-A phase, and A5 on its uncensored runs. Their achieved clusters, and those of every primary under a sensitivity variant, reached disk only in the result, after the outcomes.
+
+The `floors` line now also carries `primaries`. For the main reading (`main`) and for each sensitivity variant (`day`, `week`, `unit`, `panel13`) it holds the Kish-effective clusters of A1, A2, A3, A4 and A5 on the rows each statistic uses, under that reading's own clusters, weights and positions. A3 is counted in its fit-selected cell, and is null when the fit result names none. These are the counts of T3 readings 50 and 52, taken before any outcome of the window is computed, and they are the counts the result reports: `primaries.<answer>.pre.eff` for the main reading and, new in the result, `variants.<variant>.eff` (five values, A1 … A5) for each variant. The line is written before the seal is claimed (§1, the order of the one read). Its other fields are unchanged: the floor (`floor_clusters`), `row_sets` and `a3_selected`.
+
+**What the verdict `floor` promises.** The Support stress-test's rule covers the checks that are cluster counts: each primary under each reading, and the row sets of T3's Table 2d. Its other rows read as follows.
+
+- *Baselines.* (a), (b) and (d) are paired quantities on their primary's rows; (c) is a shuffle on the same rows (T3 §4.6; T3 §4.7). They share its clusters, so the primary's logged count is theirs. What those rows name beyond a cluster count is unchanged: a null is the drop `null_odds`, a sequence the shuffle cannot move is named in the result, and the direction mix and its §4c bound are computed before any outcome (Identifiability).
+- *The sensitivity variants* are the readings `day`, `week`, `unit` and `panel13` of `primaries`.
+- *The descriptives* carry no verdict. They are counted after the seal and reported with their counts (T3 reading 55).
+- *The outcome-month archives, the gap probe and the read clock* are not cluster counts. A check that fails refuses the run (legs `archives`, `clock`) or defers it (§3, step 3) before the guard passes, and so before a `floors` line exists.
+- *Floors of the window* (the last row) stands, with `primaries` added to what is logged.
+
+### G2. The archives of the outcome months are fetched for the read (the code is brought to §3)
+
+§3's predicate stands: the file of an outcome month is the venue's by the `.CHECKSUM` "fetched with the file on or after not_before and kept beside it", and `not_before` is the earliest instant of every fetch for the read.
+
+The harness pinned in §10 verified an archive against the `.CHECKSUM` beside it and checked no time. T3's reader form (`scripts/odds-calibration-study.py`, `ensure_archive`) reuses an archive and a checksum it finds on disk, so a pair left by an earlier fetch would have been verified against itself. T3 D7 measured that class: cached copies that the venue's current `.CHECKSUM` no longer matched.
+
+Leg `archives` now also refuses an outcome-month archive, or its `.CHECKSUM`, whose modification time precedes `not_before`. The refusal names the file. The file checked is the file read: the overlay's, where the overlay holds it. T3's reader form writes a file when it arrives, so the modification time of a file it fetched is the fetch time. A copy that carries an older time over, and a file stamped with the venue's own time, are refused with the rest.
+
+The time check is necessary, not sufficient: a file written into the directory on or after `not_before` by anything other than step 1's fetch has a passing time; step 1's empty directory and step 5's listing are what exclude it.
+
+Support of the new check (PROCEDURE §4): it is evaluated at the modification time of each outcome-month archive and `.CHECKSUM` the read resolves. No such file exists yet (the Ordering paragraph above). The harness's tests prove the refusal one second before `not_before` and the acceptance at `not_before`, on files the tests date. Verdict: inside.
+
+Step 1 of §3's read procedure is replaced by:
+
+1. *Served coin-months.* On or after `not_before`, create a new, empty directory. For each panel coin × month 2026-11 … 2027-05 that the venue serves, fetch the archive and its `.CHECKSUM` in T3's reader form into that directory, keep the `.CHECKSUM` beside the archive, and verify the archive's sha256 against it. The reader finds nothing there to reuse. Step 2's probe names the same directory as `--dir`. The directory is the `--overlay` of steps 6 and 7, and the harness resolves it first. T3's overlay holds history files that the pinned archive-store manifest lists as read from the overlay (T3 §3; T3 D7). They are copied into the new directory unchanged, with or without their `.CHECKSUM` files, which the guard does not read, and nothing else is copied in: the guard rebuilds that manifest from the two directories and refuses unless it equals the pinned one (leg `archives`).
+
+Step 3 gains one sentence, because T3's reader form reuses a pair it finds and a second fetch would otherwise change nothing: A file step 3 finds incomplete is removed with its `.CHECKSUM` before it is fetched again.
+
+Step 5's disclosure also lists the creation time of that directory, the fetch time of each file in it, and the time T3's overlay files were copied in.
+
+### G3. What the guard log holds (text only; no code change)
+
+§1 says every refusal it lists is logged, with its leg, in the guard log of the store the run names. Two of them are refusals of the CLI and leave no line. The pinned harness is unchanged here, and the text is brought to it:
+
+A CLI run that names no study or an unknown one is refused (REFUSED, exit 1), and one that names no fit result is a usage error (INDETERMINATE, exit 3), before any store is opened; neither leaves a log line. Leg `study` is logged for a read the study does not have and for a closed study; leg `fit-result` for a fit result that is absent or not the carried one.
+
+The same holds for every other usage error of the CLI (a missing argument, more than one mode, a census file that does not exist: INDETERMINATE, exit 3) and for the skeleton look of §1 (`--study confirm --skeleton`: REFUSED, exit 1), a mode that opens no store. None of these paths reads an archive or computes anything.
+
+### G4. Readings — where the body is silent or loosely worded (text only; no code change)
+
+1. **The gap probe is the operator's.** §3, step 3 is run by the operator before the read, over every UTC day of each served file's month (T3 D7's probe). The harness does not run it. Its command and its output go in the read's evidence, with the times of step 5.
+2. **A4's reported label.** §5's leg rule decides the label A4 is reported under. The result's `primaries.A4.underpowered` field is T3's report on the interval of `S` (T3 reading 51). It is shown beside the leg table and does not decide the label: where the two differ, the leg rule's label is the reported one. The state and the result line are unchanged.
+3. **`not_before`.** §5 words it as "`T_END2` plus 16 days". It is 00:00Z on day 16 of the month after `T_END2`: `2027-06-16T00:00:00Z`, the constant of §3 and of the pinned study record. The constant governs.
+4. **Key A at the window's start.** The Support stress-test's A4 row names the last bars before `T_END2` as possibly undated. Key A's series is the window's own closed bars (T3 §4.9; T3 reading 18), so the bars before the window's first turning point are undated too, as at the start of T3's hold-out. Both ends are the drop `undated`, and A4's logged count (G1) is taken on the dated rows.
+5. **Enforcement notes.** Where the harness enforces a rule of this file in a way the body does not spell out:
+   - Leg `seal-home` exists for synthetic studies alone. A study injected by a test names its own seal home; the registered study's is fixed (§7).
+   - A guard store manifest that is not the pinned one refuses under leg `pins`, with the file pins.
+   - Leg `skeleton` can be INDETERMINATE (exit 3): a skeleton that cannot be built, or a window that holds no entry, refuses the run before the seal is claimed.
+   - `--init-store` (§3, step 6) reads T3's history months only and has no clock leg. It reads no file of an outcome month.
+   - A store inside the repository is refused before any log line is written: the guard log lives in the store.
+   - A4's leg report (§5) is not computed by the harness. It is the read wave's arithmetic on recorded fields, as §5 says.
+   - The harness's code comments number the archives leg (iii). This file numbers it (v) (§1). Its name, `archives`, is the same in both.
+
+### G5. Re-pins
+
+sha256 of the file bytes as committed with this section, in the same commit. By §10's rule the last row for a name is its pin: these two rows replace the rows of the same names, and every other pin of §10 stands. Each pinned file is byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-diag/guard.ts` | `0c0a9bd5a87bff0aa9955748b66af920f7c52a92c2fdb8a7e176b53fdf0ea3c8` | the outcome guard: its legs, the archive checks of the outcome months and the time they were written (G2), the seal |
+| `src/scripts/regime-diag/run.ts` | `cfe2b5a8835ee20f7cd194968f7733cb1197843e1263b7bbe3c1dc79315ffc0b` | the run CLI: the refusals, the order of the read, the `floors` line with every primary under every reading (G1), the result |
+
+The two test files that carry the fixes are recorded here with their bytes as committed in the same commit. They are not pins: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-diag-guard.test.ts, sha256 `c27c123e774c066e738123090cf24e5fa9d1bc04decf048ed131b197f538ae45`: G1 and G2 through the run. The `floors` line against the result, reading by reading, before the seal; an archive or a checksum written one second before `not_before` refuses the read, and one written at `not_before` is read. The place of this section after the landed body.
+- tests/unit/regime-diag-study.test.ts, sha256 `f9e3c93594a1f992bde84797061d546f96d44e80226a22702c5dcee823bc2c63`: G2 at the check itself. Either file of a pair, in either directory, written before `not_before`, is refused by name; a later time, and a cache file the overlay shadows, are accepted.
+
+Each fix was written test-first, and each test was shown to fail with its fix removed: the `floors` line without `primaries`, and the archive check without the time.

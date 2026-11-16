@@ -265,6 +265,14 @@ function floorsFirst(S: Session, variants: ReadonlyArray<Variant | undefined>, c
     S.a5eff(0, v);
   }
 }
+/**
+ * The effective clusters each primary achieves under one reading, on the rows its own statistic uses: A3 in the
+ * fit-selected cell (null where the fit selected none), A5 on its runs. Label-free, and the values a read reports.
+ */
+function primaryEffs(S: Session, cell: A3Cell | undefined, v?: Variant): Record<string, number | null> {
+  const [a1, a2, a4] = S.pre([{ base: 'A1.S' }, { base: 'A2.S' }, { base: 'A4.S' }], v);
+  return { A1: a1.eff, A2: a2.eff, A3: cell ? S.pre([{ base: 'A3.S', cell }], v)[0].eff : null, A4: a4.eff, A5: S.a5eff(0, v) };
+}
 
 // ── the answer keys and the ladder (scored before any map row is read) ───────────────────────────────────────────
 
@@ -567,13 +575,16 @@ export function outcomeRun(input: RunInput): RunResult {
   const variants: Array<Variant | undefined> = mode === 'fit' ? [undefined, 'day', 'week', 'unit'] : [undefined, 'day', 'week', 'unit', 'panel13'];
   floorsFirst(S, variants, mode === 'fit' ? A3_CELLS : selected ? [selected] : []);
   // A study whose skeleton is recorded reads an accruing corpus: the clusters it achieved go on record against the
-  // floor before the seal is claimed and before any outcome is read (PROCEDURE §4a) — every Table 2d row set, and
-  // A3's fit-selected cell. Both are computed on the bare frame: no outcome of the window exists yet.
+  // floor before the seal is claimed and before any outcome is read (PROCEDURE §4a) — every Table 2d row set, A3's
+  // fit-selected cell, and each primary on the rows its own statistic uses, under the main reading and under every
+  // sensitivity variant (A4's dated rows and A5's runs are no Table 2d set). All of it is computed on the bare
+  // frame: no outcome of the window exists yet.
   if (recorded) {
     logGuard(store, rec.wave, {
       mode, ok: true, leg: 'floors', floor_clusters: S.F,
       row_sets: floors.map((x) => ({ row_set: x.row_set, eff: x.eff })),
       a3_selected: selected ? { cell: a3CellId(selected), eff: S.pre([{ base: 'A3.S', cell: selected }])[0].eff } : null,
+      primaries: Object.fromEntries(variants.map((v) => [v ?? 'main', primaryEffs(S, selected, v)])),
     });
   }
   log(`floors: ${mode}`);
@@ -671,8 +682,12 @@ function holdStep(S: Session, line: Read['line'], fit: FitFile, cell: A3Cell | u
     return own ? [own[0] ?? null, own[1] ?? null, base[2], own[3] ?? null, own[4] ?? null] : base;
   };
   const p = holdRead(S, base, cell);
-  const variants: Record<string, { states: string[]; points: Array<number | null>; fit_points: Array<number | null> }> = {};
-  for (const v of ['day', 'week', 'unit', 'panel13'] as const) { const q = holdRead(S, fitFor(v), cell, v); variants[v] = { states: q.states, points: q.points, fit_points: fitFor(v) }; }
+  const variants: Record<string, { states: string[]; points: Array<number | null>; fit_points: Array<number | null>; eff: Array<number | null> }> = {};
+  for (const v of ['day', 'week', 'unit', 'panel13'] as const) {
+    const q = holdRead(S, fitFor(v), cell, v);
+    // eff: the variant's effective clusters per primary, as counted before the outcomes (A1…A4 on rows, A5 on runs)
+    variants[v] = { states: q.states, points: q.points, fit_points: fitFor(v), eff: [...q.rows.map((r) => (r ? r.pre.eff : null)), q.a5.eff] };
+  }
   const flags = p.states.map((s, i) => flagsOf(s, { day: variants.day.states[i], week: variants.week.states[i], unit: variants.unit.states[i], panel13: variants.panel13.states[i] }));
   const shrink = (i: number): number | null => (typeof p.points[i] === 'number' && typeof base[i] === 'number' ? (p.points[i] as number) - (base[i] as number) : null);
   const row = (i: number): Record<string, unknown> => {

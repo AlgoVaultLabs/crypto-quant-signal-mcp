@@ -153,12 +153,15 @@ describe('regime-diag: the carry-over, the clock and the months after the pinned
     const mk = (name: string): ArchiveStore => { const a = { cache: path.join(dir, name, 'cache'), overlay: path.join(dir, name, 'overlay') }; for (const d of Object.values(a)) fs.mkdirSync(d, { recursive: true }); return a; };
     const yms = ['2026-11', '2026-12'], panel = ['SYNA', 'SYNB'];
     const file = (coin: string, ym: string): string => archiveName(coin, '1m', ym);
+    const NB = '2027-06-16T00:00:00Z';
+    /** When a file was fetched is when it was written: the read date, unless a test says otherwise. */
+    const fetchedAt = (f: string, ms = Date.parse(NB)): void => fs.utimesSync(f, new Date(ms), new Date(ms));
     const put = (d: string, coin: string, ym: string, body: string, sum?: string): void => {
       fs.writeFileSync(path.join(d, file(coin, ym)), body);
-      if (sum !== undefined) fs.writeFileSync(path.join(d, `${file(coin, ym)}.CHECKSUM`), sum);
+      fetchedAt(path.join(d, file(coin, ym)));
+      if (sum !== undefined) { fs.writeFileSync(path.join(d, `${file(coin, ym)}.CHECKSUM`), sum); fetchedAt(path.join(d, `${file(coin, ym)}.CHECKSUM`)); }
     };
     const line = (body: string, name: string): string => `${sha256(Buffer.from(body))}  ${name}\n`;
-    const NB = '2027-06-16T00:00:00Z';
     const check = (a: ArchiveStore, notBefore: string | null = NB): ReturnType<typeof guard.checkLaterArchives> => guard.checkLaterArchives(a, panel, yms, notBefore);
     /** The probe's record of a coin-month the venue serves no archive of. */
     const record = (coin: string, ym: string, more: Record<string, unknown> = {}): string => `${JSON.stringify({ url: archiveUrl(coin, ym), status: 404, probed_at: NB, ...more })}\n`;
@@ -185,7 +188,7 @@ describe('regime-diag: the carry-over, the clock and the months after the pinned
     // each way it is not the venue's file refuses, and names the file
     const broken = (change: (b: ArchiveStore) => void): string => {
       const b = mk(`b${fs.readdirSync(dir).length}`);
-      for (const k of ['cache', 'overlay'] as const) fs.cpSync(a[k], b[k], { recursive: true });
+      for (const k of ['cache', 'overlay'] as const) fs.cpSync(a[k], b[k], { recursive: true, preserveTimestamps: true });
       change(b);
       const r = check(b);
       expect(r.ok).toBe(false);
@@ -198,6 +201,27 @@ describe('regime-diag: the carry-over, the clock and the months after the pinned
     expect(broken((b) => fs.rmSync(path.join(b.overlay, `${file('SYNB', '2026-12')}.ABSENT`)))).toMatch(/SYNBUSDT-1m-2026-12\.zip is neither in the store nor recorded as absent/);
     // the overlay's file is the one read, so the overlay's checksum is the one that counts
     expect(broken((b) => fs.rmSync(path.join(b.overlay, `${file('SYNA', '2026-12')}.CHECKSUM`)))).toMatch(/SYNAUSDT-1m-2026-12\.zip has no venue checksum beside it/);
+
+    // an archive and its checksum are fetched for this read: either one written before the registered read date is
+    // refused, by name — a self-consistent pair an earlier fetch left is not this read's. The file read is the one
+    // dated: the overlay's, where the overlay holds it
+    const WRITTEN_EARLY = (name: string): RegExp => new RegExp(`^${name.replace(/\./g, '\\.')} was written before the registered read date \\(2027-06-16T00:00:00Z\\): it was not fetched for this read$`);
+    const early = (where: 'cache' | 'overlay', name: string, ms: number): string => broken((b) => fetchedAt(path.join(b[where], name), ms));
+    for (const ms of [Date.parse(NB) - 1000, Date.parse(NB) - 1, Date.parse('2026-11-17T04:00:00Z')]) {
+      for (const [where, name] of [['cache', file('SYNB', '2026-11')], ['cache', `${file('SYNB', '2026-11')}.CHECKSUM`], ['overlay', file('SYNA', '2026-12')], ['overlay', `${file('SYNA', '2026-12')}.CHECKSUM`]] as const) {
+        expect(early(where, name, ms), `${name} @ ${ms}`).toMatch(WRITTEN_EARLY(name));
+      }
+    }
+    // accepted: written on the read date itself (store `a`, above), or later; a shadowed cache file is not read, so not dated
+    for (const change of [
+      (b: ArchiveStore): void => { for (const n of [file('SYNB', '2026-11'), `${file('SYNB', '2026-11')}.CHECKSUM`]) fetchedAt(path.join(b.cache, n), Date.parse('2027-06-29T12:34:56Z')); },
+      (b: ArchiveStore): void => { for (const n of [file('SYNA', '2026-12'), `${file('SYNA', '2026-12')}.CHECKSUM`]) fetchedAt(path.join(b.cache, n), Date.parse('2026-11-17T04:00:00Z')); },
+    ]) {
+      const b = mk(`at${fs.readdirSync(dir).length}`);
+      for (const k of ['cache', 'overlay'] as const) fs.cpSync(a[k], b[k], { recursive: true, preserveTimestamps: true });
+      change(b);
+      expect(check(b)).toMatchObject({ ok: true, reason: 'ok' });
+    }
 
     // "absent" is a checked record {url, status, probed_at}, never a file that merely exists
     const gone = `${file('SYNB', '2026-12')}.ABSENT`;
@@ -219,7 +243,7 @@ describe('regime-diag: the carry-over, the clock and the months after the pinned
     // accepted: probed at the read date itself, or later, with or without milliseconds, from either store
     const accepted = (change: (b: ArchiveStore) => void): void => {
       const b = mk(`ok${fs.readdirSync(dir).length}`);
-      for (const k of ['cache', 'overlay'] as const) fs.cpSync(a[k], b[k], { recursive: true });
+      for (const k of ['cache', 'overlay'] as const) fs.cpSync(a[k], b[k], { recursive: true, preserveTimestamps: true });
       change(b);
       expect(check(b)).toMatchObject({ ok: true, reason: 'ok', later: { absent: [file('SYNB', '2026-12')] } });
     };

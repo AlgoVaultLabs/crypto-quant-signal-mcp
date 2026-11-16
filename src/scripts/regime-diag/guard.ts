@@ -147,6 +147,10 @@ function absentRefusal(text: string, name: string, url: string, notBeforeMs: num
  * against the venue's `<file>.CHECKSUM` beside it (fetched with it, at read time), and a coin-month without an
  * archive needs the probe's record that the venue serves none (`<file>.ABSENT`, `absentRefusal`): every record
  * found is checked. Anything else refuses: an incomplete download is never read as the named drop.
+ *
+ * "At read time" is checked, not assumed: an archive or a checksum written before the registered read date is a
+ * file an earlier fetch left, and a reader that reuses a pair it finds would verify the old file against the old
+ * checksum. Either one refuses, by name; the file read is the one dated (the overlay's, where the overlay holds it).
  */
 export function checkLaterArchives(archives: ArchiveStore, panel: readonly string[], yms: readonly string[], notBefore: string | null): { ok: boolean; reason: string; later: LaterArchives } {
   const later: LaterArchives = { files: [], absent: [] };
@@ -174,6 +178,9 @@ export function checkLaterArchives(archives: ArchiveStore, panel: readonly strin
       if (!/^[0-9a-f]{64}$/.test(want)) return no(`${name}.CHECKSUM holds no sha256`);
       const buf = fs.readFileSync(r.file), got = sha256(buf);
       if (got !== want) return no(`${name} is not the venue's file (sha256 ${got.slice(0, 12)}… on disk, ${want.slice(0, 12)}… in its checksum)`);
+      for (const [f, n] of [[r.file, name], [`${r.file}.CHECKSUM`, `${name}.CHECKSUM`]]) {
+        if (!(fs.statSync(f).mtimeMs >= notBeforeMs)) return no(`${n} was written before the registered read date (${notBefore as string}): it was not fetched for this read`);
+      }
       later.files.push({ name, source: r.source, bytes: buf.length, sha256: got });
     }
   }

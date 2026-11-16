@@ -534,6 +534,8 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     const SERVED = 'SYNAUSDT-1m-2026-11.zip';
     /** The record of a coin-month the venue serves no archive of, as the probe writes it: probed on the read date. */
     const probeRecord = (coin: string, ym: string, more: Record<string, unknown> = {}): string => `${JSON.stringify({ url: archiveUrl(coin, ym), status: 404, probed_at: CONFIRM.notBefore, ...more })}\n`;
+    /** A served archive and its checksum are this read's fetch: written on the read date, unless a test says earlier. */
+    const fetchedAt = (file: string, ms = NOW): void => fs.utimesSync(file, new Date(ms), new Date(ms));
     let storeC = '', carry: Carry = { sha256: '', registrationCommit: '' };
     const cstudy = (more: Partial<run.Study> = {}): run.Study => ({ span: SYNTH_SPAN, holdout: HOLD, load: synthLoad, counts: () => ({ boot: 200, shuffle: 100, perm: 50 }), floorClusters: 25, log: (l) => lines.push(l), sealHome: home, carry, now: NOW, ...more });
     const cgo = (out: string, more: Partial<run.RunInput> = {}): run.RunResult => {
@@ -555,6 +557,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
       const served = zip(SERVED, 'a-later');
       fs.writeFileSync(path.join(archives.cache, SERVED), served);
       fs.writeFileSync(path.join(archives.cache, `${SERVED}.CHECKSUM`), `${sha256(served)}  ${SERVED}\n`);
+      for (const f of [SERVED, `${SERVED}.CHECKSUM`]) fetchedAt(path.join(archives.cache, f));
       for (const coin of panel) for (const ym of LATER) { const name = archiveName(coin, '1m', ym); if (name !== SERVED) fs.writeFileSync(path.join(archives.overlay, `${name}.ABSENT`), probeRecord(coin, ym)); }
       const cpins = { ...pins, [storePin(VENUE)]: made.guardStoreSha256, [guard.CARRY_PIN]: carry.sha256 };
       const regs: Record<string, string> = {
@@ -617,7 +620,19 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
       try { r = cgo('out-c-later'); } finally { fs.writeFileSync(record, keep); }
       expect([r.verdict, r.reason]).toEqual(['REFUSED', expect.stringMatching(/^guard \(archives\): SYNCUSDT-1m-2027-05\.zip is neither in the store nor recorded as absent/)]);
       const moved = withFile(sum, () => `${'0'.repeat(64)}  ${SERVED}\n`, () => cgo('out-c-later'));
+      fetchedAt(sum);
       expect([moved.verdict, moved.reason]).toEqual(['REFUSED', expect.stringMatching(/^guard \(archives\): SYNAUSDT-1m-2026-11\.zip is not the venue's file/)]);
+      // an archive is fetched for this read, with its checksum: either one written before the registered read date
+      // is a file some earlier fetch left, however self-consistent the pair. One second early refuses, by name;
+      // the read date itself is accepted (the guard's pass at the end of this test)
+      for (const f of [SERVED, `${SERVED}.CHECKSUM`]) {
+        const file = path.join(archives.cache, f);
+        fetchedAt(file, NOW - 1000);
+        let e: run.RunResult;
+        try { e = cgo('out-c-later'); } finally { fetchedAt(file); }
+        expect([e.verdict, e.reason], f).toEqual(['REFUSED', `guard (archives): ${f} was written before the registered read date (${CONFIRM.notBefore}): it was not fetched for this read`]);
+        expect(loggedIn(storeC).at(-1), f).toMatchObject({ ok: false, leg: 'archives', mode: 'holdout' });
+      }
       // "absent" is a checked probe record, never a file that merely exists: an empty one, one of another URL or
       // status, and one probed before the registered read date each refuse the read before the seal
       const last = LATER[LATER.length - 1], early = new Date(NOW - 1000).toISOString();
@@ -688,6 +703,17 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
       expect(floors.row_sets).toHaveLength(8);
       expect(floors.a3_selected).toEqual({ cell: fit.primaries.A3.selected, eff: j.primaries.A3.pre.eff });
       expect([typeof j.primaries.A3.pre.eff, fit.primaries.A3.selected_index >= 0]).toEqual(['number', true]);
+      // and the clusters each primary achieved on the rows its statistic uses — A4's dated rows and A5's runs are no
+      // Table 2d set — under the main reading and under every sensitivity variant: what the result reports as
+      // counted before the outcomes is what was logged before the seal
+      const A = ['A1', 'A2', 'A3', 'A4', 'A5'], logged5 = (floors.primaries ?? {}) as Record<string, Record<string, number | null>>;
+      expect(Object.keys(logged5)).toEqual(['main', 'day', 'week', 'unit', 'panel13']);
+      expect(logged5.main).toEqual(Object.fromEntries(A.map((a) => [a, j.primaries[a].pre.eff])));
+      for (const v of ['day', 'week', 'unit', 'panel13']) expect(logged5[v], v).toEqual(Object.fromEntries(A.map((a, i) => [a, j.variants[v].eff[i]])));
+      for (const [v, effs] of Object.entries(logged5)) expect(Object.values(effs).map((x) => typeof x), v).toEqual(A.map(() => 'number'));
+      // a variant's clusters are its own, not the main reading's under another name
+      expect(logged5.week.A1).not.toBe(logged5.main.A1);
+      expect(legs.lastIndexOf('floors')).toBeLessThan(legs.lastIndexOf('seal'));
       expect(Date.parse(floors.at as string)).toBeLessThanOrEqual(Date.parse(j.seal.claimed_at as string));
       expect(new Set(log.filter((l) => l.leg !== 'study' || l.wave !== null).map((l) => l.wave))).toEqual(new Set(['EDGE-REGIME-CONFIRM-W1']));
       // what was verified at read time is in the result, and pinned with it
@@ -838,6 +864,15 @@ describe('regime-diag: what was registered is what is run', () => {
   it('the successor has exactly one registration, and it is the one its study record names', () => {
     const named = fs.readdirSync(path.join(REPO, 'audits')).filter((f) => /^regime-confirmation-preregistration-\d{4}-\d{2}-\d{2}\.md$/.test(f));
     expect(named.map((f) => `audits/${f}`)).toEqual([CONFIRM.registration]);
+  });
+
+  /** The successor's registration as it landed (commit feceb059): its length in bytes and its sha256. */
+  const CONFIRM_LANDED = { bytes: 61_673, sha256: '68b80e6f33aea74717b511885cc38938270ba52f17b0581a7cae9a7fa729d7ed' };
+  it('the successor\'s landed body is never edited: its bytes open the file, and everything after them is appended', () => {
+    const b = fs.readFileSync(path.join(REPO, CONFIRM.registration));
+    expect(b.length).toBeGreaterThan(CONFIRM_LANDED.bytes);
+    expect(sha256(b.subarray(0, CONFIRM_LANDED.bytes))).toBe(CONFIRM_LANDED.sha256);
+    expect(b.subarray(CONFIRM_LANDED.bytes).toString('utf8')).toMatch(/^\n## Amendment \d{4}-\d{2}-\d{2} — /);
   });
 
   it('the successor pins every harness file at its bytes, the absence probe included', () => {
