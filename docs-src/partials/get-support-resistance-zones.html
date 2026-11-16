@@ -1,5 +1,4 @@
-      <p class="text-gray-400 text-sm mb-3">Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.</p>
-      <p class="text-gray-400 text-sm mb-5">Zones mark where price has clustered before. Price can move through any zone.</p>
+      <p class="text-gray-400 text-sm mb-5">Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
@@ -25,7 +24,6 @@
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td></tr>
           <tr class="param-row"><td>venue</td><td class="text-gray-400">string</td></tr>
           <tr class="param-row"><td>price</td><td class="text-gray-400">number</td></tr>
-          <tr class="param-row"><td>note</td><td class="text-gray-400">string</td></tr>
           <tr class="param-row"><td>results</td><td class="text-gray-400">array</td></tr>
           <tr class="param-row"><td>unserved</td><td class="text-gray-400">array</td></tr>
           <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td></tr>
@@ -99,7 +97,6 @@
   "coin": "BTC",
   "venue": "BINANCE",
   "price": 64340.8,
-  "note": "Zones mark where price has clustered before. Price can move through any zone.",
   "results": [
     {
       "timeframe": "1d",

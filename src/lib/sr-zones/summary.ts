@@ -1,9 +1,10 @@
 /**
- * summary.ts — SR-ZONES-W1 §0. The fixed strings of a get_sr_zones response and the one-sentence summary template.
+ * summary.ts — SR-ZONES-W1 §0. The one-sentence summary template of a get_sr_zones response.
  *
  * Facts only: every sentence states where zones are and what price and volume did, never what they will do. The
- * facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks every string literal in src/lib/sr-zones/**, NOTE and
- * this template's output on the last 365 fixture candles. (ORDER and its `order` field left the response, R7.)
+ * facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks every string literal in src/lib/sr-zones/** and
+ * this template's output on the last 365 fixture candles. (ORDER and its `order` field left the response, R7; NOTE
+ * and its `note` field, R8.)
  *
  * SR-ZONES-W2 §0.1–§0.2 as R7 #3 amends it: a response's summary describes its SERVED frame (served.ts), so zone 1's
  * printed range, whether price is inside it and how far it is all read the edges the response carries; the state and
@@ -14,8 +15,6 @@ import { formatLevel } from './rounding.js';
 
 /** What the summary reads of a zone: a computed zone or a served one (served.ts). */
 type SummaryZone = Pick<SrZone, 'low' | 'high' | 'distance_pct' | 'state' | 'broke_at'>;
-
-export const SR_ZONES_NOTE = 'Zones mark where price has clustered before. Price can move through any zone.';
 
 /** A price with up to 6 significant digits after the leading one and no trailing zeros. */
 function formatPrice(x: number): string {

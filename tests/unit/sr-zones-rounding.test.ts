@@ -93,7 +93,7 @@ const floatDistance = (z: { low: number; high: number }, side: (typeof SIDES)[nu
 };
 
 /** The keys Mr.1 took out of the response (R7): T1 served them, this build does not. */
-const REMOVED_TOP = ['order'];
+const REMOVED_TOP = ['order', 'note']; // R7: `order`; R8: `note`
 const REMOVED_ZONE = ['formed_from', 'formed_to'];
 
 function t1Masked(): GetSrZonesResponse {

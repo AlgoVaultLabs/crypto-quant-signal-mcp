@@ -447,7 +447,6 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         coin: 'BTC',
         venue: 'BINANCE',
         price: 64340.8,
-        note: 'Zones mark where price has clustered before. Price can move through any zone.',
         results: [
           {
             timeframe: '1d',

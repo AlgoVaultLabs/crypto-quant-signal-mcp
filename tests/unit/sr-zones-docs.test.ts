@@ -21,7 +21,7 @@ import {
   PARAM_DESC_SR_ZONES_TIMEFRAMES,
   PARAM_DESC_SR_ZONES_VENUE,
 } from '../../src/tool-descriptions.js';
-import { SR_ZONES_NOTE, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
 import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
 import type { SrZone } from '../../src/lib/sr-zones/zones.js';
 
@@ -54,9 +54,10 @@ interface Example {
 const example = (): Example => JSON.parse(codeBlocks()[1]) as Example;
 
 describe('SR-ZONES-W2 AC2.3 — the docs page is only the approved text', () => {
-  it('the paragraphs are the §0 description and NOTE, verbatim, plus the two example labels', () => {
+  it('the paragraphs are the §0 description, verbatim, plus the two example labels (R8: the NOTE left the page)', () => {
     const paras = [...PARTIAL.matchAll(/<p(?:\s[^>]*)?>([\s\S]*?)<\/p>/g)].map((m) => text(m[1]));
-    expect(paras).toEqual([GET_SR_ZONES_DESCRIPTION, SR_ZONES_NOTE, 'Request', 'Response']);
+    expect(paras).toEqual([GET_SR_ZONES_DESCRIPTION, 'Request', 'Response']);
+    expect(text(PARTIAL)).not.toContain('Price can move through any zone');
   });
 
   it('the headings are structure only', () => {
@@ -106,17 +107,17 @@ describe('SR-ZONES-W2 AC2.3 — the example: one request, one served BTC 1d resp
     expect(body.params).toEqual({ name: 'get_support_resistance_zones', arguments: { coin: 'BTC', timeframes: ['1d'] } });
   });
 
-  it('the response answers that request: BTC, one 1d result, nothing unserved, NOTE as served', () => {
+  it('the response answers that request: BTC, one 1d result, nothing unserved', () => {
     const r = example();
-    expect(Object.keys(r)).toEqual(['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp']);
-    expect([r.coin, r.venue, r.note, r.unserved]).toEqual(['BTC', 'BINANCE', SR_ZONES_NOTE, []]);
+    expect(Object.keys(r)).toEqual(['coin', 'venue', 'price', 'results', 'unserved', 'timestamp']);
+    expect([r.coin, r.venue, r.unserved]).toEqual(['BTC', 'BINANCE', []]);
     expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
   });
 
-  it('R7: the page names no `order`, `formed_from` or `formed_to` — not in a field table, not in the example', () => {
+  it('R7 + R8: the page names no `order`, `formed_from`, `formed_to` or `note` — not in a field table, not in the example', () => {
     const tables = [...PARTIAL.matchAll(/<tr class="param-row"[^>]*><td>([^<]+)<\/td>/g)].map((m) => m[1]);
     expect(tables.length).toBeGreaterThan(20);
-    for (const k of ['order', 'formed_from', 'formed_to']) {
+    for (const k of ['order', 'formed_from', 'formed_to', 'note']) {
       expect(tables, k).not.toContain(k);
       expect(codeBlocks()[1], k).not.toContain(`"${k}":`);
     }

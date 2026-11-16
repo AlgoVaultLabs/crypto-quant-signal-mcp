@@ -48,7 +48,7 @@ import { withAuthState } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { SR_ZONES_PARAMS } from '../lib/sr-zones/params.js';
 import { computeSrZones, attachSrZoneOverlaps, type SrZoneFlag, type SrZonesFrame } from '../lib/sr-zones/zones.js';
-import { SR_ZONES_NOTE, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
+import { buildSrZonesSummary } from '../lib/sr-zones/summary.js';
 import { priceLevelStep } from '../lib/sr-zones/rounding.js';
 import { serveSrZonesFrame, type SrServedZone } from '../lib/sr-zones/served.js';
 
@@ -104,7 +104,6 @@ export interface GetSrZonesResponse {
   coin: string;
   venue: typeof VENUE;
   price: number;
-  note: string;
   results: SrZonesTimeframeResult[];
   unserved: SrZonesUnserved[];
   timestamp: number;
@@ -503,7 +502,6 @@ export async function runGetSrZones(
       coin,
       venue: VENUE,
       price,
-      note: SR_ZONES_NOTE,
       results,
       unserved,
       timestamp: Math.floor(freshest.readAtMs / 1000),

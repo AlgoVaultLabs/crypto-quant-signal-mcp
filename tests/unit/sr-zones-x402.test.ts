@@ -113,10 +113,10 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_support_resistance_zon
     expect(r.support.length + r.resistance.length).toBeGreaterThan(0);
   });
 
-  it('R7: the output example carries no `order`, `formed_from` or `formed_to`', () => {
+  it('R7 + R8: the output example carries no `order`, `formed_from`, `formed_to` or `note`', () => {
     const text = JSON.stringify(BAZAAR_ROUTES.get_support_resistance_zones!.output!.example);
     expect(text).toContain('"distance_pct":');
-    for (const k of ['order', 'formed_from', 'formed_to']) expect(text, k).not.toContain(`"${k}":`);
+    for (const k of ['order', 'formed_from', 'formed_to', 'note']) expect(text, k).not.toContain(`"${k}":`);
   });
 });
 

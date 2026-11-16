@@ -53,8 +53,8 @@ const LOAD_TIMEOUT = /candle history did not load within \d+ s/;
 /** How long a check waits before calling once more on a load-timeout answer (R9 #3). */
 const RETRY_WAIT_MS = 15_000;
 const RESULT_KEYS = ['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance'];
-/** R7 (Mr.1 2026-11-16): no `order`, and no zone `formed_from` / `formed_to`. */
-const TOP_KEYS = ['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
+/** R7 (Mr.1 2026-11-16): no `order`, and no zone `formed_from` / `formed_to`; R8: no `note`. */
+const TOP_KEYS = ['coin', 'venue', 'price', 'results', 'unserved', 'timestamp', '_algovault'];
 const ZONE_KEYS = [
   'rank', 'low', 'high', 'distance_pct', 'members',
   'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
@@ -380,7 +380,6 @@ function sampleBody(coin, timeframes) {
   });
   return {
     coin, venue: 'BINANCE', price: 100,
-    note: 'Zones mark where price has clustered before. Price can move through any zone.',
     results: timeframes.map((timeframe) => ({
       timeframe,
       summary: `${coin} ${timeframe} at 100: 1 support and 1 resistance zones; support zone 1 at 80–90, 10% below; resistance zone 1 at 110–120, 10% above; last closed candle volume 1× its 20-candle average.`,
@@ -487,11 +486,12 @@ async function selfTest() {
     ['PREDICT is caught when nothing is masked', () => lintHits([['predict', predict, null]]).hits.length === 2],
     ['the mask covers only the whole symbol', () => maskCoin('PREDICTS PREDICT', 'PREDICT') === 'PREDICTS <COIN>'],
     ['a forbidden word in the summary is caught', () => lintHits([['b', edit(btc, (b) => { b.results[0].summary += ' Price will hold.'; }), 'BTC']]).hits.length === 1],
-    ['a forbidden word in the note is caught', () => lintHits([['b', edit(btc, (b) => { b.note = 'Zones likely hold.'; }), 'BTC']]).hits.length === 1],
+    ['a forbidden word in an unserved reason is caught', () => lintHits([['b', edit(btc, (b) => { b.unserved.push({ timeframe: '1h', reason: 'Zones likely hold.' }); }), 'BTC']]).hits.length === 1],
     ['a forbidden word in the description is caught', () => lintHits([['t', { description: 'Predicts the next bounce.' }, null]]).hits.length === 1],
     ['a fourth support zone is caught', () => shapeProblems(edit(btc, (b) => { b.results[0].support.push(...b.results[0].support, ...b.results[0].support, ...b.results[0].support); }), ['1d', '4h']).length > 0],
     ['a zone without overlaps is caught', () => shapeProblems(edit(btc, (b) => { delete b.results[1].resistance[0].overlaps; }), ['1d', '4h']).length > 0],
-    ['R7: a body still carrying `order` is caught', () => shapeProblems(edit(btc, (b) => { const { note, results, unserved, timestamp, _algovault } = b; for (const k of ['note', 'results', 'unserved', 'timestamp', '_algovault']) delete b[k]; Object.assign(b, { order: 'o', note, results, unserved, timestamp, _algovault }); }), ['1d', '4h']).length > 0],
+    ['R7: a body still carrying `order` is caught', () => shapeProblems(edit(btc, (b) => { const { results, unserved, timestamp, _algovault } = b; for (const k of ['results', 'unserved', 'timestamp', '_algovault']) delete b[k]; Object.assign(b, { order: 'o', results, unserved, timestamp, _algovault }); }), ['1d', '4h']).length > 0],
+    ['R8: a body still carrying `note` is caught', () => shapeProblems(edit(btc, (b) => { const { results, unserved, timestamp, _algovault } = b; for (const k of ['results', 'unserved', 'timestamp', '_algovault']) delete b[k]; Object.assign(b, { note: 'n', results, unserved, timestamp, _algovault }); }), ['1d', '4h']).length > 0],
     ['R7: zones still carrying `formed_from` / `formed_to` are caught', () => shapeProblems(edit(btc, (b) => { for (const r of b.results) for (const side of ['support', 'resistance']) r[side] = r[side].map(({ rank, low, high, distance_pct, ...rest }) => ({ rank, low, high, distance_pct, formed_from: 'a', formed_to: 'b', ...rest })); }), ['1d', '4h']).length > 0],
     ['a missing result is caught', () => shapeProblems(edit(btc, (b) => { b.results.pop(); }), ['1d', '4h']).length > 0],
     ['top-level keys out of §0 order are caught', () => shapeProblems(edit(btc, (b) => { const { coin, ...rest } = b; Object.keys(b).forEach((k) => delete b[k]); Object.assign(b, rest, { coin }); }), ['1d', '4h']).length > 0],

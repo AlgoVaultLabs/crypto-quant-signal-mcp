@@ -38,7 +38,6 @@ import { CHANNELS } from '../../src/lib/channel-registry.js';
 import { requestContext } from '../../src/lib/license.js';
 import { GET_SR_ZONES_DESCRIPTION } from '../../src/tool-descriptions.js';
 import * as srZonesSummary from '../../src/lib/sr-zones/summary.js';
-import { SR_ZONES_NOTE } from '../../src/lib/sr-zones/summary.js';
 import * as schema from '../../src/lib/tool-param-schema.js';
 import { renderToolsSentence, renderToolsSections, LLMS_TXT, LLMS_FULL_TXT, LIST_BLOCK, FULL_BLOCK } from '../../scripts/build_llms_tools.mjs';
 import { renderToolsPage } from '../../scripts/build_tools_page.mjs';
@@ -310,11 +309,10 @@ describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BA
     expect(now).toEqual({ ...BASE.labels, get_support_resistance_zones: 'Support and Resistance Zones (Beta)' });
   });
 
-  it('the frozen copy is untouched: the description constant and NOTE; ORDER is gone (R7)', () => {
+  it('the frozen copy is untouched: the description constant; ORDER (R7) and NOTE (R8) are gone', () => {
     expect(GET_SR_ZONES_DESCRIPTION).toBe(BASE.tools_list.get_sr_zones.description);
     expect(GET_SR_ZONES_DESCRIPTION.endsWith(BETA_SUFFIX)).toBe(false);
-    const golden = JSON.parse(readFileSync(join(ROOT, 'tests', 'unit', 'sr-zones-t1-golden-btc-1d.json'), 'utf8')) as { note: string };
-    expect(SR_ZONES_NOTE).toBe(golden.note);
     expect('SR_ZONES_ORDER' in srZonesSummary).toBe(false);
+    expect('SR_ZONES_NOTE' in srZonesSummary).toBe(false);
   });
 });
