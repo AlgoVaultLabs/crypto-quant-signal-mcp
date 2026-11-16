@@ -12,7 +12,7 @@ import {
   techArticleToolClause,
   type DocsNode,
 } from '../src/lib/docs-outline.js';
-import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from '../src/lib/feature-registry.js';
+import { FEATURE_REGISTRY, betaMarked, isBetaTool, publicToolNames, type FeatureSpec } from '../src/lib/feature-registry.js';
 import { CHANNELS } from '../src/lib/channel-registry.js';
 import MCP_CLIENTS from '../src/lib/integrations-data/mcp-clients.js';
 import AI_AGENTS from '../src/lib/integrations-data/ai-agents.js';
@@ -174,10 +174,13 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
 });
 
 describe('docs-outline — TechArticle JSON-LD tool clause derives from the SoT (OPS-DOCS-JSONLD-TOOLCOUNT-W1)', () => {
-  it('renders the current public tool set — count + names === publicToolNames() (9, incl pre_trade_check and get_sr_zones)', () => {
-    expect(techArticleToolClause()).toBe(`${publicToolNames().length} AlgoVault MCP tools (${publicToolNames().join(', ')})`);
+  // SR-ZONES-W2 R6 #3: a flagged tool's name carries the registry's Beta mark; the count is of names.
+  it('renders the current public tool set — count + names === publicToolNames() (9, incl pre_trade_check and get_sr_zones, marked Beta)', () => {
     expect(techArticleToolClause()).toBe(
-      '9 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, get_sr_zones, chat_knowledge, search_knowledge)',
+      `${publicToolNames().length} AlgoVault MCP tools (${publicToolNames().map((n) => betaMarked(n, isBetaTool(n))).join(', ')})`,
+    );
+    expect(techArticleToolClause()).toBe(
+      '9 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, get_sr_zones (Beta), chat_knowledge, search_knowledge)',
     );
   });
 

@@ -7,7 +7,7 @@
 // reach-flag bridge (A3) — never hand-listed.
 //
 // DATA + TYPES ONLY: imports feature-registry (for tool coverage) — writes no HTML, imports no DOM.
-import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from './feature-registry.js';
+import { FEATURE_REGISTRY, betaMarked, isBetaTool, publicToolNames, type FeatureSpec } from './feature-registry.js';
 import { FREE_MONTHLY_CALLS, freeCallsLabel, freeKeylessCallsLabel, planCallsLabel, planPriceLabel } from './plans.js';
 
 const APEX = 'https://algovault.com';
@@ -67,6 +67,14 @@ function andList(xs: string[]): string {
   if (xs.length <= 1) return xs[0] ?? '';
   if (xs.length === 2) return `${xs[0]} and ${xs[1]}`;
   return `${xs.slice(0, -1).join(', ')}, and ${xs[xs.length - 1]}`;
+}
+
+/**
+ * A tool name as public prose prints it: with the registry's Beta mark when its row is flagged (SR-ZONES-W2 R6 #3).
+ * Applied to RENDERED names only — never to what toolsReaching() returns, whose names feed coverage logic.
+ */
+function proseToolName(name: string): string {
+  return betaMarked(name, isBetaTool(name));
 }
 
 export const CHANNELS: ChannelSpec[] = [
@@ -152,7 +160,10 @@ export const CHANNELS: ChannelSpec[] = [
       },
       {
         q: 'Which tools work over REST, and which need MCP?',
-        a: `REST reaches ${andList(toolsReaching('httpX402'))}. MCP additionally reaches ${andList(toolsReaching('mcp').filter((t) => !toolsReaching('httpX402').includes(t)))}. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at ${APEX}/docs#rest-api.`,
+        // SR-ZONES-W2 R6 #3: rendered when read, so each name carries the Beta mark its registry row says now.
+        get a() {
+          return `REST reaches ${andList(toolsReaching('httpX402').map(proseToolName))}. MCP additionally reaches ${andList(toolsReaching('mcp').filter((t) => !toolsReaching('httpX402').includes(t)).map(proseToolName))}. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at ${APEX}/docs#rest-api.`;
+        },
       },
     ],
   },

@@ -12,6 +12,11 @@
  * tests). A flagged tool's texts are BASE + ` (Beta)`; the description constants themselves never carry the mark.
  *
  * Requires `npm run build`: the /tools renderer reads dist, so a planted flag is set on the dist registry too.
+ *
+ * R6 #3 (CH4 audit): two prose sentences that list tool names join the iff-test — the /rest-api FAQ answer "Which tools
+ * work over REST, and which need MCP?" (its visible text and its FAQPage JSON-LD both print it) and the /docs TechArticle
+ * JSON-LD tool clause. A name there is followed by ` (Beta)` exactly when its row is flagged; code identifiers
+ * (`<code>`, curls, the lobehub `name`) stay bare.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -28,7 +33,8 @@ import {
   type FeatureSpec,
 } from '../../src/lib/feature-registry.js';
 import { buildNavModel, publicToolEntries, type NavDropdown } from '../../src/lib/nav-manifest.js';
-import { flattenOutline } from '../../src/lib/docs-outline.js';
+import { flattenOutline, techArticleToolClause } from '../../src/lib/docs-outline.js';
+import { CHANNELS } from '../../src/lib/channel-registry.js';
 import { requestContext } from '../../src/lib/license.js';
 import { GET_SR_ZONES_DESCRIPTION } from '../../src/tool-descriptions.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
@@ -79,6 +85,13 @@ const decode = (s: string): string =>
 /** One tool's text on one surface. */
 type Row = { tool: string; surface: string; text: string };
 
+/** The /rest-api FAQ question whose answer lists the tools by name (R6 #3). */
+const REST_FAQ_Q = 'Which tools work over REST, and which need MCP?';
+/** The source of that answer — what the visible FAQ and the FAQPage JSON-LD both print. */
+const restFaqAnswer = (): string => CHANNELS.find((c) => c.key === 'rest-api')!.faq.find((f) => f.q === REST_FAQ_Q)!.a;
+/** `name` as a sentence prints it: the bare name, or the name and its mark. */
+const nameToken = (text: string, name: string): string | undefined => text.match(new RegExp(`\\b${name}\\b( \\(Beta\\))?`))?.[0];
+
 /** Every §0.3 surface text for every tool that has one, from the CURRENT (possibly planted) registry. */
 async function surfaceRows(): Promise<Row[]> {
   const rows: Row[] = [];
@@ -115,6 +128,12 @@ async function surfaceRows(): Promise<Row[]> {
     add(e.name, '/tools card title', card.match(/<h3 class="tools-card-title">([^<]*)<\/h3>/)?.[1] && decode(card.match(/<h3 class="tools-card-title">([^<]*)<\/h3>/)![1]));
     add(e.name, '/tools card description', card.match(/<p class="tools-card-desc">([^<]*)<\/p>/)?.[1] && decode(card.match(/<p class="tools-card-desc">([^<]*)<\/p>/)![1]));
   }
+  const restFaq = restFaqAnswer();
+  const tech = techArticleToolClause();
+  for (const e of entries) {
+    add(e.name, '/rest-api FAQ', nameToken(restFaq, e.name));
+    add(e.name, '/docs TechArticle', nameToken(tech, e.name));
+  }
   return rows;
 }
 
@@ -148,6 +167,7 @@ const SURFACES = [
   'tools/list description', 'tools/list title', 'tools/list (ChatGPT) description', 'tools/list (ChatGPT) title',
   '/capabilities description', 'label (publicToolEntries)', 'nav Tools column', 'docs heading', 'llms.txt',
   'llms-full heading', 'llms-full description', '/tools card title', '/tools card description',
+  '/rest-api FAQ', '/docs TechArticle',
 ];
 
 describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
@@ -191,8 +211,33 @@ describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
     expect(docs).toContain('<a href="#get-sr-zones" class="sidebar-link" style="padding-left:32px">Support and Resistance Zones (Beta)</a>');
     const tools = readFileSync(join(ROOT, 'landing', 'tools.html'), 'utf8');
     expect(tools).toContain('<h3 class="tools-card-title">Support and Resistance Zones (Beta)</h3>');
-    // Every label surface that is not get_sr_zones's carries no mark.
-    expect((docs.match(/ \(Beta\)/g) ?? []).length).toBe((docs.match(/Support and Resistance Zones \(Beta\)/g) ?? []).length);
+    // Every mark on /docs belongs to get_sr_zones: its label, or its name in the TechArticle clause (R6 #3).
+    expect(docs.replace(/Support and Resistance Zones \(Beta\)|get_sr_zones \(Beta\)/g, '')).not.toContain('(Beta)');
+  });
+
+  it('R6 #3 — the committed /rest-api FAQ (visible and FAQPage JSON-LD) and /docs TechArticle mark exactly the flagged names', () => {
+    const rest = readFileSync(join(ROOT, 'landing', 'rest-api.html'), 'utf8');
+    const q = REST_FAQ_Q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const visible = decode(rest.match(new RegExp(`<summary>${q}</summary><p>([^<]*)</p>`))![1]);
+    const faqLd = JSON.parse(rest.match(/<script type="application\/ld\+json" data-algovault-jsonld="FAQPage">([\s\S]*?)<\/script>/)![1]) as {
+      mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }>;
+    };
+    const ld = faqLd.mainEntity.find((q) => q.name === REST_FAQ_Q)!.acceptedAnswer.text;
+    const docs = readFileSync(join(ROOT, 'landing', 'docs.html'), 'utf8');
+    const tech = (JSON.parse(docs.match(/<script type="application\/ld\+json">\s*(\{[\s\S]*?"@type":\s*"TechArticle"[\s\S]*?\})\s*<\/script>/)![1]) as {
+      description: string;
+    }).description;
+    expect(visible).toBe(restFaqAnswer());
+    expect(ld).toBe(restFaqAnswer());
+    expect(tech).toContain(techArticleToolClause());
+    for (const [where, text] of [['/rest-api FAQ', visible], ['/rest-api FAQPage', ld], ['/docs TechArticle', tech]] as const) {
+      for (const e of publicToolEntries()) {
+        const tok = nameToken(text, e.name);
+        expect(tok, `${where} names ${e.name}`).toBeDefined();
+        expect(tok!.endsWith(BETA_SUFFIX), `${where}: ${tok}`).toBe(e.beta);
+      }
+      expect((text.match(/\(Beta\)/g) ?? []).length, where).toBe(publicToolEntries().filter((e) => e.beta).length);
+    }
   });
 
   it('planted: the flag OFF on get_sr_zones → no surface shows the mark anywhere', async () => {

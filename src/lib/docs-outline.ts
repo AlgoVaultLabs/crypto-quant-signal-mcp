@@ -27,7 +27,7 @@
  * tools or channels by hand, and it never re-orders where a registry defines order.
  */
 
-import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from './feature-registry.js';
+import { FEATURE_REGISTRY, betaMarked, isBetaTool, publicToolNames, type FeatureSpec } from './feature-registry.js';
 import { publicToolEntries } from './nav-manifest.js';
 import { CHANNELS, channelHref, type ChannelSpec } from './channel-registry.js';
 
@@ -289,5 +289,6 @@ export function channelNodeCount(): number {
  * so a test can prove the count FOLLOWS the list (a mock 7th name → "7 …"), not a frozen literal.
  */
 export function techArticleToolClause(toolNames: readonly string[] = publicToolNames()): string {
-  return `${toolNames.length} AlgoVault MCP tools (${toolNames.join(', ')})`;
+  // SR-ZONES-W2 R6 #3: a flagged tool's name prints with the registry's Beta mark; the count is of names, unmarked.
+  return `${toolNames.length} AlgoVault MCP tools (${toolNames.map((n) => betaMarked(n, isBetaTool(n))).join(', ')})`;
 }

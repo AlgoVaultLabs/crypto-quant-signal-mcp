@@ -225,13 +225,14 @@ test('no <PFE_WR> / <TOTAL_SIGNALS> placeholder leakage anywhere', async () => {
 // (NB: generate_jsonld.mjs does NOT render this TechArticle — it only manages the 5 data-algovault-
 // jsonld marketing blocks; the docs TechArticle is the page's own, injected by build_docs.)
 test('docs.html TechArticle JSON-LD tool clause === the public-tool SoT (no hardcoded count)', async () => {
-  const { publicToolNames } = await import('../../dist/lib/feature-registry.js');
+  const { publicToolNames, betaMarked, isBetaTool } = await import('../../dist/lib/feature-registry.js');
   const html = await readHtml('docs.html');
   const m = html.match(/<script type="application\/ld\+json">\s*(\{[\s\S]*?"@type":\s*"TechArticle"[\s\S]*?\})\s*<\/script>/);
   assert.ok(m, 'docs.html missing TechArticle JSON-LD block');
   const node = JSON.parse(m[1]);
   const names = publicToolNames();
-  const clause = `${names.length} AlgoVault MCP tools (${names.join(', ')})`;
+  // SR-ZONES-W2 R6 #3: a flagged tool's name carries the registry's Beta mark.
+  const clause = `${names.length} AlgoVault MCP tools (${names.map((n) => betaMarked(n, isBetaTool(n))).join(', ')})`;
   assert.ok(
     node.description.includes(clause),
     `TechArticle must state the SoT-derived clause "${clause}"; got: ${node.description.slice(0, 140)}`,
