@@ -77,7 +77,18 @@ export interface WelcomePageOptions {
   src?: string | null;
   /** SECR-03: the already-shown arm — no key, no tier, no email, no paywall CTA. Set by `getWelcomeRevealHtml` only. */
   keyAlreadyShown?: boolean;
+  /**
+   * TG-SIGNIN-W1-R2 CH2 R2.3: the one-time sign-in token minted on this reveal (a checkout from the Telegram bot).
+   * With a key on the page, W1 + an Open Telegram button carrying `?start=<token>` replace the `auth_` Connect
+   * button. Set by `getWelcomeRevealHtml` from the reveal arm only; every other arm renders without it.
+   */
+  tgSigninToken?: string | null;
 }
+
+// TG-SIGNIN-W1-R2 — §Copy W1 (Mr.1's ruling, 2026-11-16 09:08) and W3 (TG-SIGNIN-W1 §Copy), verbatim. W3 is
+// exported because the Google / GitHub key page in index.ts renders it too; one string, two surfaces.
+const TG_SIGNIN_W1 = '✅ Payment received. Tap Open Telegram to finish signing in.';
+export const TG_SIGNIN_W3 = 'In Telegram: open @algovaultofficialbot, tap 🔑 Sign In and paste your key.';
 
 export function getWelcomePageHtml(
   apiKey: string | null,
@@ -188,12 +199,24 @@ export function getWelcomePageHtml(
   // BOT-W2 / D1-C: post-checkout deep-link to @algovaultofficialbot.
   // The api_key is encoded defensively even though current av_live_* keys are
   // URL-safe — future key shape changes mustn't silently break the link.
-  const tgConnect = apiKey
-    ? `<div class="tg-connect"><div class="label">Connect to Telegram bot</div>` +
-      `<p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p>` +
-      `<a href="https://t.me/algovaultofficialbot?start=auth_${encodeURIComponent(apiKey)}" ` +
-      `target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>`
-    : '';
+  // TG-SIGNIN-W1-R2 CH2 R2.3: a reveal that carries a sign-in token (a checkout from the bot) gets W1 + "Open
+  // Telegram" in place of that button: the token signs in the chat that opens it, and the link never carries the
+  // key. Every other page with a key keeps the button and gains W3, the paste path (also the arm a failed mint
+  // falls back to). The token is encoded as defensively as the key.
+  const tgCardHead =
+    `<div class="tg-connect"><div class="label">Connect to Telegram bot</div>` +
+    `<p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p>`;
+  const tgConnect = !apiKey
+    ? ''
+    : opts.tgSigninToken
+      ? tgCardHead +
+        `<p>${TG_SIGNIN_W1}</p>` +
+        `<a href="https://t.me/algovaultofficialbot?start=${encodeURIComponent(opts.tgSigninToken)}" ` +
+        `target="_blank" rel="noopener" class="tg-btn">Open Telegram</a></div>`
+      : tgCardHead +
+        `<p>${TG_SIGNIN_W3}</p>` +
+        `<a href="https://t.me/algovaultofficialbot?start=auth_${encodeURIComponent(apiKey)}" ` +
+        `target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -339,9 +362,13 @@ ${renderBrandFooter('desktop')}
  * OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the page for one judged view (`revealKeyOnce`). A reveal and
  * a pending key render the existing arms byte for byte; EVERY refusal renders the one already-shown arm, so
  * the page is no oracle for which check failed.
+ * TG-SIGNIN-W1-R2 CH2 R2.3: the sign-in token comes from the reveal arm alone — a token in `opts` is dropped on
+ * every arm, so the pending and refused arms can never show one.
  */
 export function getWelcomeRevealHtml(reveal: KeyRevealOutcome, opts: WelcomePageOptions = {}): string {
-  if (reveal.kind === 'reveal') return getWelcomePageHtml(reveal.apiKey, reveal.tier, reveal.email, opts);
-  if (reveal.kind === 'pending') return getWelcomePageHtml(null, reveal.tier, reveal.email, opts);
-  return getWelcomePageHtml(null, null, null, { ...opts, keyAlreadyShown: true });
+  if (reveal.kind === 'reveal') {
+    return getWelcomePageHtml(reveal.apiKey, reveal.tier, reveal.email, { ...opts, tgSigninToken: reveal.signinToken ?? null });
+  }
+  if (reveal.kind === 'pending') return getWelcomePageHtml(null, reveal.tier, reveal.email, { ...opts, tgSigninToken: null });
+  return getWelcomePageHtml(null, null, null, { ...opts, keyAlreadyShown: true, tgSigninToken: null });
 }

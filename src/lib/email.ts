@@ -517,6 +517,11 @@ interface RenderArgs {
   referral?: { code: string; link: string; termsUrl: string };
 }
 
+// TG-SIGNIN-W1-R2 CH2 (R2.1, reused from TG-SIGNIN-W1 CH2) — §Copy W2, verbatim: right under the key in the
+// welcome AND the recovery email (both render here), so a Telegram user can sign the bot in with the key they are
+// looking at.
+const TG_SIGNIN_W2 = 'Using Telegram? Open @algovaultofficialbot, tap 🔑 Sign In and paste this key.';
+
 function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs): string {
   return `<!DOCTYPE html>
 <html>
@@ -539,6 +544,7 @@ function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs)
           <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Your API Key</div>
           <div style="font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:14px;color:#0969da;word-break:break-all">${apiKey}</div>
         </div>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">${TG_SIGNIN_W2}</p>
         ${referral ? `<div style="background:#eafaf0;border:1px solid #2da44e;border-radius:8px;padding:16px;margin:0 0 24px">
           <div style="font-size:14px;font-weight:700;color:#1a7f37;margin:0 0 6px">Refer, earn ${commissionPct()}.</div>
           <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 8px">Share your link — friends get ${bonusCallsLabel()} bonus calls, you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.</p>
@@ -576,6 +582,8 @@ Plan: ${tier}
 
 Your API Key:
 ${apiKey}
+
+${TG_SIGNIN_W2}
 
 ${referral ? `Refer, earn ${commissionPct()}. Share your link — friends get ${bonusCallsLabel()} bonus calls, you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.
 Your code: ${referral.code}

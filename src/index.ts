@@ -152,9 +152,11 @@ import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 import { registerPlansPublicRoutes } from './lib/plans-public-api.js';
 // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.2: the step-up mode resolver, for the one boot line.
 import { resolveStepupMode, freeKeylessCallsLabel } from './lib/plans.js';
-import { getWelcomePageHtml, getWelcomeRevealHtml } from './lib/welcome-page.js';
+import { getWelcomePageHtml, getWelcomeRevealHtml, TG_SIGNIN_W3 } from './lib/welcome-page.js';
 // OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the one rule for showing a key from a Checkout Session.
 import { revealKeyOnce } from './lib/key-reveal.js';
+// TG-SIGNIN-W1-R2 CH2 R2.4: POST /api/bot/signin-token/redeem — the bot redeems the one-time token /welcome minted.
+import { registerSigninTokenRoutes } from './lib/tg-signin-tokens.js';
 import {
   TRADE_CALL_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
@@ -3680,6 +3682,8 @@ async function startHttp() {
         `<h1 style="color:#56d364">You're in via ${id}${stubNote}</h1>` +
         `<p>${keyCaption}</p>` +
         `<pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;user-select:all">${key}</pre>` +
+        // TG-SIGNIN-W1-R2 CH2 (R2.1, from TG-SIGNIN-W1 CH2 R2.6) — §Copy W3, paid keys only: a free key needs no sign-in.
+        (paid ? `<p>${TG_SIGNIN_W3}</p>` : '') +
         `<p>Referral link: <a style="color:#58a6ff" href="${referralLink}">${referralLink}</a></p>` +
         `<p style="color:#8b949e;font-size:13px">${footLine}</p></body>`,
       );
@@ -3867,6 +3871,11 @@ async function startHttp() {
   // `lib/entitlement-api.ts` because `index.ts` boots the server at import, which makes any
   // handler closure defined here untestable (CLAUDE.md: make entrypoints test-importable).
   registerEntitlementRoutes(app);
+
+  // TG-SIGNIN-W1-R2 CH2 R2.4: POST /api/bot/signin-token/redeem — the bot redeems the one-time token the
+  // /welcome reveal minted for a Telegram checkout. Same internal-key auth; body in `lib/tg-signin-tokens.ts`
+  // for the same import-boot reason.
+  registerSigninTokenRoutes(app);
 
   // OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3b: GET /api/ops/build — which COMMIT this
   // container was built from. Registered here beside the other internal-key routes; the handler

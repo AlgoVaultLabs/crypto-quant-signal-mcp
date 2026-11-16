@@ -1350,7 +1350,7 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <div class="subtitle">Starter plan activated</div>
   
   <div class="key-box"><div class="label">Your API Key</div><code id="api-key">av_live_070707070707070707070707</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>
-  <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_070707070707070707070707" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
+  <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><p>In Telegram: open @algovaultofficialbot, tap 🔑 Sign In and paste your key.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_070707070707070707070707" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
   <div class="claude-connect">
     <h2>Use AlgoVault in Claude</h2>
     <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>

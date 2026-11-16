@@ -29,6 +29,7 @@
     { "request": "GET /v1/checkout/sessions", "permission": "checkout_session_read" },
     { "request": "GET /v1/checkout/sessions/{id}", "permission": "checkout_session_read" },
     { "request": "GET /v1/customers/search", "permission": "customer_read" },
+    { "request": "GET /v1/customers/{id}", "permission": "customer_read" },
     { "request": "GET /v1/invoices", "permission": "invoice_read" },
     { "request": "GET /v1/invoices/{id}", "permission": "invoice_read" },
     { "request": "GET /v1/payment_intents/{id}", "permission": "payment_intent_read", "source": "family" },
@@ -115,6 +116,11 @@
         "request": "POST /v1/customers/{}/balance_transactions",
         "permission": "customer_write",
         "sites": { "src/lib/referral-accrual.ts": 2 }
+      },
+      "customers.retrieve": {
+        "request": "GET /v1/customers/{}",
+        "permission": "customer_read",
+        "sites": { "src/lib/stripe.ts": 1 }
       },
       "customers.search": {
         "request": "GET /v1/customers/search",

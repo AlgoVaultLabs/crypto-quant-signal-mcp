@@ -45,6 +45,13 @@
  * the "Use AlgoVault in ChatGPT" card placed directly below the Claude card, reusing its CSS. The
  * diff was verified BEFORE regenerating and is purely additive: 0 lines removed, and in each of the
  * seven snapshots exactly 6 added lines, the card's markup. No CSS rule added, no existing line moved.
+ *
+ * SNAPSHOT MAINTENANCE — TG-SIGNIN-W1-R2 (CH2, 2026-11-16): updated for §Copy W3, the Telegram Sign In
+ * step on a page that shows a key. The diff was verified BEFORE updating and is purely additive: ONE
+ * snapshot (post-checkout) changed ONE line, the one-line `.tg-connect` card, and that line is the old
+ * line with exactly one inserted `<p>` (W3) between the card's paragraph and its Connect button. Line
+ * count unchanged; no CSS rule added; the six keyless snapshots did not move. (W1 replaces the button only
+ * for a reveal carrying a sign-in token, which no fixture here passes.)
  */
 import { describe, expect, it } from 'vitest';
 import { getWelcomePageHtml } from '../src/lib/welcome-page.js';

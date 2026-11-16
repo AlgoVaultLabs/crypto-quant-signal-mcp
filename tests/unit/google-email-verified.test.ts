@@ -187,8 +187,24 @@ describe('R0.2 — the route: refusal first, nothing minted, every other byte un
   const oauthStart = raw.indexOf(OAUTH_OPEN);
   const oauthEnd = raw.indexOf(OAUTH_CLOSE, oauthStart) + OAUTH_CLOSE.length;
   const oauthBlock = raw.slice(oauthStart, oauthEnd);
-  const span = raw.slice(0, oauthStart) + raw.slice(oauthEnd);
+  const withoutOauth = raw.slice(0, oauthStart) + raw.slice(oauthEnd);
+  // TG-SIGNIN-W1-R2 CH2 (R2.1, reusing TG-SIGNIN-W1 CH2 R2.6) is the THIRD sanctioned insertion: §Copy W3 on the
+  // key page, after the key, for a PAID identity only. Cut out by its own markers and asserted on its own, like R2.7.
+  const TG_OPEN = '        // TG-SIGNIN-W1-R2 CH2';
+  const TG_CLOSE = "(paid ? `<p>${TG_SIGNIN_W3}</p>` : '') +\n";
+  const tgStart = withoutOauth.indexOf(TG_OPEN);
+  const tgEnd = withoutOauth.indexOf(TG_CLOSE, tgStart) + TG_CLOSE.length;
+  const tgBlock = withoutOauth.slice(tgStart, tgEnd);
+  const span = withoutOauth.slice(0, tgStart) + withoutOauth.slice(tgEnd);
   const CATCH = '    } catch (err) {\n';
+
+  it('the TG-SIGNIN W3 line is present once, after the key, and renders for a paid identity only', () => {
+    expect(tgStart).toBeGreaterThan(0);
+    expect(withoutOauth.indexOf(TG_OPEN, tgStart + 1)).toBe(-1);
+    expect(tgBlock.split('\n').filter(Boolean)).toHaveLength(2);
+    expect(tgBlock).toContain(TG_CLOSE.trimEnd());
+    expect(withoutOauth.indexOf('user-select:all">${key}</pre>`')).toBeLessThan(tgStart);
+  });
 
   it('the R2.7 OAuth branch is present once, gated on MCP_OAUTH, and returns only when it answered', () => {
     expect(oauthStart).toBeGreaterThan(0);

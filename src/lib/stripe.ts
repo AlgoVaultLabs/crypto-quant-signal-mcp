@@ -838,9 +838,17 @@ export async function createCheckoutSession(
 
 // ── Customer API Key Retrieval ──
 
+// TG-SIGNIN-W1-R2 CH2 R2.3 — the Telegram origin of a checkout: the bot's plan buttons send `utm_source=tg_bot`
+// (algovault-bot `plan_signup_url`, pinned by its tests/test_signup_url_source.py), which `/signup` forwards and
+// `buildCheckoutMetadata` writes onto the Session as `metadata.utm_source`, unchanged by this wave.
+const TELEGRAM_UTM_SOURCE = 'tg_bot';
+
 // OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the session's own status, payment_status and created
 // travel with the key, because the reveal rule (key-reveal.ts, this function's one caller) judges them
 // before any key reaches a page. All three are top-level session fields: no new expand, no new permission.
+// TG-SIGNIN-W1-R2 CH2 R2.3: so do `fromTelegram` (the session's `metadata.utm_source` is `tg_bot`) and the
+// customer id, which the reveal arm hands to the sign-in token so the bot's redeem can read the key by id.
+// Both are fields of the session and its already-expanded customer: no new expand, no new permission.
 export async function getCustomerApiKey(sessionId: string): Promise<{
   apiKey: string | null;
   tier: string | null;
@@ -848,8 +856,12 @@ export async function getCustomerApiKey(sessionId: string): Promise<{
   status: string | null;
   paymentStatus: string | null;
   created: number | null;
+  customerId: string | null;
+  fromTelegram: boolean;
 }> {
-  if (!stripe) return { apiKey: null, tier: null, email: null, status: null, paymentStatus: null, created: null };
+  if (!stripe) {
+    return { apiKey: null, tier: null, email: null, status: null, paymentStatus: null, created: null, customerId: null, fromTelegram: false };
+  }
 
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['customer', 'subscription'],
@@ -858,21 +870,53 @@ export async function getCustomerApiKey(sessionId: string): Promise<{
     status: session.status ?? null,
     paymentStatus: session.payment_status ?? null,
     created: typeof session.created === 'number' ? session.created : null,
+    fromTelegram: session.metadata?.utm_source === TELEGRAM_UTM_SOURCE,
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const customer = session.customer as any;
-  if (!customer || typeof customer === 'string') return { apiKey: null, tier: null, email: null, ...facts };
+  if (!customer || typeof customer === 'string') {
+    return { apiKey: null, tier: null, email: null, customerId: typeof customer === 'string' ? customer : null, ...facts };
+  }
 
   const apiKey = customer.metadata?.api_key || null;
   const email = customer.email || null;
+  const customerId: string | null = typeof customer.id === 'string' && customer.id.length > 0 ? customer.id : null;
 
   // Determine tier from subscription — PRICING-ANNUAL-AND-HOLD-PROMISE-W1: via the shared registry.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sub = session.subscription as any;
   const tier: string | null = sub?.items?.data ? highestTier(sub) : null;
 
-  return { apiKey, tier, email, ...facts };
+  return { apiKey, tier, email, customerId, ...facts };
+}
+
+/**
+ * TG-SIGNIN-W1-R2 CH2 R2.4 — one customer's CURRENT api key, read BY ID (reused from TG-SIGNIN-W1 CH2 `0c88aa5a`).
+ *
+ * `customers.retrieve` is read-after-write consistent; `customers.search` is not — Stripe documents search as
+ * unfit for read-after-write flows, usually under a minute behind and up to an hour during an outage. The bot
+ * redeems a sign-in token seconds after the purchase minted the key, which is exactly the window search misses.
+ * Reading at redeem time (never storing the key with the token) also means a rotated key is handed over as it
+ * is now.
+ *
+ * Three DEFINITIVE answers — the key, a deleted customer, a customer with no key — and a throw for everything
+ * else: a Stripe error, an unconfigured client, a reply that is not a customer. "Could not read" is never "has
+ * no key" (R-REV3 LOW-2): the redeem spends a token on `deleted` or `no_key`, so reading an outage as either
+ * would burn a paying buyer's one-tap sign-in.
+ */
+export type CustomerKeyRead = { kind: 'key'; apiKey: string } | { kind: 'deleted' } | { kind: 'no_key' };
+
+export async function getApiKeyByCustomerId(customerId: string): Promise<CustomerKeyRead> {
+  if (!stripe) throw new Error('Stripe is not configured');
+  const customer = (await stripe.customers.retrieve(customerId)) as {
+    deleted?: boolean;
+    metadata?: Record<string, string> | null;
+  } | null;
+  if (!customer || typeof customer !== 'object') throw new Error('customers.retrieve returned no customer');
+  if (customer.deleted === true) return { kind: 'deleted' };
+  const apiKey = customer.metadata?.api_key;
+  return typeof apiKey === 'string' && apiKey.length > 0 ? { kind: 'key', apiKey } : { kind: 'no_key' };
 }
 
 // ── Webhook Handling ──

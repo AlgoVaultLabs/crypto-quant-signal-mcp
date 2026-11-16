@@ -20,12 +20,17 @@
  * gets the key. The page renders every refusal as ONE arm, so it is no oracle for which check failed.
  *
  * INHERITORS (not wired here): `/api/signup-email`'s existing-key return (AUTH-01) and the OAuth callback page.
+ *
+ * TG-SIGNIN-W1-R2 CH2 R2.3: the reveal arm of a checkout from the Telegram bot also carries a one-time sign-in
+ * token (`tg-signin-tokens.ts`), minted only after the claim is won, so it is minted once and shown once, beside
+ * the key. The pending and refused arms never carry one.
  */
 import { createHash } from 'node:crypto';
 import { getCustomerApiKey } from './stripe.js';
 import { tryClaimOnce } from './idempotency.js';
 import { dbExec, dbQuery, isPgBackend } from './performance-db.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
+import { mintSigninToken, signinTokenGrant } from './tg-signin-tokens.js';
 
 const CHECKOUT_SESSION_ID = /^cs_(live|test)_[A-Za-z0-9]+$/;
 const MAX_SESSION_AGE_S = 24 * 60 * 60;
@@ -40,8 +45,10 @@ const CREATE_KEY_REVEAL_CLAIMS_SQL = `CREATE TABLE IF NOT EXISTS key_reveal_clai
   claimed_at TEXT NOT NULL
 )`;
 
+// TG-SIGNIN-W1-R2 CH2 R2.3: `signinToken` is present on the reveal arm of a Telegram checkout only, and only when
+// its mint succeeded; every other reveal is the object it always was.
 export type KeyRevealOutcome =
-  | { kind: 'reveal'; apiKey: string; tier: string | null; email: string | null }
+  | { kind: 'reveal'; apiKey: string; tier: string | null; email: string | null; signinToken?: string }
   | { kind: 'pending'; tier: string | null; email: string | null }
   | {
       kind: 'refused';
@@ -106,6 +113,19 @@ export async function revealKeyOnce(sessionId: unknown): Promise<KeyRevealOutcom
     },
     CLAIM_REASON_TAG,
   );
-  if (claim === 'CLAIMED') return { kind: 'reveal', apiKey: session.apiKey, tier: session.tier, email: session.email };
+  if (claim === 'CLAIMED') {
+    // TG-SIGNIN-W1-R2 CH2 R2.3: the claim is won, so this is the one view that shows the key. A Telegram checkout
+    // of a starter or pro plan with an email gets its sign-in token here; `mintSigninToken` never throws, and a
+    // failed mint leaves the reveal exactly as it was (the page shows today's `auth_` button).
+    const grant = signinTokenGrant(session);
+    const signinToken = grant ? await mintSigninToken(grant) : null;
+    return {
+      kind: 'reveal',
+      apiKey: session.apiKey,
+      tier: session.tier,
+      email: session.email,
+      ...(signinToken ? { signinToken } : {}),
+    };
+  }
   return { kind: 'refused', reason: claim === 'ALREADY_CLAIMED' ? 'already_shown' : 'indeterminate' };
 }

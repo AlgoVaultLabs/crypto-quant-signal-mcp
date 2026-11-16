@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeDbAsync } from '../../src/lib/performance-db.js';
+import { closeDbAsync, dbExec, dbQuery, isPgBackend } from '../../src/lib/performance-db.js';
 import { getWelcomePageHtml, getWelcomeRevealHtml } from '../../src/lib/welcome-page.js';
 import { stripComments } from '../../scripts/lib/strip-comments.mjs';
 
@@ -251,6 +251,109 @@ describe('revealKeyOnce — once (AC 2.2)', () => {
     expect(await kr.revealKeyOnce(a)).toMatchObject({ kind: 'reveal', apiKey: key });
     expect(await kr.revealKeyOnce(b)).toMatchObject({ kind: 'reveal', apiKey: key });
     expect(await kr.revealKeyOnce(a)).toEqual({ kind: 'refused', reason: 'already_shown' });
+  });
+});
+
+/**
+ * TG-SIGNIN-W1-R2 CH2 R2.3 — the one-time sign-in token rides the reveal arm of a Telegram checkout, and nothing
+ * else. Real mint, real table (this file's private SQLite, or Postgres on the lane): the token is checked against
+ * the row it left behind, and every arm that must not mint is checked for leaving no row at all.
+ */
+describe('revealKeyOnce — the Telegram sign-in token (TG-SIGNIN-W1-R2 R2.3)', () => {
+  let kr: KeyRevealModule;
+  let tokens: typeof import('../../src/lib/tg-signin-tokens.js');
+  const TOKEN_RE = /^tgl_[0-9a-f]{32}$/;
+  const tgSession = (over: Partial<SessionView> & { fromTelegram?: boolean; customerId?: string | null } = {}) =>
+    paidSession({ fromTelegram: true, customerId: `cus_${randomBytes(6).toString('hex')}`, ...over } as Partial<SessionView>);
+  const rowsFor = async (customerId: unknown) =>
+    dbQuery<Record<string, unknown>>('SELECT * FROM tg_signin_tokens WHERE customer_id = ?', [customerId]);
+
+  beforeAll(async () => {
+    kr = await import('../../src/lib/key-reveal.js');
+    tokens = await import('../../src/lib/tg-signin-tokens.js');
+  });
+  beforeEach(async () => {
+    resetStripe();
+    tokens._resetTgSigninTokensForTest();
+    // A redeem of a fresh token creates the table (the lazy ensure under test) and reads nothing.
+    await tokens.redeemSigninToken('tgl_00000000000000000000000000000000');
+  });
+
+  it.each(['starter', 'pro'])('a %s checkout from the bot reveals its key AND one token, whose hash alone is stored', async (tier) => {
+    const id = newId();
+    const v = stage(id, tgSession({ tier }));
+    const out = await kr.revealKeyOnce(id);
+    expect(out).toMatchObject({ kind: 'reveal', apiKey: v.apiKey, tier, email: v.email });
+    const token = (out as { signinToken?: string }).signinToken;
+    expect(token).toMatch(TOKEN_RE);
+    const rows = await rowsFor((v as unknown as { customerId: string }).customerId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ token_hash: tokens.hashSigninToken(token!), tier, email_masked: 'b***@example.com', redeemed_at: null });
+    expect(JSON.stringify(rows[0])).not.toContain(token!);
+    expect(JSON.stringify(rows[0])).not.toContain(v.apiKey!);
+  });
+
+  it('no token for any other reveal: not from the bot, enterprise, no email, no customer — and no row', async () => {
+    const cases: Array<Partial<SessionView> & { fromTelegram?: boolean; customerId?: string | null }> = [
+      { fromTelegram: false },
+      { tier: 'enterprise' },
+      { tier: null },
+      { email: null },
+      { email: '' },
+      { customerId: null },
+    ];
+    for (const over of cases) {
+      const id = newId();
+      const v = stage(id, tgSession(over));
+      const out = await kr.revealKeyOnce(id);
+      expect(out, JSON.stringify(over)).toEqual({ kind: 'reveal', apiKey: v.apiKey, tier: v.tier, email: v.email });
+      expect(await rowsFor((v as unknown as { customerId: unknown }).customerId ?? '')).toEqual([]);
+    }
+  });
+
+  it('the pending arm mints nothing; the reload that reveals the key mints the one token', async () => {
+    const id = newId();
+    const v = stage(id, tgSession({ apiKey: null }));
+    const customerId = (v as unknown as { customerId: string }).customerId;
+    expect(await kr.revealKeyOnce(id)).toEqual({ kind: 'pending', tier: v.tier, email: v.email });
+    expect(await rowsFor(customerId)).toEqual([]);
+    stage(id, { ...v, apiKey: newKey() });
+    expect((await kr.revealKeyOnce(id) as { signinToken?: string }).signinToken).toMatch(TOKEN_RE);
+    expect(await rowsFor(customerId)).toHaveLength(1);
+  });
+
+  it('refused arms mint nothing: the second view, a stale session', async () => {
+    const id = newId();
+    const v = stage(id, tgSession());
+    const customerId = (v as unknown as { customerId: string }).customerId;
+    expect((await kr.revealKeyOnce(id) as { signinToken?: string }).signinToken).toMatch(TOKEN_RE);
+    expect(await kr.revealKeyOnce(id)).toEqual({ kind: 'refused', reason: 'already_shown' });
+    expect(await rowsFor(customerId)).toHaveLength(1);
+    const stale = newId();
+    const s = stage(stale, tgSession({ created: nowS() - 2 * DAY_S }));
+    expect(await kr.revealKeyOnce(stale)).toEqual({ kind: 'refused', reason: 'stale' });
+    expect(await rowsFor((s as unknown as { customerId: string }).customerId)).toEqual([]);
+  });
+
+  it('a failed mint still reveals the key — without a token, so the page keeps the auth_ button', async () => {
+    // Make the table unusable for the mint: a same-named table without the columns. The lazy ensure's
+    // CREATE IF NOT EXISTS is then a no-op and the INSERT fails, as any real database fault would.
+    // (DDL through dbQuery on Postgres; better-sqlite3's all() refuses a statement that returns no rows.)
+    const ddl = async (sql: string) => (isPgBackend() ? void (await dbQuery(sql)) : dbExec(sql));
+    await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
+    await ddl('CREATE TABLE tg_signin_tokens (unrelated INTEGER)');
+    tokens._resetTgSigninTokensForTest();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const id = newId();
+      const v = stage(id, tgSession());
+      expect(await kr.revealKeyOnce(id)).toEqual({ kind: 'reveal', apiKey: v.apiKey, tier: v.tier, email: v.email });
+      expect(err.mock.calls.map((c) => c.join(' ')).join('\n')).toMatch(/\[tg-signin-tokens\] mint failed/);
+    } finally {
+      err.mockRestore();
+      await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
+      tokens._resetTgSigninTokensForTest();
+    }
   });
 });
 
