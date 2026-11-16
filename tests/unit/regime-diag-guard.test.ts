@@ -831,4 +831,39 @@ describe('regime-diag: what was registered is what is run', () => {
     for (const m of appended.matchAll(/^\|\s*`([A-Za-z0-9.@]+)`\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/gm)) stated.set(m[1], [m[2], m[3], m[4]].map((x) => Number(x.replace(/,/g, ''))));
     expect([...stated.entries()]).toEqual(STATISTICS.map((s) => [s.id, [s.boot, s.shuffle, s.perm]]));
   });
+
+  // ── the successor's registration (EDGE-REGIME-CONFIRM-W1): what it pins is what its one read will run ──
+  const confirmText = (): string => fs.readFileSync(path.join(REPO, CONFIRM.registration), 'utf8');
+
+  it('the successor has exactly one registration, and it is the one its study record names', () => {
+    const named = fs.readdirSync(path.join(REPO, 'audits')).filter((f) => /^regime-confirmation-preregistration-\d{4}-\d{2}-\d{2}\.md$/.test(f));
+    expect(named.map((f) => `audits/${f}`)).toEqual([CONFIRM.registration]);
+  });
+
+  it('the successor pins every harness file at its bytes, the absence probe included', () => {
+    const p = pinsOf(confirmText());
+    for (const rel of guard.HARNESS_FILES) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
+  });
+
+  it('the successor carries T3 by pin: the fit result, the census, the archive manifest of T3\'s months, and every file T3 pinned outside the harness', () => {
+    const p = pinsOf(confirmText()), t3 = pinsOf(bytes().toString('utf8'));
+    expect(p.get(guard.CARRY_PIN)).toBe(CONFIRM.carry.sha256);
+    for (const name of [guard.CENSUS_PIN, guard.ARCHIVES_PIN]) expect([name, p.get(name)]).toEqual([name, t3.get(name)]);
+    const outside = [...t3.keys()].filter((k) => !/^(store|census|spec|carry):/.test(k) && !guard.HARNESS_FILES.includes(k));
+    expect(outside).toEqual(expect.arrayContaining(['src/lib/market-regime-core.ts', 'src/scripts/cluster-perm-stats.py', 'ops/monitoring/population_comparison.py']));
+    // registration against registration: another wave's edit to a library file is the guard's to refuse, not this test's
+    for (const rel of outside) expect([rel, p.get(rel)]).toEqual([rel, t3.get(rel)]);
+  });
+
+  it('the successor pins the guard store manifest its own study record derives, which is not T3\'s', () => {
+    const p = pinsOf(confirmText()), t3 = pinsOf(bytes().toString('utf8'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'regime-diag-confirm-pin-'));
+    try {
+      const empty = path.join(tmp, 'empty'), store = path.join(tmp, 'store');
+      for (const d of [empty, store]) fs.mkdirSync(d);
+      const made = guard.initStore(store, { cache: empty, overlay: empty }, [], CONFIRM);
+      expect(p.get(storePin(VENUE))).toBe(made.guardStoreSha256);
+      expect(p.get(storePin(VENUE))).not.toBe(t3.get(storePin(VENUE)));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
 });
