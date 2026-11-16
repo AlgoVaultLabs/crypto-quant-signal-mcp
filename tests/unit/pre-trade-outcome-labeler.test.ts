@@ -366,6 +366,6 @@ describe('AC3.2 — quarantine: one table written, and nothing public reads it',
     walk(join(ROOT, 'src'));
     expect(files.length, 'the scan must have a corpus').toBeGreaterThan(100);
     const hits = files.filter((f) => /pre_trade_check_outcomes/.test(readFileSync(f, 'utf8'))).map((f) => f.slice(ROOT.length + 1));
-    expect(hits).toEqual(['src/scripts/pre-trade-outcome-labeler.ts']);
+    expect(hits).toEqual(['src/scripts/pre-trade-outcome-labeler.ts', 'src/scripts/regime-census/census-extract-sql.ts']);
   });
 });

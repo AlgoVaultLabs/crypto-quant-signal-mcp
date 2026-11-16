@@ -275,7 +275,7 @@ describe('AC3.1 — the schema: the lazy ensure IS migrations/051, and it has no
     walk(join(ROOT, 'src'));
     expect(files.length, 'the scan must have a corpus').toBeGreaterThan(100);
     const hits = files.filter((f) => /(FROM|INTO|UPDATE|JOIN|TABLE(\s+IF\s+NOT\s+EXISTS)?)\s+pre_trade_checks\b/.test(readFileSync(f, 'utf8')));
-    expect(hits.map((f) => f.slice(ROOT.length + 1))).toEqual(['src/lib/pre-trade-check-log.ts', 'src/scripts/pre-trade-outcome-labeler.ts']);
+    expect(hits.map((f) => f.slice(ROOT.length + 1))).toEqual(['src/lib/pre-trade-check-log.ts', 'src/scripts/pre-trade-outcome-labeler.ts', 'src/scripts/regime-census/census-extract-sql.ts']);
     // DECISION-CALL-V2-W4 CH3: the nightly labeler (a cron script, no route) reads the log and writes only its own table.
     const labeler = readFileSync(join(ROOT, 'src/scripts/pre-trade-outcome-labeler.ts'), 'utf8');
     expect(labeler).toMatch(/FROM pre_trade_checks c\b/);
