@@ -75,6 +75,38 @@ OR, when the registration declares no such floor, the single line `NO_RATE_FLOOR
 
 _Origin: `OPS-PREREG-IDENTIFIABILITY-GATE-W1`. On 2026-08-31 the trend-mode trigger A declared a 3.0pp floor on a cross-arm delta whose v1 arm emitted SELL on 0.53% of its rows. Its `2m` was 1.06pp, so the trigger could never fire. `compare_arms` proved this on 2026-09-02, after the floor had been armed and a false rollback page had fired. The same arithmetic at declaration would have forced the within-arm test that eventually decided the question. Worked fixtures for both surfaces: `tests/fixtures/identifiability/`._
 
+## 4d. Served-rule studies — the ceiling first, then a verdict per dial (GATED)
+
+**A study that scores only a served rule's output can say whether the rule works. It cannot say what to fix. So a served-rule study asks first whether there was anything to find, and its readout then says which part of the rule works and which is broken.** A served rule is any rule whose output a caller receives: a regime label, a trade call's scorer, a verdict rule, a served support or resistance level.
+
+**The trigger is declared, never sniffed.** A registration that studies a served rule carries one line, at the start of a line, naming the rule's source and the rule version under study, for example:
+
+```
+SERVED_RULE_STUDY: src/lib/market-regime-core.ts · MARKET_REGIME_RULE_VERSION = 2
+```
+
+The value is one repo path ending `.ts` or `.py` and one `<NAME>VERSION = <integer>` token; the separator is free. A registration without the line is not a served-rule study and §4d does not apply to it. Registrations landed before §4d, and studies of anything other than a served rule, are untouched. Nothing infers the trigger from the text: a mention mid-line is not a declaration.
+
+**What the registration carries.**
+
+1. A section headed `## Answer-key ceiling` holding one table with the columns `key` · `role` · `construction` · `reading if it fails`. Every key's role comes from a closed set, and each role appears at least once:
+
+   | role | the key | what its reading isolates |
+   |---|---|---|
+   | `CEILING` | the true regime (or outcome class), dated in hindsight | whether there was anything to find |
+   | `NO_LAG` | the served rule's own inputs on a centred window, so it sees bars after the call | whether the inputs carry what the ceiling found |
+   | `SERVED` | the live label, the output the caller actually received | what the rule delivers on time |
+
+   The section names the three diagnoses as tokens. `NO_ROOM`: the CEILING key fails its baselines, so there is nothing to find and no change to the rule can help. `INPUTS`: the CEILING key wins and the NO_LAG key fails, so the defect is in the inputs. `LAG`: the NO_LAG key wins and the SERVED key fails, so the inputs carry the answer and the live rule reaches it too late. The keys are scored before any dial; a `NO_ROOM` reading ends the dial search.
+
+2. A section headed `## Component map` holding one table with the columns `slice` · `dial` · `works` · `broken` · `too little data`, with at least one row. A slice is a subset of calls. Its dial is the one constant or literal of the rule that decides that slice, named in backticks. The three criteria are written before any outcome is read, none is left empty, and `too little data` states its floor as a number in the independence unit (§5).
+
+**The readout** reports every key's reading and every map row as exactly one of works / broken / too little data. No row is dropped or pooled. A slice below its floor is reported by name as too little data, never as broken.
+
+**What the gate checks** — presence and shape, never truth. `servedRuleVerdict` in `tests/unit/preregistration-support-stress-test.test.ts` scans every registration that carries the declaration. It checks the declaration's shape, both sections and their columns, all three roles, the three diagnosis tokens, a backticked dial and no empty cell in every map row, and a number in every `too little data` cell. Whether the keys are the right keys and the dials the real dials is the declaring wave's own audit. Worked fixtures, one per defect: `tests/fixtures/served-rule/`. This file shows the declaration and is exempt by an exact, reasoned row.
+
+_Origin: `OPS-PREREG-SERVED-RULE-GATE-W1` (ARC-REGIME-ACCURACY T1). get_trade_call's scorer went through repeated pre-registered studies that found no edge, and each scored only the served output, so none could say what to fix. Only the last, `audits/scorer-predictive-ceiling-preregistration-2026-09-21.md`, asked whether the scorer's inputs carried direction at all. This section asks the ceiling question first and makes a per-dial verdict part of every served-rule readout._
+
 ## 5. Floors and power — before the pull, in the independence unit
 
 State the cluster floor (never a row floor) and the power at the effect the study is powered for, with the instrument beside the number: the standard error's source, how it scales with the cluster count, and any calibration applied. An increment that cannot reach the floor returns `indeterminate — underpowered`, with the size and the date that would resolve it. That branch is registered, not improvised.
@@ -93,4 +125,4 @@ A deviation from the registration is recorded as a deviation with its reason, ne
 
 ## 9. Inheritors — named
 
-`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event · for §4c, every registration that declares a floor, every readout-canary contract, and per-cell floors such as `SIGNAL-VERDICT-RULE-REGISTRY-W1`'s.
+`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event · for §4c, every registration that declares a floor, every readout-canary contract, and per-cell floors such as `SIGNAL-VERDICT-RULE-REGISTRY-W1`'s · for §4d, ARC-REGIME-ACCURACY T3 (the regime diagnostic backtest) and each of T6's challenger rounds, and every future served-rule study: the get_trade_call scorer, the verdict rule, a served support or resistance level.
