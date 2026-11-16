@@ -9,7 +9,7 @@
 // DATA + TYPES ONLY: imports the feature-registry (for membership) — writes no HTML, imports
 // no DOM, exposes no internal/alias/equities-internal tool. Rendering lives in the injector +
 // site-nav.ts; this module is the model those consumers read.
-import { FEATURE_REGISTRY, type FeatureSpec } from './feature-registry.js';
+import { FEATURE_REGISTRY, betaMarked, type FeatureSpec } from './feature-registry.js';
 // CHANNEL-HUB-PAGES-GEO-W1: the Channels column now DERIVES from the channel SoT (single source
 // across nav + the 3 hub pages + docs) instead of the former inline CHANNEL_NAV map.
 import { CHANNELS, channelHref, coveredRegistryChannels } from './channel-registry.js';
@@ -29,8 +29,11 @@ const API = 'https://api.algovault.com';
 const DOCS = `${APEX}/docs`;
 const TG_BOT = 'https://t.me/algovaultofficialbot'; // NAV Build-Rule 4: the real, grepped handle — never invented.
 
-/** How many Tools the Platform mega-menu features before the "See all tools →" link. */
-export const FEATURED_TOOLS = 7;
+/**
+ * How many Tools the Platform mega-menu features before the "See all tools →" link. SR-ZONES-W2 R3: 7 → 8, so the
+ * listing ADDS Support and Resistance Zones rather than displacing Knowledge Chat (the D3 precedent, 26786db7).
+ */
+export const FEATURED_TOOLS = 8;
 
 /**
  * Registry channel keys that are marketplace/settlement RAILS, not user-facing "how you
@@ -104,6 +107,8 @@ const TOOL_LABELS: Record<string, string> = {
   scan_trade_calls: 'Trade Call Scanner',
   scan_market_regimes: 'Market Regime Screener',
   pre_trade_check: 'Pre-Trade Check',
+  // SR-ZONES-W2: the unmarked label; publicToolEntries() adds " (Beta)" from the registry flag.
+  get_sr_zones: 'Support and Resistance Zones',
   scan_funding_arb: 'Funding Arbitrage',
   chat_knowledge: 'Knowledge Chat',
   search_knowledge: 'Knowledge Search',
@@ -143,9 +148,12 @@ function reachedChannelKeys(registry: readonly FeatureSpec[]): string[] {
 /** One public tool's nav/tools presentation — the SINGLE source both the nav Tools column and the /tools index derive from. */
 export interface PublicToolEntry {
   name: string;
+  /** TOOL_LABELS' label, ending " (Beta)" when the registry row is flagged `beta` (SR-ZONES-W2 R3). */
   label: string;
   anchor: string;
   href: string;
+  /** SR-ZONES-W2 R3/R4: the registry row's Beta flag, for surfaces that print the name rather than the label (llms.txt). */
+  beta: boolean;
 }
 
 /**
@@ -163,7 +171,9 @@ export function publicToolEntries(registry: readonly FeatureSpec[] = FEATURE_REG
           `Add a label, or set publicListing:false in feature-registry.ts to hold it.`,
       );
     }
-    return { name: n, label: TOOL_LABELS[n], anchor: slug(n), href: `${APEX}/tools#${slug(n)}` };
+    // The Beta flag of THIS registry (it is injectable), so a planted flag reaches every label surface.
+    const beta = registry.find((f) => f.name === n)?.beta === true;
+    return { name: n, label: betaMarked(TOOL_LABELS[n], beta), anchor: slug(n), href: `${APEX}/tools#${slug(n)}`, beta };
   });
 }
 

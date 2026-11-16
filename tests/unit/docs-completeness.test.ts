@@ -142,8 +142,8 @@ describe('every public tool documents what it returns', () => {
     });
   }
 
-  it('covers all 8 published tools — the count the docs --check gate also pins', () => {
-    expect(publicToolEntries()).toHaveLength(8);
+  it('covers all 9 published tools — the count the docs --check gate also pins', () => {
+    expect(publicToolEntries()).toHaveLength(9); // SR-ZONES-W2: + get_sr_zones
   });
 });
 

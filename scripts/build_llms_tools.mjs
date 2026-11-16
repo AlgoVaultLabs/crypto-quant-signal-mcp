@@ -77,9 +77,16 @@ export const CARRIED_LINES = Object.freeze({
   },
 });
 
-/** The llms.txt key fact: every public tool, registry order, no count. */
-export function renderToolsSentence(entries) {
-  const names = entries.map((e) => `\`${e.name}\``);
+/**
+ * The llms.txt key fact: every public tool, registry order, no count. SR-ZONES-W2 R4: a tool whose registry row is
+ * flagged `beta` (the entry's `beta`, from publicToolEntries) is followed by `betaSuffix` (BETA_SUFFIX, " (Beta)").
+ * A flagged entry with no suffix to print throws: a mark is never dropped silently.
+ */
+export function renderToolsSentence(entries, betaSuffix) {
+  const names = entries.map((e) => {
+    if (e.beta === true && !betaSuffix) throw new Error(`build_llms_tools: '${e.name}' is flagged beta but no Beta suffix was given`);
+    return `\`${e.name}\`${e.beta === true ? betaSuffix : ''}`;
+  });
   const list = names.length > 2 ? `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}` : names.join(' and ');
   return `- MCP tools include ${list} (full set via \`tools/list\`).`;
 }
@@ -120,9 +127,9 @@ export function fillBlock(text, name, body) {
 
 function loadInputs() {
   const { publicToolEntries } = require(path.join(REPO_ROOT, 'dist', 'lib', 'nav-manifest.js'));
-  const { servedDescription } = require(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
+  const { servedDescription, BETA_SUFFIX } = require(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
   const schema = require(path.join(REPO_ROOT, 'dist', 'lib', 'tool-param-schema.js'));
-  return { entries: publicToolEntries(), describe: servedDescription, schema };
+  return { entries: publicToolEntries(), describe: servedDescription, schema, betaSuffix: BETA_SUFFIX };
 }
 
 /**
@@ -130,9 +137,9 @@ function loadInputs() {
  * @returns {{ drifted: string[], missing: string[] }} repo-relative paths
  */
 export function buildLlmsTools({ check = false, inputs = loadInputs() } = {}) {
-  const { entries, describe, schema } = inputs;
+  const { entries, describe, schema, betaSuffix } = inputs;
   const jobs = [
-    { file: LLMS_TXT, block: LIST_BLOCK, body: renderToolsSentence(entries) },
+    { file: LLMS_TXT, block: LIST_BLOCK, body: renderToolsSentence(entries, betaSuffix) },
     { file: LLMS_FULL_TXT, block: FULL_BLOCK, body: renderToolsSections(entries, describe, schema) },
   ];
   const drifted = [];

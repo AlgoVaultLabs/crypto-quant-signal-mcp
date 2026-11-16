@@ -115,6 +115,22 @@ export interface FeatureSpec {
    * this field (deliberately NOT projected — see projectCapabilities).
    */
   residency: 'any' | 'hosted';
+  /**
+   * SR-ZONES-W2 §0.3: the tool is in Beta. Every public surface projects the ` (Beta)` mark (BETA_SUFFIX) from this
+   * ONE flag: the served description (`servedDescription` → tools/list, GET /capabilities, the /tools cards, llms-full,
+   * lobehub `api[]`), the tools/list title (the `createServer` registration loop), and the label on the nav, /tools,
+   * the docs heading and the llms lists (`publicToolEntries`). Marking a tool, or graduating it, is a one-flag edit.
+   * Absent = not in Beta. The description constants themselves never carry the mark.
+   */
+  beta?: boolean;
+}
+
+/** SR-ZONES-W2 §0.3: the mark every public text of a Beta tool ends with. */
+export const BETA_SUFFIX = ' (Beta)';
+
+/** `text` with the Beta mark when `beta` is true — the ONE composition rule. Idempotent: never marked twice. */
+export function betaMarked(text: string, beta: boolean | undefined): string {
+  return beta === true && !text.endsWith(BETA_SUFFIX) ? text + BETA_SUFFIX : text;
 }
 
 /** descriptionRef → canonical description string (descriptions stay in tool-descriptions.ts). */
@@ -240,6 +256,25 @@ const FEATURE_REGISTRY_LITERAL = [
     publicListing: true,
   },
   {
+    // SR-ZONES-W1 — support/resistance zones, facts only, Binance perpetuals.
+    //   • `per-verdict`: one unit per SERVED timeframe (one `results` entry); an unserved timeframe and a call
+    //     with none served are unbilled (src/tools/get-sr-zones.ts).
+    //   • `residency: 'any'`: reads Binance candles only, no hosted state.
+    // SR-ZONES-W2 — public as Beta: `publicListing: true` (nav, /tools, docs, llms, lobehub) and `beta: true` (every
+    //     public surface ends ` (Beta)`). This row sits right after pre_trade_check ON PURPOSE — registry order IS
+    //     display order for the nav, the docs sidebar, /tools and tools/list.
+    name: 'get_sr_zones',
+    aliases: [],
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    quota: { unit: 'per-verdict', holdFree: false },
+    x402: null,
+    descriptionRef: 'GET_SR_ZONES_DESCRIPTION',
+    enabled: true,
+    publicListing: true,
+    beta: true,
+    residency: 'any',
+  },
+  {
     name: 'get_equity_call',
     aliases: [],
     channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false },
@@ -325,23 +360,6 @@ const FEATURE_REGISTRY_LITERAL = [
     publicListing: false,
     residency: 'any',
   },
-  {
-    // SR-ZONES-W1 — support/resistance zones, facts only, Binance perpetuals.
-    //   • `per-verdict`: one unit per SERVED timeframe (one `results` entry); an unserved timeframe and a call
-    //     with none served are unbilled (src/tools/get-sr-zones.ts).
-    //   • MCP only, `x402: null`: every other channel stays off until a release wave prices it.
-    //   • `publicListing: false`: kept off nav, /tools and docs until that release wave flips it.
-    //   • `residency: 'any'`: reads Binance candles only, no hosted state.
-    name: 'get_sr_zones',
-    aliases: [],
-    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
-    quota: { unit: 'per-verdict', holdFree: false },
-    x402: null,
-    descriptionRef: 'GET_SR_ZONES_DESCRIPTION',
-    enabled: true,
-    publicListing: false,
-    residency: 'any',
-  },
   // ARCH-MCP-CALL-PIPELINE-W1 CH2 (type-only, no data change): `as const satisfies` keeps every row a
   // FeatureSpec while exposing the literal names, so the tool-call pipeline's dispatch table is
   // exhaustive over THIS array at compile time (a registry row with no pipeline row is a tsc error).
@@ -377,8 +395,14 @@ export function servedDescription(nameOrAlias: string): string | undefined {
   if (!f) return undefined;
   const base = DESCRIPTIONS[f.descriptionRef];
   if (base == null) return undefined;
-  // An ALIAS carries the steering suffix; the canonical name does not.
-  return f.name === nameOrAlias ? base : base + TRADE_CALL_ALIAS_SUFFIX;
+  // An ALIAS carries the steering suffix; the canonical name does not. A Beta tool's text ends with the mark
+  // (SR-ZONES-W2 §0.3), after any alias suffix, so every surface projecting from here carries it.
+  return betaMarked(f.name === nameOrAlias ? base : base + TRADE_CALL_ALIAS_SUFFIX, f.beta);
+}
+
+/** SR-ZONES-W2: true when `nameOrAlias` resolves to a feature flagged `beta: true`. */
+export function isBetaTool(nameOrAlias: string): boolean {
+  return getFeature(nameOrAlias)?.beta === true;
 }
 
 /**

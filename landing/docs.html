@@ -71,7 +71,7 @@ tailwind.config = {
   "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
   "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-  "description": "Complete API reference for the 8 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, chat_knowledge, search_knowledge), worked examples, on-chain verification, pricing, and FAQ.",
+  "description": "Complete API reference for the 9 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, get_sr_zones, chat_knowledge, search_knowledge), worked examples, on-chain verification, pricing, and FAQ.",
   "proficiencyLevel": "Beginner|Intermediate|Advanced",
   "about": { "@type": "Thing", "name": "Composite trading verdicts via Model Context Protocol" }
 }
@@ -183,6 +183,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime Screener</span></a>
           <a href="https://algovault.com/tools#pre-trade-check" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Pre-Trade Check</span></a>
+          <a href="https://algovault.com/tools#get-sr-zones" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Support and Resistance Zones (Beta)</span></a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
           <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
         </div>
@@ -235,6 +236,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime Screener</a>
           <a href="https://algovault.com/tools#pre-trade-check" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Pre-Trade Check</a>
+          <a href="https://algovault.com/tools#get-sr-zones" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Support and Resistance Zones (Beta)</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
           <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
@@ -343,6 +345,7 @@ tailwind.config = {
     <a href="#scan-trade-calls" class="sidebar-link" style="padding-left:32px">Trade Call Scanner</a>
     <a href="#scan-market-regimes" class="sidebar-link" style="padding-left:32px">Market Regime Screener</a>
     <a href="#pre-trade-check" class="sidebar-link" style="padding-left:32px">Pre-Trade Check</a>
+    <a href="#get-sr-zones" class="sidebar-link" style="padding-left:32px">Support and Resistance Zones (Beta)</a>
     <a href="#chat-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Chat</a>
     <a href="#search-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Search</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:22px">Channels</div>
@@ -1209,6 +1212,222 @@ tailwind.config = {
         <li class="text-gray-400 text-sm leading-relaxed"><a href="https://algovault.com/integrations/langchain" class="text-mint-400 hover:underline">LangChain: the order-tool middleware &rarr;</a></li>
         <li class="text-gray-400 text-sm leading-relaxed"><a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/freqtrade" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Freqtrade: the <code class="text-xs bg-navy-800 px-1 rounded">confirm_trade_entry</code> recipe on GitHub &rarr;</a></li>
       </ul>
+    </section>
+
+    <section id="get-sr-zones" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Support and Resistance Zones (Beta) <span class="text-gray-500 text-sm font-normal">get_sr_zones</span></h3>
+      <p class="text-gray-400 text-sm mb-3">Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.</p>
+      <p class="text-gray-400 text-sm mb-5">Zones mark where price has clustered before. Price can move through any zone.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Coin symbol, e.g. BTC or ETH. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>timeframes</td><td class="text-gray-400">string[]</td><td class="text-gray-400">One to three candle timeframes, e.g. ["1h", "4h"]. One result per timeframe. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>venue</td><td class="text-gray-400">string</td><td class="text-gray-400">Venue: BINANCE, the default and the only value.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Type</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>venue</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>price</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>order</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>note</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>results</td><td class="text-gray-400">array</td></tr>
+          <tr class="param-row"><td>unserved</td><td class="text-gray-400">array</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each entry in <code class="text-xs bg-navy-800 px-1 rounded">results</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Type</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>summary</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>volume_vs_20</td><td class="text-gray-400">number or null</td></tr>
+          <tr class="param-row"><td>flags</td><td class="text-gray-400">array</td></tr>
+          <tr class="param-row"><td>support</td><td class="text-gray-400">array</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>resistance</td><td class="text-gray-400">array</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each zone in <code class="text-xs bg-navy-800 px-1 rounded">support</code> and <code class="text-xs bg-navy-800 px-1 rounded">resistance</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Type</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>rank</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>low</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>high</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>distance_pct</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>formed_from</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>formed_to</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>members</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>touch_bars_90</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>tests_30</td><td class="text-gray-400">number</td></tr>
+          <tr class="param-row"><td>last_touch</td><td class="text-gray-400">string or null</td></tr>
+          <tr class="param-row"><td>state</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row"><td>broke_at</td><td class="text-gray-400">string or null</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>overlaps</td><td class="text-gray-400">array</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each entry in <code class="text-xs bg-navy-800 px-1 rounded">unserved</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Type</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>reason</td><td class="text-gray-400">string</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example</h3>
+      <p class="text-gray-400 text-sm mb-2">Request</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -s -X POST https://api.algovault.com/mcp \
+  -H "Authorization: Bearer $ALGOVAULT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_sr_zones","arguments":{"coin":"BTC","timeframes":["1d"]}}}'</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">Response</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5" data-sr-zones-example="btc-1d">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "coin": "BTC",
+  "venue": "BINANCE",
+  "price": 64340.8,
+  "order": "Zones are ranked from the most recent price cluster outward: each next zone formed earlier and sits further from price.",
+  "note": "Zones mark where price has clustered before. Price can move through any zone.",
+  "results": [
+    {
+      "timeframe": "1d",
+      "summary": "BTC 1d at 64340.8: 3 support and 3 resistance zones; support zone 1 at 62220–63240, 1.72% below; resistance zone 1 at 75830–76530, 17.87% above; last closed candle volume 1.59× its 20-candle average.",
+      "volume_vs_20": 1.59,
+      "flags": [],
+      "support": [
+        {
+          "rank": 1,
+          "low": 62220,
+          "high": 63240,
+          "distance_pct": 1.72,
+          "formed_from": "2026-08-01T00:00:00.000Z",
+          "formed_to": "2026-08-14T00:00:00.000Z",
+          "members": 7,
+          "touch_bars_90": 1,
+          "tests_30": 1,
+          "last_touch": "2026-11-15T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        },
+        {
+          "rank": 2,
+          "low": 57750,
+          "high": 59190,
+          "distance_pct": 8.01,
+          "formed_from": "2026-06-25T00:00:00.000Z",
+          "formed_to": "2026-07-01T00:00:00.000Z",
+          "members": 3,
+          "touch_bars_90": 0,
+          "tests_30": 0,
+          "last_touch": "2026-07-01T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        },
+        {
+          "rank": 3,
+          "low": 52510,
+          "high": 54840,
+          "distance_pct": 14.77,
+          "formed_from": "2024-09-06T00:00:00.000Z",
+          "formed_to": "2024-09-12T00:00:00.000Z",
+          "members": 3,
+          "touch_bars_90": 0,
+          "tests_30": 0,
+          "last_touch": "2024-09-09T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        }
+      ],
+      "resistance": [
+        {
+          "rank": 1,
+          "low": 75830,
+          "high": 76530,
+          "distance_pct": 17.87,
+          "formed_from": "2026-11-08T00:00:00.000Z",
+          "formed_to": "2026-11-08T00:00:00.000Z",
+          "members": 1,
+          "touch_bars_90": 20,
+          "tests_30": 3,
+          "last_touch": "2026-11-08T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        },
+        {
+          "rank": 2,
+          "low": 80460,
+          "high": 81190,
+          "distance_pct": 25.06,
+          "formed_from": "2026-11-04T00:00:00.000Z",
+          "formed_to": "2026-11-04T00:00:00.000Z",
+          "members": 1,
+          "touch_bars_90": 27,
+          "tests_30": 5,
+          "last_touch": "2026-11-05T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        },
+        {
+          "rank": 3,
+          "low": 83580,
+          "high": 84880,
+          "distance_pct": 29.91,
+          "formed_from": "2026-10-14T00:00:00.000Z",
+          "formed_to": "2026-10-21T00:00:00.000Z",
+          "members": 2,
+          "touch_bars_90": 20,
+          "tests_30": 0,
+          "last_touch": "2026-10-22T00:00:00.000Z",
+          "state": "intact",
+          "broke_at": null,
+          "overlaps": []
+        }
+      ]
+    }
+  ],
+  "unserved": [],
+  "timestamp": 1794819743
+}</code></pre>
+      </div>
     </section>
 
     <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>
@@ -3048,7 +3267,7 @@ cfg = gate_api.Configuration(
 <script>
 /* DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3 — sidebar scrollspy, ids derived from the docs outline. */
 (function () {
-  var IDS = ["quick-start","get-trade-call","get-market-regime","scan-funding-arb","scan-trade-calls","scan-market-regimes","pre-trade-check","chat-knowledge","search-knowledge","mcp","rest-api","webhooks","telegram","connect-mcp","connect-ai-agent","connect-exchange-kit","connect-trading-platform","usage-examples","live-dashboard","verify","pricing","faq"];
+  var IDS = ["quick-start","get-trade-call","get-market-regime","scan-funding-arb","scan-trade-calls","scan-market-regimes","pre-trade-check","get-sr-zones","chat-knowledge","search-knowledge","mcp","rest-api","webhooks","telegram","connect-mcp","connect-ai-agent","connect-exchange-kit","connect-trading-platform","usage-examples","live-dashboard","verify","pricing","faq"];
   if (typeof IntersectionObserver !== 'function') return;   /* fail-open: no observer, no change */
   var aside = document.querySelector('aside');
   if (!aside) return;

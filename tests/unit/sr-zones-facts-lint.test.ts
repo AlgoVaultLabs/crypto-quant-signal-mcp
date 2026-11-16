@@ -160,3 +160,31 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
     expect(hits).toEqual([]);
   });
 });
+
+describe('SR-ZONES-W2 AC2.3 — facts lint: the docs page', () => {
+  /** A page's visible text: every tag (and so every attribute) dropped, entities decoded. */
+  const pageText = (html: string): string =>
+    html
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ');
+  const partial = pageText(readFileSync(join(REPO, 'docs-src', 'partials', 'get-sr-zones.html'), 'utf8'));
+  const docs = readFileSync(join(REPO, 'landing', 'docs.html'), 'utf8');
+  const start = docs.indexOf('<section id="get-sr-zones"');
+  const rendered = pageText(docs.slice(start, docs.indexOf('</section>', start)));
+
+  it('read the partial and its rendered section (non-vacuity)', () => {
+    expect(start).toBeGreaterThan(-1);
+    for (const t of [partial, rendered]) {
+      expect(t).toContain(GET_SR_ZONES_DESCRIPTION);
+      expect(t).toContain(SR_ZONES_NOTE);
+      expect(t).toContain('BTC 1d at '); // the example's served summary
+    }
+    expect(rendered).toContain('Support and Resistance Zones (Beta)');
+  });
+
+  it('the partial and the rendered section carry no prediction word', () => {
+    expect(partial.match(FORBIDDEN)).toBeNull();
+    expect(rendered.match(FORBIDDEN)).toBeNull();
+  });
+});

@@ -190,7 +190,9 @@ describe('class preservation — tags moved, classes did not', () => {
     // ONE batch scope, so a burst of uncached windows spends only what Binance's interactive reserve leaves and never
     // get_trade_call's share; the newest page stays interactive. processScopedTag('get_sr_zones'), not a literal:
     // the handler is reachable from 3 entrypoints, so a literal fails B_SHARED; in PID 1 it emits `get_sr_zones`.
-    'src/tools/get-sr-zones.ts': { runAsBatch: 1 },
+    // SR-ZONES-W2 CH1: + the price-tick read (Binance exchangeInfo, cached 24 h) under the same batch scope and tag,
+    // so a cold read never spends the interactive reserve.
+    'src/tools/get-sr-zones.ts': { runAsBatch: 2 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

@@ -609,6 +609,52 @@
           "sizeUsd"
         ]
       }
+    },
+    {
+      "name": "get_sr_zones",
+      "description": "Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin. (Beta)",
+      "url": "https://api.algovault.com/mcp",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coin": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20,
+            "description": "Coin symbol, e.g. BTC or ETH."
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "8h",
+                "12h",
+                "1d"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "One to three candle timeframes, e.g. [\"1h\", \"4h\"]. One result per timeframe."
+          },
+          "venue": {
+            "type": "string",
+            "enum": [
+              "BINANCE"
+            ],
+            "description": "Venue: BINANCE, the default and the only value."
+          }
+        },
+        "required": [
+          "coin",
+          "timeframes"
+        ]
+      }
     }
   ],
   "author": "AlgoVault Labs",

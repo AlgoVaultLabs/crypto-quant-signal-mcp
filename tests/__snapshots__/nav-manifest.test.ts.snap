@@ -42,6 +42,10 @@ exports[`CH1 AC-e — model shape is stable (snapshot) > buildNavModel() matches
               "label": "Pre-Trade Check",
             },
             {
+              "href": "https://algovault.com/tools#get-sr-zones",
+              "label": "Support and Resistance Zones (Beta)",
+            },
+            {
               "href": "https://algovault.com/tools#chat-knowledge",
               "label": "Knowledge Chat",
             },

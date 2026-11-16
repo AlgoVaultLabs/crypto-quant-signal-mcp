@@ -25,11 +25,11 @@ describe('CH3 AC — model anchors ⊆ page ids (the mega-menu Tools links all r
     expect(navAnchors.length).toBeGreaterThan(0);
     for (const a of navAnchors) expect(pageIds.has(a)).toBe(true);
   });
-  it('renders exactly one card per public tool (8; equities held out)', () => {
+  it('renders exactly one card per public tool (9; equities held out)', () => {
     const doc = new JSDOM(html()).window.document;
     const cards = doc.querySelectorAll('.tools-card');
     expect(cards.length).toBe(publicToolEntries().length);
-    expect(cards.length).toBe(8);
+    expect(cards.length).toBe(9); // SR-ZONES-W2: + get_sr_zones
     // each card carries its canonical tool name in <code>
     const names = [...cards].map((c) => c.querySelector('code')?.textContent);
     expect(names).toEqual(publicToolEntries().map((e) => e.name));
@@ -107,11 +107,12 @@ describe('DOCS-MARKET-REGIME-SCREENER-W1 D5 — every card links its how-to', ()
   });
 
   // DOCS-PRE-TRADE-CHECK-LISTING-W1 — the card projects the registry row: MCP + the x402 HTTP route.
-  it('the pre-trade check card sits between the screener and Knowledge Chat, with its MCP and REST / x402 badges and its how-to', () => {
+  it('the pre-trade check card sits between the screener and the zones card (then Knowledge Chat), with its MCP and REST / x402 badges and its how-to', () => {
     const doc = new JSDOM(html()).window.document;
     const ids = [...doc.querySelectorAll('.tools-card')].map((c) => c.id);
-    expect(ids.slice(ids.indexOf('scan-market-regimes'), ids.indexOf('scan-market-regimes') + 3))
-      .toEqual(['scan-market-regimes', 'pre-trade-check', 'chat-knowledge']);
+    // SR-ZONES-W2: the zones card follows the pre-trade check, by registry order.
+    expect(ids.slice(ids.indexOf('scan-market-regimes'), ids.indexOf('scan-market-regimes') + 4))
+      .toEqual(['scan-market-regimes', 'pre-trade-check', 'get-sr-zones', 'chat-knowledge']);
     const badges = [...doc.querySelectorAll('#pre-trade-check .tools-badge')].map((b) => b.textContent);
     expect(badges).toEqual(['MCP', 'REST / x402']);
     expect(doc.querySelector('#pre-trade-check a.tools-card-link')?.getAttribute('href')).toBe('https://algovault.com/docs#pre-trade-check');

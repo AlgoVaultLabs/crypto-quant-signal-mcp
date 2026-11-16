@@ -15,7 +15,7 @@ import {
   LIST_BLOCK,
   FULL_BLOCK,
 } from '../../scripts/build_llms_tools.mjs';
-import { publicToolNames, servedDescription } from '../../src/lib/feature-registry.js';
+import { BETA_SUFFIX, publicToolNames, servedDescription } from '../../src/lib/feature-registry.js';
 import { publicToolEntries } from '../../src/lib/nav-manifest.js';
 import { allAnchorIds } from '../../src/lib/docs-outline.js';
 import * as schema from '../../src/lib/tool-param-schema.js';
@@ -91,11 +91,11 @@ describe('CH2 — carried lines: confirmed kept, falsified dropped (ruling Q2=A)
 
 describe('CH2 — the projection itself', () => {
   it('the committed files are in sync (what build_landing --check asserts)', () => {
-    expect(buildLlmsTools({ check: true, inputs: { entries, describe: servedDescription, schema } })).toEqual({ drifted: [], missing: [] });
+    expect(buildLlmsTools({ check: true, inputs: { entries, describe: servedDescription, schema, betaSuffix: BETA_SUFFIX } })).toEqual({ drifted: [], missing: [] });
   });
   it('the renderer names every entry it is given — and only those', () => {
     const fewer = entries.slice(1);
-    expect(sentenceNames(renderToolsSentence(fewer))).toEqual(fewer.map((e) => e.name));
+    expect(sentenceNames(renderToolsSentence(fewer, BETA_SUFFIX))).toEqual(fewer.map((e) => e.name));
     expect(sectionNames(renderToolsSections(fewer, servedDescription, schema))).toEqual(fewer.map((e) => e.name));
   });
   it('a public tool with no served description throws rather than rendering a blank section', () => {

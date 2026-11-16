@@ -184,7 +184,7 @@ import {
   PARAM_DESC_SR_ZONES_VENUE,
 } from './tool-descriptions.js';
 import { runGetTrackRecord, TRACK_RECORD_SECTIONS } from './tools/get-track-record.js';
-import { allToolNames, projectCapabilities, servedDescription } from './lib/feature-registry.js';
+import { allToolNames, betaMarked, isBetaTool, projectCapabilities, servedDescription } from './lib/feature-registry.js';
 // EQUITY-TOOLS-DARK-RETIRE-W1: the live tools/list set is env-gated (get_equity_call /
 // get_equity_regime dark behind EQUITY_TOOLS_ENABLED, default OFF). allToolNames() stays
 // the DECLARED set (9); liveMcpToolNames() is what actually registers (7 OFF / 9 ON).
@@ -777,8 +777,12 @@ function createServer(): McpServer {
     const d = toolDefs[name];
     if (!d) throw new Error(`[feature-registry] "${name}" is in FEATURE_REGISTRY but has no handler def in createServer()`);
     const m = projectToolMetadata(name, d.description, d.schema, profile);
+    // SR-ZONES-W2 R3: the Beta mark, from the registry flag, on the description and the title — after the per-client
+    // projection, whose plain-text overrides key on the unmarked text. A no-op for every tool without the flag.
+    const beta = isBetaTool(name);
+    const annotations = beta && typeof d.annotations.title === 'string' ? { ...d.annotations, title: betaMarked(d.annotations.title, true) } : d.annotations;
     (server as { registerTool: (n: string, c: { description: string; inputSchema: unknown; annotations: Record<string, unknown> }, h: unknown) => void }).registerTool(
-      name, { description: m.description, inputSchema: strictArgs ? strictToolInput(name, m.shape) : m.shape, annotations: d.annotations }, d.handler,
+      name, { description: betaMarked(m.description, beta), inputSchema: strictArgs ? strictToolInput(name, m.shape) : m.shape, annotations }, d.handler,
     );
   }
   for (const defName of Object.keys(toolDefs)) {

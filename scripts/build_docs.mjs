@@ -557,7 +557,7 @@ async function main() {
   if (checkMode) {
     const errors = [];
     // 1. counts
-    if (toolNodeCount() !== 8) errors.push(`Tools count ${toolNodeCount()} !== 8 (registry publicListing)`);
+    if (toolNodeCount() !== 9) errors.push(`Tools count ${toolNodeCount()} !== 9 (registry publicListing)`);
     if (channelNodeCount() !== 4) errors.push(`Channels count ${channelNodeCount()} !== 4 (channel-registry)`);
     // 2. on-disk structure: sidebar (aside-scoped) + body ids cover the outline
     const onDisk = fs.readFileSync(DOCS_HTML_PATH, 'utf8');

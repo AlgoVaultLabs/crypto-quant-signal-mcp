@@ -22,9 +22,9 @@ const flat = () => flattenOutline();
 const byAnchor = (a: string) => flat().find((n) => n.anchor === a);
 
 describe('docs-outline — Tools derive from the public-tool set (nav publicToolEntries)', () => {
-  it('has exactly 8 Tools H3s, in registry order, incl scan_trade_calls (back-fill), the screener and then the pre-trade check', () => {
+  it('has exactly 9 Tools H3s, in registry order, incl scan_trade_calls (back-fill), the screener, the pre-trade check and then the zones', () => {
     const toolAnchors = flat()
-      .filter((n) => n.level === 3 && ['get-trade-call', 'get-market-regime', 'scan-funding-arb', 'scan-trade-calls', 'scan-market-regimes', 'pre-trade-check', 'chat-knowledge', 'search-knowledge'].includes(n.anchor))
+      .filter((n) => n.level === 3 && ['get-trade-call', 'get-market-regime', 'scan-funding-arb', 'scan-trade-calls', 'scan-market-regimes', 'pre-trade-check', 'get-sr-zones', 'chat-knowledge', 'search-knowledge'].includes(n.anchor))
       .map((n) => n.anchor);
     expect(toolAnchors).toEqual([
       'get-trade-call',
@@ -33,11 +33,12 @@ describe('docs-outline — Tools derive from the public-tool set (nav publicTool
       'scan-trade-calls', // ← proves the previously-undocumented scanner is back-filled
       'scan-market-regimes', // ← DOCS-MARKET-REGIME-SCREENER-W1: registry order places it here
       'pre-trade-check', // ← DOCS-PRE-TRADE-CHECK-LISTING-W1: right after the screener, by registry order
+      'get-sr-zones', // ← SR-ZONES-W2: right after the pre-trade check, by registry order
       'chat-knowledge',
       'search-knowledge',
     ]);
     expect(toolNodeCount()).toBe(publicToolNames().length);
-    expect(toolNodeCount()).toBe(8);
+    expect(toolNodeCount()).toBe(9);
   });
 
   it('carries the dictated friendly labels (single-derived from TOOL_LABELS)', () => {
@@ -45,6 +46,7 @@ describe('docs-outline — Tools derive from the public-tool set (nav publicTool
     expect(byAnchor('get-market-regime')?.label).toBe('Market Regime');
     expect(byAnchor('scan-funding-arb')?.label).toBe('Funding Arbitrage');
     expect(byAnchor('scan-trade-calls')?.label).toBe('Trade Call Scanner');
+    expect(byAnchor('get-sr-zones')?.label).toBe('Support and Resistance Zones (Beta)'); // SR-ZONES-W2: the Beta mark, from the flag
     expect(byAnchor('chat-knowledge')?.label).toBe('Knowledge Chat');
     expect(byAnchor('search-knowledge')?.label).toBe('Knowledge Search');
   });
@@ -172,16 +174,16 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
 });
 
 describe('docs-outline — TechArticle JSON-LD tool clause derives from the SoT (OPS-DOCS-JSONLD-TOOLCOUNT-W1)', () => {
-  it('renders the current public tool set — count + names === publicToolNames() (8, incl pre_trade_check)', () => {
+  it('renders the current public tool set — count + names === publicToolNames() (9, incl pre_trade_check and get_sr_zones)', () => {
     expect(techArticleToolClause()).toBe(`${publicToolNames().length} AlgoVault MCP tools (${publicToolNames().join(', ')})`);
     expect(techArticleToolClause()).toBe(
-      '8 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, chat_knowledge, search_knowledge)',
+      '9 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, get_sr_zones, chat_knowledge, search_knowledge)',
     );
   });
 
-  it('the count FOLLOWS the tool list, not a frozen literal (a mock 9th tool flips it to "9 …")', () => {
-    const clause = techArticleToolClause([...publicToolNames(), 'mock_ninth_tool']);
-    expect(clause.startsWith('9 AlgoVault MCP tools (')).toBe(true);
-    expect(clause).toContain('mock_ninth_tool');
+  it('the count FOLLOWS the tool list, not a frozen literal (a mock 10th tool flips it to "10 …")', () => {
+    const clause = techArticleToolClause([...publicToolNames(), 'mock_tenth_tool']);
+    expect(clause.startsWith('10 AlgoVault MCP tools (')).toBe(true);
+    expect(clause).toContain('mock_tenth_tool');
   });
 });

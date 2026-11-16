@@ -40,7 +40,7 @@ const feat = (over: Partial<FeatureSpec> & { name: string }): FeatureSpec => ({
 });
 
 describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus the HELD tools', () => {
-  it('publicToolNames() = 8 canonical (equities excluded, no aliases)', () => {
+  it('publicToolNames() = 9 canonical (equities excluded, no aliases)', () => {
     expect(publicToolNames()).toEqual([
       'get_trade_call',
       'get_market_regime',
@@ -48,6 +48,7 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
       'scan_trade_calls',
       'scan_market_regimes',
       'pre_trade_check',
+      'get_sr_zones', // SR-ZONES-W2: listed, right after the pre-trade check
       'chat_knowledge',
       'search_knowledge',
     ]);
@@ -69,16 +70,16 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
     expect(publicToolNames()).toEqual(canonicalListed);
   });
 
-  it('the HELD set is exactly the two equities plus get_track_record and get_sr_zones', () => {
+  it('the HELD set is exactly the two equities plus get_track_record', () => {
     // Equities: the standing public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4).
     // get_track_record: LIVE on tools/list and /capabilities, kept off nav + /tools this
     // wave only because listing it would regenerate landing/** and docs/**, outside
     // DEV-TRACK-RECORD-TOOL-PARITY-W1's declared firewall. Flip in the follow-up wave.
     // scan_market_regimes was held the same way until DOCS-MARKET-REGIME-SCREENER-W1 listed it,
     // and pre_trade_check until DOCS-PRE-TRADE-CHECK-LISTING-W1 did.
-    // get_sr_zones (SR-ZONES-W1): live on tools/list, unlisted until its release wave flips publicListing.
+    // get_sr_zones (SR-ZONES-W1) was held the same way until SR-ZONES-W2 listed it, in Beta.
     expect(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name).sort())
-      .toEqual(['get_equity_call', 'get_equity_regime', 'get_sr_zones', 'get_track_record']);
+      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record']);
   });
 });
 
@@ -97,9 +98,10 @@ describe('CH1 AC-c — no equities-internal / outcome_* leakage', () => {
       expect(s).not.toContain(forbidden);
     }
   });
-  it('the Tools dropdown lists the screener, then the pre-trade check, and keeps Knowledge Chat', () => {
+  it('the Tools dropdown lists the screener, then the pre-trade check, then the zones, and keeps Knowledge Chat', () => {
     // DOCS-PRE-TRADE-CHECK-LISTING-W1 D3: 6 → 7 ADDS the check rather than displacing Knowledge Chat.
-    expect(FEATURED_TOOLS).toBe(7);
+    // SR-ZONES-W2 R3: 7 → 8 ADDS the zones (marked Beta) the same way.
+    expect(FEATURED_TOOLS).toBe(8);
     expect(col('Tools').items.map((i) => i.label)).toEqual([
       'Trade Call',
       'Market Regime',
@@ -107,6 +109,7 @@ describe('CH1 AC-c — no equities-internal / outcome_* leakage', () => {
       'Trade Call Scanner',
       'Market Regime Screener',
       'Pre-Trade Check',
+      'Support and Resistance Zones (Beta)',
       'Knowledge Chat',
     ]);
   });
