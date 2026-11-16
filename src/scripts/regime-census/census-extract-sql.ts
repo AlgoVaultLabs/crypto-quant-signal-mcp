@@ -40,7 +40,7 @@ const FORBIDDEN_PG_COLUMNS: readonly string[] = [
 /** The CSV header each section prints, in order. The pull reads these through `--headers`. */
 export const HEADERS = {
   BOTKEY: ['bot_keys', 'bot_rows', 'first_ts', 'last_ts'],
-  REGIME: ['ts', 'tool_name', 'caller', 'internal', 'client_name', 'is_automated', 'coin', 'timeframe', 'exchange', 'regime', 'verdict', 'next_tool', 'next_gap_s'],
+  REGIME: ['ts', 'tool_name', 'caller', 'internal', 'client_name', 'is_automated', 'caller_automated', 'coin', 'timeframe', 'exchange', 'regime', 'verdict', 'next_tool', 'next_gap_s'],
   CHECKS: ['checked_at', 'channel', 'caller', 'keyless', 'coin', 'side', 'size_usd', 'leverage', 'hold_hours', 'timeframe', 'stop_pct', 'target_pct', 'sigma_1h_pct'],
   WATCHES: ['chat_n', 'blocked', 'coin', 'timeframe', 'exchange', 'alert_type'],
 } as const satisfies Record<string, readonly string[]>;
@@ -61,17 +61,20 @@ WHERE ${RL_WINDOW}
 }
 
 /** REGIME — every get_market_regime and scan_market_regimes row of the window, with the caller's NEXT request_log
- *  call of any tool (lead over the caller's whole window) and the gap to it in seconds. */
+ *  call of any tool (lead over the caller's whole window) and the gap to it in seconds. `caller_automated` is
+ *  bool_or(is_automated) over the caller's rows of EVERY tool in the window (CH1 ruling Q1: a caller with any
+ *  is_automated row is SYNTHETIC) — computed in the all-tools subquery, before the regime-tool filter. */
 export function regimeSql(): string {
-  return `SELECT s.ts, s.tool_name, s.caller, s.internal, s.client_name, s.is_automated, s.coin, s.timeframe, s.exchange, s.regime, s.verdict, s.next_tool,
+  return `SELECT s.ts, s.tool_name, s.caller, s.internal, s.client_name, s.is_automated, s.caller_automated, s.coin, s.timeframe, s.exchange, s.regime, s.verdict, s.next_tool,
        round(extract(epoch FROM s.next_at::timestamptz) - extract(epoch FROM s.ts::timestamptz), 3) AS next_gap_s
 FROM (
-  SELECT w.id, w.ts, w.tool_name, w.caller, w.internal, w.client_name, w.is_automated, w.coin, w.timeframe, w.exchange, w.regime, w.verdict,
+  SELECT w.id, w.ts, w.tool_name, w.caller, w.internal, w.client_name, w.is_automated, w.caller_automated, w.coin, w.timeframe, w.exchange, w.regime, w.verdict,
          lead(w.tool_name) OVER (PARTITION BY w.caller ORDER BY w.ts, w.id) AS next_tool,
          lead(w.ts) OVER (PARTITION BY w.caller ORDER BY w.ts, w.id) AS next_at
   FROM (
     SELECT r.id, r.timestamp AS ts, r.tool_name, ${RL_KEY} AS caller, (r.license_tier = 'internal') AS internal,
-           r.client_name, r.is_automated, r.asset AS coin, r.timeframe, r.exchange, r.regime, r.verdict
+           r.client_name, r.is_automated, bool_or(r.is_automated) OVER (PARTITION BY ${RL_KEY}) AS caller_automated,
+           r.asset AS coin, r.timeframe, r.exchange, r.regime, r.verdict
     FROM request_log r
     WHERE ${RL_WINDOW}
   ) w
@@ -150,7 +153,6 @@ export function sessionScript(part: CensusPart): string {
       '\\set ON_ERROR_STOP 1',
       "SET statement_timeout = '300s';",
       "SET TIME ZONE 'UTC';",
-      "SET DateStyle = 'ISO, YMD';",
       'BEGIN READ ONLY;',
       `${TOKEN_SQL};`,
       // Session-local, measured in CH1 (P6): the caller-window sort runs in memory (peak 143 MB), never a temp file.
@@ -175,13 +177,34 @@ export function sessionScript(part: CensusPart): string {
   ].join('\n');
 }
 
-/** Frame defects of a whole script: a banned token anywhere (meta-commands included) or a missing read-only frame. */
+/** The client meta-commands a script may use — an ALLOW-list, so a file, shell or extension command (psql `\!`,
+ *  `\o`, `\g <file>`, `\gexec`, `\w`, `\copy`; sqlite3 `.shell`, `.system`, `.output`, `.once`, `.save`,
+ *  `.import`, `.backup`, `.load`, …) is refused whatever its spelling. */
+export const PSQL_META_ALLOWED: readonly string[] = ['set', 'pset', 'echo'];
+export const SQLITE_DOT_ALLOWED: readonly string[] = ['bail', 'headers', 'mode', 'separator', 'print'];
+/** SQLite functions that touch the file system or load code. */
+const SQLITE_FILE_FUNCTIONS_RE = /\b(writefile|readfile|load_extension|edit)\s*\(/i;
+
+/** Frame defects of a whole script: a banned token anywhere (meta-commands included), a client meta-command outside
+ *  the allow-list (psql: only at a line start), a file/extension function, or a missing read-only frame. */
 export function scriptDefects(part: CensusPart, script: string = sessionScript(part)): string[] {
   const out: string[] = [];
   const banned = BANNED_RE.exec(script);
   if (banned) out.push(`${part}: write token ${banned[1].toUpperCase()} in the script`);
-  if (part === 'pg' && !script.includes('\nBEGIN READ ONLY;\n')) out.push('pg: no BEGIN READ ONLY frame');
-  if (part === 'bot' && !script.includes('\nPRAGMA query_only = 1;\n')) out.push('bot: no query_only pragma');
+  if (SQLITE_FILE_FUNCTIONS_RE.test(script)) out.push(`${part}: file or extension function ${SQLITE_FILE_FUNCTIONS_RE.exec(script)?.[1]}`);
+  if (part === 'pg') {
+    for (const m of script.matchAll(/\\([A-Za-z!]+)/g)) {
+      const atLineStart = m.index === 0 || script[(m.index ?? 0) - 1] === '\n';
+      if (!atLineStart || !PSQL_META_ALLOWED.includes(m[1])) out.push(`pg: meta-command \\${m[1]} is not allowed${atLineStart ? '' : ' (mid-line)'}`);
+    }
+    if (!script.includes('\nBEGIN READ ONLY;\n')) out.push('pg: no BEGIN READ ONLY frame');
+  } else {
+    for (const line of script.split('\n')) {
+      const dot = /^\s*\.([A-Za-z_]+)/.exec(line);
+      if (dot && !SQLITE_DOT_ALLOWED.includes(dot[1])) out.push(`bot: dot-command .${dot[1]} is not allowed`);
+    }
+    if (!script.includes('\nPRAGMA query_only = 1;\n')) out.push('bot: no query_only pragma');
+  }
   return out;
 }
 

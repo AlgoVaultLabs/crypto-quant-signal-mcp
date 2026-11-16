@@ -13,7 +13,8 @@ LANES (CH1 rulings, 2026-11-16)
              PEOPLE: each non-blocked chat holding a regime watch (alert_type regime|both) votes once, timeframes
              under 1h mapped to 1h as the bot does. Its polls give cadence and next tool only.
   OWN        every other internal caller.
-  SYNTHETIC  a non-internal caller with any is_automated row (classifyTraffic) — reported, never weighted.
+  SYNTHETIC  a non-internal caller with any is_automated row (classifyTraffic) on ANY tool in the window — the extract's
+             caller_automated, bool_or over the caller's all-tools rows in SQL. Reported, never weighted.
   EXTERNAL   every other non-internal caller.
   A caller is the census key (md5 of the keyed ip_hash and client_name, computed on the host), per lane.
 
@@ -32,23 +33,37 @@ THE REGISTERED FALLBACK (fixed before any pull):
 
 REGIME_CENSUS_VERDICT=PASS (every dimension from its primary source) | FALLBACK (a registered fallback fired) |
 INDETERMINATE (exit 3: missing, altered, empty or unparseable input; a non-PASS pull). PASS and FALLBACK exit 0.
-Mutation hook for the self-test's own proof: REGIME_CENSUS_MUTATE=call_weighting | no_canary_filter.
+CUSTODY. The analyzer refuses (INDETERMINATE) unless its own file is the blob at the pull's code SHA
+(git hash-object vs git rev-parse <code_sha>:scripts/regime-census/census_analyze.py) — a rule edited after the pull
+cannot run under the landed SHA's name — and refuses an --out inside the repository (public), the pull's own rule.
+The JSON records the analyzer blob it ran.
+
+Mutation hook, for the self-test's own proof ONLY: REGIME_CENSUS_MUTATE=call_weighting | no_canary_filter is read
+inside --self-test; a real --in run with it set is refused (INDETERMINATE) and every result records "mutate": null.
 """
 from __future__ import annotations
 
+import contextlib
 import csv
 import datetime as dt
 import hashlib
+import io
 import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from collections import Counter, defaultdict
 
-MUTATE = os.environ.get("REGIME_CENSUS_MUTATE", "")
+MUTATE_ENV = "REGIME_CENSUS_MUTATE"
+_MUTATE = ""  # set only by self_test(); a real run refuses the env var (main)
 VERDICT_KEY = "REGIME_CENSUS_VERDICT"
+ANALYZER_REPO_PATH = "scripts/regime-census/census_analyze.py"
+# git location variables a hook exports; -C must win over them (git-and-worktrees rule)
+_GIT_LOCATION_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_QUARANTINE_PATH",
+                     "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")
 
 W4_COINS = ["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "SUI", "1000PEPE"]
 T3_TIMEFRAMES = ["1h", "4h", "1d"]
@@ -136,6 +151,35 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+def _git(repo: str, *args: str) -> str:
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
+    try:
+        r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, env=env, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise Indeterminate(f"git {args[0]} could not run: {e}") from e
+    if r.returncode != 0:
+        raise Indeterminate(f"git {' '.join(args)} failed: {r.stderr.strip()[:200]}")
+    return r.stdout.strip()
+
+
+def verify_code(code_sha: str, analyzer_path: str, repo: str) -> str:
+    """The analyzer's own blob, refused unless it is the blob at the pull's code SHA."""
+    if not isinstance(code_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", code_sha):
+        raise Indeterminate(f"code_sha {code_sha!r} is not a commit id")
+    mine = _git(repo, "hash-object", "--", analyzer_path)
+    landed = _git(repo, "rev-parse", "--verify", "--quiet", f"{code_sha}:{ANALYZER_REPO_PATH}")
+    if mine != landed:
+        raise Indeterminate(f"this analyzer (blob {mine[:12]}) is not the one at code_sha {code_sha[:12]} (blob {landed[:12]})")
+    return mine
+
+
+def out_inside_repo(out_dir: str, repo: str) -> bool:
+    """The pull's containment rule: refuse an output directory at or below the repository's top level."""
+    root = os.path.realpath(_git(repo, "rev-parse", "--show-toplevel"))
+    out = os.path.realpath(out_dir)
+    return out == root or out.startswith(root + os.sep)
+
+
 def load(in_dir: str) -> dict:
     """The verified, parsed pull. Raises Indeterminate on anything it cannot vouch for."""
     mpath = os.path.join(in_dir, "pull.json")
@@ -162,7 +206,7 @@ def load(in_dir: str) -> dict:
         raise Indeterminate(f"botkey.csv has {len(bk)} rows, not 1")
     botkey = {"bot_keys": int(_num(bk[0]["bot_keys"], "bot_keys") or 0), "bot_rows": int(_num(bk[0]["bot_rows"], "bot_rows") or 0)}
 
-    need = ["ts", "tool_name", "caller", "internal", "client_name", "is_automated", "coin", "timeframe", "exchange",
+    need = ["ts", "tool_name", "caller", "internal", "client_name", "is_automated", "caller_automated", "coin", "timeframe", "exchange",
             "regime", "verdict", "next_tool", "next_gap_s"]
     regime = []
     for i, r in enumerate(_read(os.path.join(in_dir, "regime.csv"), need)):
@@ -172,6 +216,7 @@ def load(in_dir: str) -> dict:
         regime.append({
             "ts": _ts(r["ts"], w), "tool": r["tool_name"].strip(), "caller": r["caller"].strip(),
             "internal": _bool(r["internal"], w), "client": r["client_name"].strip(), "auto": _bool(r["is_automated"], w),
+            "caller_auto": _bool(r["caller_automated"], w),
             "coin": r["coin"].strip().upper(), "tf": r["timeframe"].strip(), "ex": r["exchange"].strip().upper(),
             "regime": r["regime"].strip(), "verdict": r["verdict"].strip(), "next_tool": r["next_tool"].strip(),
             "next_gap_s": _num(r["next_gap_s"], w),
@@ -202,10 +247,10 @@ def load(in_dir: str) -> dict:
 
 # ── the derivations ───────────────────────────────────────────────────────────────────────────────────────────
 
-def lane_of(row: dict, automated: set) -> str:
+def lane_of(row: dict) -> str:
     if row["internal"]:
         return "BOT" if row["client"] == BOT_CLIENT else "OWN"
-    return "SYNTHETIC" if row["caller"] in automated else "EXTERNAL"
+    return "SYNTHETIC" if row["caller_auto"] else "EXTERNAL"
 
 
 def vote_mix(groups: dict) -> dict:
@@ -214,7 +259,7 @@ def vote_mix(groups: dict) -> dict:
     if not voters:
         return {}
     mix: dict = defaultdict(float)
-    if MUTATE == "call_weighting":  # the defect the one-vote test exists to catch
+    if _MUTATE == "call_weighting":  # the defect the one-vote test exists to catch
         pooled = Counter(x for vals in voters.values() for x in vals)
         total = sum(pooled.values())
         for k, m in pooled.items():
@@ -269,7 +314,7 @@ def weighted_quantiles(pairs: list) -> dict:
 
 def canary_kind(c: dict) -> str | None:
     """Which docs-sample canary signature a check matches, or None."""
-    if MUTATE == "no_canary_filter":
+    if _MUTATE == "no_canary_filter":
         return None
     if not (c["keyless"] and c["coin"] == "BTC" and c["side"] == "long" and c["size_usd"] == 10000.0
             and c["hold_h"] == 8.0 and c["target"] is None):
@@ -285,7 +330,6 @@ def analyze(data: dict) -> dict:
     gmr = [r for r in regime if r["tool"] == REGIME_TOOL]
     if not gmr:
         raise Indeterminate("no get_market_regime row in the corpus")
-    automated = {r["caller"] for r in regime if not r["internal"] and r["auto"]}
     binance_served = {r["coin"] for r in gmr if r["ex"] == "BINANCE" and r["regime"] and r["coin"]}
 
     def fold(c: str) -> str:
@@ -296,11 +340,11 @@ def analyze(data: dict) -> dict:
     folds = sorted({c for c in {r["coin"] for r in gmr} if c and fold(c) != c})
     by_voter: dict = defaultdict(list)
     for r in gmr:
-        by_voter[(lane_of(r, automated), r["caller"])].append(r)
+        by_voter[(lane_of(r), r["caller"])].append(r)
     scans: dict = defaultdict(list)
     for r in regime:
         if r["tool"] == SCAN_TOOL:
-            scans[(lane_of(r, automated), r["caller"])].append(r)
+            scans[(lane_of(r), r["caller"])].append(r)
 
     lanes: dict = {}
     for lane in ("BOT", "OWN", "EXTERNAL", "SYNTHETIC"):
@@ -324,7 +368,10 @@ def analyze(data: dict) -> dict:
             "callers": len(voters),
             "callers_ge3": sum(1 for rows in voters.values() if len(rows) >= CALLS_PER_CALLER),
             "calls": sum(len(rows) for rows in voters.values()),
-            "refused_calls": sum(1 for rows in voters.values() for r in rows if not r["regime"]),
+            # refused = an ERR_* verdict; unstamped = served before the exchange/regime/verdict stamp existed
+            # (2026-08-31T16:11Z, CH1 P4) — neither a refusal nor a label, reported apart
+            "refused_calls": sum(1 for rows in voters.values() for r in rows if r["verdict"].startswith("ERR_")),
+            "unstamped_calls": sum(1 for rows in voters.values() for r in rows if not r["verdict"] and not r["regime"]),
             "clients": dict(sorted(Counter(rows[0]["client"] or "unknown" for rows in voters.values()).items(), key=lambda kv: (-kv[1], kv[0]))),
             "mix": {
                 "coin": vote_mix({v: [fold(r["coin"]) for r in rows if r["coin"]] for v, rows in voters.items()}),
@@ -430,11 +477,13 @@ def analyze(data: dict) -> dict:
         "window": {"start": man.get("window_start"), "end": man.get("window_end"), "days": man.get("window_days")},
         "pull_at": man.get("pull_at"),
         "code_sha": man.get("code_sha"),
+        "analyzer_blob": data.get("analyzer_blob"),
+        "mutate": _MUTATE or None,
         "inputs_sha256": data["inputs"],
         "botkey": data["botkey"],
         "rules": {
             "bot_key": "license_tier internal AND client_name python-httpx",
-            "synthetic": "non-internal caller with any is_automated row",
+            "synthetic": "non-internal caller with any is_automated row on any tool in the window",
             "caller_key": "left(md5('regime-census-v1:' || ip_hash || '|' || client_name), 12), computed on the host",
             "regime_calls": REGIME_TOOL,
             "floors": {"callers": CALLER_FLOOR, "calls_per_caller": CALLS_PER_CALLER, "checks": CHECKS_FLOOR,
@@ -489,14 +538,14 @@ def render_md(res: dict, json_name: str, json_sha: str) -> str:
     o = [f"# Regime census — {res['pull_at']}", "",
          "**VAULT-ONLY.** Internal measurement for ARC-REGIME-ACCURACY T3; no figure here is public copy.", "",
          f"- `REGIME_CENSUS_VERDICT={res['verdict']}` · branches: coins/timeframes **{t['branch']}**, shapes **{t['shapes_branch']}**, holds **{t['holds_branch']}**",
-         f"- JSON: `{json_name}` · sha256 `{json_sha}`",
+         f"- JSON: `{json_name}` · sha256 `{json_sha}` · analyzer blob `{res['analyzer_blob']}`",
          f"- Window {res['window']['start']} → {res['window']['end']} ({res['window']['days']} d) · code `{res['code_sha']}`",
          f"- Bot key re-measured: {res['botkey']['bot_keys']} caller keys, {res['botkey']['bot_rows']} rows", "",
          "## Lanes (get_market_regime, one vote per caller)", "",
-         "| Lane | Callers | ≥3 calls | Calls | Refused | Coins (top) | Timeframes | Venues |", "|---|---|---|---|---|---|---|---|"]
+         "| Lane | Callers | ≥3 calls | Calls | Refused (ERR_*) | Unstamped | Coins (top) | Timeframes | Venues |", "|---|---|---|---|---|---|---|---|---|"]
     for lane in ("EXTERNAL", "BOT", "OWN", "SYNTHETIC"):
         L = ln[lane]
-        o.append(f"| {lane} | {L['callers']} | {L['callers_ge3']} | {L['calls']} | {L['refused_calls']} | {_top(L['mix']['coin'], 8)} | {_top(L['mix']['timeframe'])} | {_top(L['mix']['venue'], 6)} |")
+        o.append(f"| {lane} | {L['callers']} | {L['callers_ge3']} | {L['calls']} | {L['refused_calls']} | {L['unstamped_calls']} | {_top(L['mix']['coin'], 8)} | {_top(L['mix']['timeframe'])} | {_top(L['mix']['venue'], 6)} |")
     p = ln["BOT"]["people"]
     o += ["", f"BOT by people: {p['active_chats']} active chats ({p['blocked_chats']} blocked, reported apart), {p['watches']} watches"
           f"{' · ' + p['flag'] if p['flag'] else ''}. Coins {_top(p['mix']['coin'], 8)} · timeframes {_top(p['mix']['timeframe'])} · venues {_top(p['mix']['venue'])}. {p['source']}.", "",
@@ -522,10 +571,16 @@ def render_md(res: dict, json_name: str, json_sha: str) -> str:
     return "\n".join(o)
 
 
-def run(in_dir: str, out_dir: str) -> tuple[str, dict | None, str | None]:
-    """→ (verdict, result, json path). Writes nothing unless the verdict is PASS or FALLBACK."""
+def run(in_dir: str, out_dir: str, code: tuple | None = None) -> tuple[str, dict | None, str | None]:
+    """→ (verdict, result, json path). Writes nothing unless the verdict is PASS or FALLBACK.
+    code = (analyzer file, repo dir) for the custody checks; default: this file in its own checkout."""
+    analyzer_path, repo = code or (os.path.abspath(__file__), os.path.dirname(os.path.abspath(__file__)))
     try:
-        res = _round(analyze(load(in_dir)))
+        if out_inside_repo(out_dir, repo):
+            raise Indeterminate(f"--out {os.path.realpath(out_dir)} is inside the repository (public): census figures stay private")
+        data = load(in_dir)
+        data["analyzer_blob"] = verify_code(data["manifest"].get("code_sha"), analyzer_path, repo)
+        res = _round(analyze(data))
     except Indeterminate as e:
         print(f"[census-analyze] cannot verify: {e}", file=sys.stderr)
         return "INDETERMINATE", None, None
@@ -560,9 +615,10 @@ def _iso(t: float) -> str:
 
 
 def _R(t, caller, tool=REGIME_TOOL, internal=False, client="openai", auto=False, coin="BTC", tf="4h", ex="BINANCE",
-       regime="RANGING", next_tool="", next_gap=""):
-    return [_iso(_BASE + t), tool, caller, "t" if internal else "f", client, "t" if auto else "f", coin, tf, ex, regime,
-            "" if regime else "ERR_UNKNOWN", next_tool, str(next_gap)]
+       regime="RANGING", next_tool="", next_gap="", verdict=None):
+    # column 6 (caller_automated) is filled by _fixture the way SQL does: bool_or over the caller's rows
+    return [_iso(_BASE + t), tool, caller, "t" if internal else "f", client, "t" if auto else "f", "?", coin, tf, ex, regime,
+            ("OK" if regime else "ERR_UNKNOWN") if verdict is None else verdict, next_tool, str(next_gap)]
 
 
 def _C(stop=None, target=None, hold=8.0, keyless=False, coin="ETH", side="short", size=500.0, lev=None, sigma=1.0):
@@ -571,11 +627,15 @@ def _C(stop=None, target=None, hold=8.0, keyless=False, coin="ETH", side="short"
             f(stop), f(target), f(sigma)]
 
 
-def _fixture(root: str, regime_rows, checks_rows=(), watch_rows=(), pull_verdict="PASS", botkey=("1", "10"), tamper=None) -> str:
+def _fixture(root: str, regime_rows, checks_rows=(), watch_rows=(), pull_verdict="PASS", botkey=("1", "10"), tamper=None,
+             code_sha="0" * 40, automated_elsewhere=()) -> str:
+    """automated_elsewhere: callers with an is_automated row on a tool the extract does not carry (e.g. get_trade_call)."""
     d = tempfile.mkdtemp(dir=root)
+    auto = {r[2] for r in regime_rows if len(r) > 5 and r[5] == "t"} | set(automated_elsewhere)
+    regime_rows = [r[:6] + ["t" if r[2] in auto else "f"] + r[7:] if len(r) > 6 and r[6] == "?" else r for r in regime_rows]
     heads = {
         "botkey.csv": ["bot_keys", "bot_rows", "first_ts", "last_ts"],
-        "regime.csv": ["ts", "tool_name", "caller", "internal", "client_name", "is_automated", "coin", "timeframe", "exchange", "regime", "verdict", "next_tool", "next_gap_s"],
+        "regime.csv": ["ts", "tool_name", "caller", "internal", "client_name", "is_automated", "caller_automated", "coin", "timeframe", "exchange", "regime", "verdict", "next_tool", "next_gap_s"],
         "checks.csv": ["checked_at", "channel", "caller", "keyless", "coin", "side", "size_usd", "leverage", "hold_hours", "timeframe", "stop_pct", "target_pct", "sigma_1h_pct"],
         "watches.csv": ["chat_n", "blocked", "coin", "timeframe", "exchange", "alert_type"],
     }
@@ -589,7 +649,7 @@ def _fixture(root: str, regime_rows, checks_rows=(), watch_rows=(), pull_verdict
             w.writerows(body[f])
         files[f] = {"sha256": sha256_file(p), "rows": len(body[f])}
     man = {"pull_at": "2026-11-16T04:00:00.000Z", "window_start": "2026-08-18T04:00:00.000Z", "window_end": "2026-11-16T04:00:00.000Z",
-           "window_days": 90, "code_sha": "0" * 40, "pull_verdict": pull_verdict, "files": files}
+           "window_days": 90, "code_sha": code_sha, "pull_verdict": pull_verdict, "files": files}
     with open(os.path.join(d, "pull.json"), "w", encoding="utf-8") as fh:
         json.dump(man, fh)
     if tamper:
@@ -605,7 +665,18 @@ def _chats(n: int, blocked: bool = False, start: int = 1) -> list:
     return [[str(start + i), "1" if blocked else "0", "SOL", "15m", "BINANCE", "regime"] for i in range(n)]
 
 
+def _git_commit(repo: str, msg: str) -> str:
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.name=census-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false",
+         "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", msg)
+    return _git(repo, "rev-parse", "HEAD")
+
+
 def self_test() -> int:
+    global _MUTATE
+    _MUTATE = os.environ.get(MUTATE_ENV, "")
     cases = 0
     fails = []
 
@@ -617,24 +688,45 @@ def self_test() -> int:
         if not ok:
             fails.append(f"{name}: got {got!r} want {want!r}")
 
-    with tempfile.TemporaryDirectory() as root:
+    with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as repo:
+        # A throwaway repo whose commit `good` holds THIS analyzer at its canonical path and whose commit `bad` holds an
+        # edited copy: the real code check (git hash-object vs git rev-parse <sha>:<path>) runs against it.
+        me = os.path.abspath(__file__)
+        rel = os.path.join(repo, *ANALYZER_REPO_PATH.split("/"))
+        os.makedirs(os.path.dirname(rel))
+        with open(me, "rb") as src, open(rel, "wb") as dst:
+            dst.write(src.read())
+        good = _git_commit(repo, "good")
+        with open(rel, "a", encoding="utf-8") as fh:
+            fh.write("# edited after the pull\n")
+        bad = _git_commit(repo, "bad")
+        code = (me, repo)
+
+        def fx(*a, **k):
+            k.setdefault("code_sha", good)
+            return _fixture(root, *a, **k)
+
         def go(d):
-            return run(d, os.path.join(d, "out"))
+            return run(d, os.path.join(d, "out"), code=code)
 
         # 1. lane split: bot key, other internal, automated external, external
         rows = [_R(0, "b0", internal=True, client=BOT_CLIENT), _R(10, "o0", internal=True, client="node"),
                 _R(20, "x0", auto=False), _R(30, "x0", auto=True), _R(40, "x0"), _R(50, "e0")]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         check("lane split verdict", v, "FALLBACK")
         if res:
             for lane, n in (("BOT", 1), ("OWN", 1), ("SYNTHETIC", 1), ("EXTERNAL", 1)):
                 check(f"lane split {lane} callers", res["lanes"][lane]["callers"], n)
             check("all rows of an automated caller are SYNTHETIC", res["lanes"]["SYNTHETIC"]["calls"], 3)
             check("SYNTHETIC never weighted (coins come from the fallback)", res["t3_weights"]["branch"], "EQUAL")
+        v, res, _ = go(fx([_R(0, "g0"), _R(60, "g0"), _R(0, "e9")], automated_elsewhere={"g0"}))
+        if res:
+            check("a caller automated only on get_trade_call is SYNTHETIC", res["lanes"]["SYNTHETIC"]["calls"], 2)
+            check("... and leaves EXTERNAL", res["lanes"]["EXTERNAL"]["callers"], 1)
 
         # 2. one vote per caller: a 1,000-call caller and a 1-call caller weigh the same
         rows = [_R(k * 60, "big", coin="BTC") for k in range(1000)] + [_R(5, "small", coin="ETH")]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         if res:
             m = res["lanes"]["EXTERNAL"]["mix"]["coin"]
             check("one vote: BTC share", m.get("BTC", 0.0), 0.5)
@@ -645,7 +737,7 @@ def self_test() -> int:
         # 3. next tool: within 30 min counts, beyond is none, no next call is none
         rows = [_R(0, "n0", next_tool="get_trade_call", next_gap="1799.5"), _R(4000, "n0", next_tool="scan_trade_calls", next_gap="1800.001"),
                 _R(9000, "n0")]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         if res:
             nt = res["lanes"]["EXTERNAL"]["next_tool_30m"]
             check("next tool within window", nt.get("get_trade_call", 0.0), 1 / 3)
@@ -666,13 +758,13 @@ def self_test() -> int:
 
         # 5. the three registered branches, at the floor
         bin8 = [_R(9_000 + i, f"w{i}", coin=c) for i, c in enumerate(W4_COINS)]
-        v, res, _ = go(_fixture(root, _ext_callers(30) + bin8))
+        v, res, _ = go(fx(_ext_callers(30) + bin8))
         check("EXTERNAL fires at 30 callers with >= 3 calls", res and res["t3_weights"]["branch"], "EXTERNAL")
-        v, res, _ = go(_fixture(root, _ext_callers(29) + bin8, watch_rows=_chats(30)))
+        v, res, _ = go(fx(_ext_callers(29) + bin8, watch_rows=_chats(30)))
         check("BOT fires on 30 people when EXTERNAL is short", res and res["t3_weights"]["branch"], "BOT")
         if res:
             check("BOT timeframes mapped as the bot polls (15m -> 1h)", res["t3_weights"]["timeframes"]["1h"], 1.0)
-        v, res, _ = go(_fixture(root, _ext_callers(29) + bin8, watch_rows=_chats(29) + _chats(5, blocked=True, start=100)))
+        v, res, _ = go(fx(_ext_callers(29) + bin8, watch_rows=_chats(29) + _chats(5, blocked=True, start=100)))
         check("EQUAL when both lanes are short (blocked chats are not people)", res and res["t3_weights"]["branch"], "EQUAL")
         if res:
             check("EQUAL coins are W4's 8 at 1/8", res["t3_weights"]["coins"].get("SUI"), 1 / 8)
@@ -680,33 +772,38 @@ def self_test() -> int:
 
         # 6. the panel: W4's 8 then top Binance coins, until 30 coins or 95% of the lane's Binance weight
         many = [_R(i * 7, f"p{i}", coin=f"C{i:02d}") for i in range(40)] + _ext_callers(30)
-        v, res, _ = go(_fixture(root, many))
+        v, res, _ = go(fx(many))
         if res:
             check("panel stops at 30 coins", len(res["t3_weights"]["panel"]), 30)
             check("panel starts with W4's 8", res["t3_weights"]["panel"][:8], W4_COINS)
             check("t3 coin weights sum to 1", sum(res["t3_weights"]["coins"].values()), 1.0)
-        v, res, _ = go(_fixture(root, _ext_callers(30) + [_R(1, "q0", coin="ETH")]))
+        v, res, _ = go(fx(_ext_callers(30) + [_R(1, "q0", coin="ETH")]))
         if res:
             check("panel stops at 95% cover", res["t3_weights"]["panel"], W4_COINS)
 
         # 7. coin folding: PEPE joins 1000PEPE only because 1000PEPE is served on Binance
         rows = _ext_callers(30) + [_R(3, "f0", coin="1000PEPE"), _R(4, "f1", coin="PEPE", ex="HL")]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         if res:
             check("coin fold recorded", res["rules"]["coin_folds"], ["PEPE"])
             check("folded coin carries both votes", res["lanes"]["EXTERNAL"]["mix"]["coin"].get("1000PEPE", 0.0), 2 / 32)
 
         # 8. venue shares only from rows with an exchange; refused calls are demand
         rows = [_R(0, "v0", ex=""), _R(10, "v0", ex="", regime=""), _R(20, "v1", ex="HL")]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         if res:
             check("venue from stamped rows only", res["lanes"]["EXTERNAL"]["mix"]["venue"], {"HL": 1.0})
             check("refused calls counted as demand", res["lanes"]["EXTERNAL"]["refused_calls"], 1)
+        rows = [_R(0, "s0", ex="", regime="", verdict=""), _R(10, "s0", regime="", verdict="ERR_TIER_LIMIT_REACHED"), _R(20, "s0")]
+        v, res, _ = go(fx(rows))
+        if res:
+            check("an unstamped served row is not refused", res["lanes"]["EXTERNAL"]["refused_calls"], 1)
+            check("unstamped rows reported apart", res["lanes"]["EXTERNAL"]["unstamped_calls"], 1)
             check("coins count every call", res["lanes"]["EXTERNAL"]["mix"]["coin"], {"BTC": 1.0})
 
         # 9. cadence: per caller x (coin, timeframe), median gap; each caller sums to one
         rows = [_R(k * 3600, "c0") for k in range(4)] + [_R(k * 60, "c1", coin="ETH") for k in range(3)] + [_R(k * 600, "c1", coin="SOL") for k in range(3)]
-        v, res, _ = go(_fixture(root, rows))
+        v, res, _ = go(fx(rows))
         if res:
             cad = res["lanes"]["EXTERNAL"]["cadence_s"]
             check("cadence pairs", cad["pairs"], 3)
@@ -718,7 +815,7 @@ def self_test() -> int:
         envp = [_C(keyless=True, coin="BTC", side="long", size=10000.0) for _ in range(7)]
         near = [_C(stop=2.0, keyless=True, coin="BTC", side="long", size=10000.0, lev=5.0, hold=4.0)]  # a real hold: kept
         bare = [_C() for _ in range(84)]
-        v, res, _ = go(_fixture(root, _ext_callers(30), checks_rows=canary + envp + near + bare))
+        v, res, _ = go(fx(_ext_callers(30), checks_rows=canary + envp + near + bare))
         if res:
             check("canary rows removed", res["brackets"]["canary_removed"], 45)
             check("canary removed per signature", res["brackets"]["canary_removed_by_signature"], {"P9": 38, "P7-ENV": 7})
@@ -727,39 +824,75 @@ def self_test() -> int:
             check("equal holds over five, no 0.25 h", sorted(res["t3_weights"]["holds"]), ["0.5", "24", "4", "72", "8"])
             check("verdict FALLBACK when a fallback fired", res["verdict"], "FALLBACK")
         both = [_C(stop=1.0, target=2.0, hold=4.0) for _ in range(45)] + [_C(stop=0.25, target=0.25, hold=0.25, sigma=None) for _ in range(5)]
-        v, res, _ = go(_fixture(root, _ext_callers(30), checks_rows=both))
+        v, res, _ = go(fx(_ext_callers(30), checks_rows=both))
         if res:
             check("50 stop+target checks -> shape histogram", res["t3_weights"]["shapes_branch"], "HISTOGRAM")
             check("50 bracketed checks -> hold histogram", res["t3_weights"]["holds_branch"], "HISTOGRAM")
             check("0.25 h joins at exactly 10% of the hold mass", res["t3_weights"]["holds"].get("0.25"), 0.1)
             check("verdict PASS when every dimension is primary", res["verdict"], "PASS")
-        v, res, _ = go(_fixture(root, _ext_callers(30), checks_rows=both[:49] + [_C(stop=1.0)]))
+        v, res, _ = go(fx(_ext_callers(30), checks_rows=both[:49] + [_C(stop=1.0)]))
         if res:
             check("49 stop+target checks -> equal shapes", res["t3_weights"]["shapes_branch"], "EQUAL")
             check("a stop alone counts toward the hold floor", res["t3_weights"]["holds_branch"], "HISTOGRAM")
             check("0.25 h does not join under 10%", "0.25" in res["t3_weights"]["holds"], False)
 
         # 11. INDETERMINATE: empty, unparseable, altered, a non-PASS pull
-        check("empty extract", go(_fixture(root, []))[0], "INDETERMINATE")
-        check("unparseable boolean", go(_fixture(root, [_R(0, "u0")[:3] + ["maybe"] + _R(0, "u0")[4:]]))[0], "INDETERMINATE")
-        check("unparseable number", go(_fixture(root, [_R(0, "u0", next_gap="0x1")]))[0], "INDETERMINATE")
+        check("empty extract", go(fx([]))[0], "INDETERMINATE")
+        check("unparseable boolean", go(fx([_R(0, "u0")[:3] + ["maybe"] + _R(0, "u0")[4:]]))[0], "INDETERMINATE")
+        check("unparseable number", go(fx([_R(0, "u0", next_gap="0x1")]))[0], "INDETERMINATE")
         def _garble(d):
             with open(os.path.join(d, "regime.csv"), "a", encoding="utf-8") as fh:
                 fh.write("tampered\n")
-        check("sha256 mismatch", go(_fixture(root, _ext_callers(1), tamper=_garble))[0], "INDETERMINATE")
-        check("pull not PASS", go(_fixture(root, _ext_callers(1), pull_verdict="INDETERMINATE"))[0], "INDETERMINATE")
+        check("sha256 mismatch", go(fx(_ext_callers(1), tamper=_garble))[0], "INDETERMINATE")
+        check("pull not PASS", go(fx(_ext_callers(1), pull_verdict="INDETERMINATE"))[0], "INDETERMINATE")
         check("no manifest", run(os.path.join(root, "absent"), os.path.join(root, "absent-out"))[0], "INDETERMINATE")
+
+        # 13. the mutation hook acts only inside --self-test: a real --in run with it set is INDETERMINATE
+        d = fx(_ext_callers(30))
+        saved = os.environ.get("REGIME_CENSUS_MUTATE")
+        try:
+            os.environ["REGIME_CENSUS_MUTATE"] = "call_weighting"
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                rc = main(["--in", d, "--out", os.path.join(d, "m1")], code=code)
+            check("a real run with the mutation hook set is INDETERMINATE", out.getvalue().strip().splitlines()[-1], f"{VERDICT_KEY}=INDETERMINATE")
+            check("... exit 3", rc, 3)
+            os.environ.pop("REGIME_CENSUS_MUTATE")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                rc = main(["--in", d, "--out", os.path.join(d, "m2")], code=code)
+            check("the same run without it completes", out.getvalue().strip().splitlines()[-1], f"{VERDICT_KEY}=FALLBACK")
+        finally:
+            if saved is None:
+                os.environ.pop("REGIME_CENSUS_MUTATE", None)
+            else:
+                os.environ["REGIME_CENSUS_MUTATE"] = saved
+        v, res, path = go(fx(_ext_callers(30)))
+        if res:
+            check("a real result records no mutation", res["mutate"], None)
+            check("the JSON names the analyzer blob it ran", res["analyzer_blob"], _git(repo, "hash-object", "--", me))
+
+        # 14. the analyzer checks itself against the pull's code SHA
+        check("an analyzer that differs from the code_sha blob is INDETERMINATE", go(fx(_ext_callers(30), code_sha=bad))[0], "INDETERMINATE")
+        check("a code_sha that is not a commit is INDETERMINATE", go(fx(_ext_callers(30), code_sha="f" * 40))[0], "INDETERMINATE")
+        check("a malformed code_sha is INDETERMINATE", go(fx(_ext_callers(30), code_sha="HEAD"))[0], "INDETERMINATE")
+
+        # 15. no --out inside the repository (public): the pull's containment rule
+        d = fx(_ext_callers(30))
+        check("out-dir inside the repo is INDETERMINATE", run(d, os.path.join(repo, "audits"), code=code)[0], "INDETERMINATE")
+        check("out-dir at the repo root is INDETERMINATE", run(d, repo, code=code)[0], "INDETERMINATE")
+        check("nothing was written into the repo", os.path.exists(os.path.join(repo, "audits")), False)
 
         # 12. the privacy guard refuses a raw identifier pattern
         check("privacy guard: keyed ip hash", privacy_defect('{"x": "v2:0123abcd"}'), "v2:0123abcd")
         check("privacy guard: user agent", privacy_defect("Mozilla/5.0"), "Mozilla/")
         check("privacy guard: clean", privacy_defect('{"caller": "3f2a"}'), None)
-        v, res, path = go(_fixture(root, _ext_callers(30)))
+        v, res, path = go(fx(_ext_callers(30)))
         if path:
             with open(path, encoding="utf-8") as fh:
                 check("written JSON is clean", privacy_defect(fh.read()), None)
 
-    floor = 63
+    floor = 78
     if cases < floor:
         print(f"[census-analyze] self-test ran {cases} checks, floor {floor}", file=sys.stderr)
         print("REGIME_CENSUS_SELFTEST_VERDICT=INDETERMINATE")
@@ -774,9 +907,13 @@ def self_test() -> int:
     return 0
 
 
-def main(argv: list) -> int:
+def main(argv: list, code: tuple | None = None) -> int:
     if "--self-test" in argv:
         return self_test()
+    if os.environ.get(MUTATE_ENV):
+        print(f"[census-analyze] refusing: {MUTATE_ENV} is a self-test hook and acts only inside --self-test", file=sys.stderr)
+        print(f"{VERDICT_KEY}=INDETERMINATE")
+        return 3
     try:
         i = argv.index("--in")
         in_dir = argv[i + 1]
@@ -785,7 +922,7 @@ def main(argv: list) -> int:
         print(f"{VERDICT_KEY}=INDETERMINATE")
         return 3
     out_dir = argv[argv.index("--out") + 1] if "--out" in argv and argv.index("--out") + 1 < len(argv) else in_dir
-    verdict, res, jpath = run(in_dir, out_dir)
+    verdict, res, jpath = run(in_dir, out_dir, code=code)
     if res and jpath:
         print(f"REGIME_CENSUS_JSON={jpath}")
         print(f"REGIME_CENSUS_JSON_SHA256={sha256_file(jpath)}")

@@ -12,6 +12,7 @@ import {
   checksSql,
   partDefects,
   regimeSql,
+  scriptDefects,
   sessionScript,
   watchesSql,
 } from '../../src/scripts/regime-census/census-extract-sql.js';
@@ -34,7 +35,8 @@ describe('census generator — AC2.1 read-only by construction', () => {
     expect(lines.filter((l) => /^BEGIN\b/i.test(l))).toEqual(['BEGIN READ ONLY;']);
     // the first statement after BEGIN prints the token; nothing before BEGIN can print a row
     expect(lines[begin + 1]).toMatch(/^SELECT 'TOKEN current_user=' \|\| current_user \|\| ' transaction_read_only=' \|\| current_setting\('transaction_read_only'\);$/);
-    for (const l of lines.slice(0, begin)) expect(l).toMatch(/^(\\set ON_ERROR_STOP 1|SET (statement_timeout|TIME ZONE|DateStyle)\b.*)$/);
+    // review 1 #7: only the approved session settings precede BEGIN (no DateStyle)
+    expect(lines.slice(0, begin)).toEqual(['\\set ON_ERROR_STOP 1', "SET statement_timeout = '300s';", "SET TIME ZONE 'UTC';"]);
     expect(lines[lines.length - 1]).toBe('COMMIT;');
     // every SELECT section sits between BEGIN and COMMIT
     const firstSection = lines.findIndex((l) => l.startsWith("\\echo '==="));
@@ -87,6 +89,19 @@ describe('census generator — AC2.1 read-only by construction', () => {
     expect(partDefects('bot')).toEqual([]);
   });
 
+  it('computes caller_automated over the caller\'s ALL-tools rows, before the regime-tool filter (review 1 #3)', () => {
+    const sql = regimeSql();
+    const inner = sql.slice(sql.indexOf('FROM request_log r') - 400, sql.indexOf(') w'));
+    const innerStart = sql.lastIndexOf('SELECT r.id', sql.indexOf('FROM request_log r'));
+    const innermost = sql.slice(innerStart, sql.indexOf(') w'));
+    expect(inner.length).toBeGreaterThan(0);
+    expect(innermost).toContain("bool_or(r.is_automated) OVER (PARTITION BY left(md5('regime-census-v1:' || coalesce(r.ip_hash, '') || '|' || coalesce(r.client_name, '')), 12)) AS caller_automated");
+    expect(innermost).toContain('FROM request_log r');
+    expect(innermost).not.toMatch(/tool_name IN/);
+    expect(sql.indexOf('caller_automated')).toBeLessThan(sql.indexOf("WHERE s.tool_name IN ('get_market_regime', 'scan_market_regimes')"));
+    expect(HEADERS.REGIME).toContain('caller_automated');
+  });
+
   it('keys the bot on the restated marker: internal tier and the bot client', () => {
     expect(BOT_CLIENT_NAME).toBe('python-httpx');
     expect(botKeySql()).toContain(`r.license_tier = 'internal' AND r.client_name = '${BOT_CLIENT_NAME}'`);
@@ -105,6 +120,30 @@ describe('census generator — AC2.1 read-only by construction', () => {
     const raw = pgSections.map((s) => (s.name === 'CHECKS' ? { ...s, sql: s.sql.replace('p.coin,', 'p.caller_ref AS coin,') } : s));
     expect(partDefects('pg', raw).join(' ')).toMatch(/CHECKS: raw identifier/);
   });
+});
+
+describe('census generator — no file, shell or extension escape in either script (review 1 #4)', () => {
+  it('the scripts as built carry none', () => {
+    expect(scriptDefects('pg')).toEqual([]);
+    expect(scriptDefects('bot')).toEqual([]);
+  });
+
+  const botInjections = [
+    ".shell touch x", ".system touch x", ".output x.csv", ".once x.csv", ".save x.db", ".import x.csv t", ".backup x.db", ".load ext",
+    "SELECT writefile('x', 'y');", "SELECT readfile('x');", "SELECT load_extension('x');",
+  ];
+  for (const inj of botInjections) {
+    it(`bot refuses: ${inj}`, () => {
+      expect(scriptDefects('bot', `${sessionScript('bot')}${inj}\n`).length).toBeGreaterThan(0);
+    });
+  }
+
+  const pgInjections = ['\\! touch x', '\\o x.csv', "SELECT 1 \\g x.csv", '\\g x.csv', '\\gexec', "\\copy (SELECT 1) TO 'x.csv'", '\\w x.sql', '\\gx x.csv'];
+  for (const inj of pgInjections) {
+    it(`pg refuses: ${inj}`, () => {
+      expect(scriptDefects('pg', `${sessionScript('pg')}${inj}\n`).length).toBeGreaterThan(0);
+    });
+  }
 });
 
 describe('census generator — the entrypoint prints what the module builds', () => {

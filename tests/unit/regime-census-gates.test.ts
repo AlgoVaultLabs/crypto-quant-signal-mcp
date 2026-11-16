@@ -36,6 +36,19 @@ describe('census analyzer — self-test (AC2.2) and mutation proof (AC2.2b)', ()
   });
 });
 
+describe('census analyzer — the mutation hook never acts in a real run (review 1 #1)', () => {
+  it('an --in run with REGIME_CENSUS_MUTATE set is refused INDETERMINATE (exit 3) before reading anything', { timeout: 120_000 }, () => {
+    const r = spawnSync('python3', ['-I', 'scripts/regime-census/census_analyze.py', '--in', 'tests/unit'], {
+      encoding: 'utf8',
+      timeout: 90_000,
+      env: { ...process.env, REGIME_CENSUS_MUTATE: 'call_weighting' },
+    });
+    expect(r.stdout.trim().split('\n').pop()).toBe('REGIME_CENSUS_VERDICT=INDETERMINATE');
+    expect(r.stderr).toMatch(/self-test hook and acts only inside --self-test/);
+    expect(r.status).toBe(3);
+  });
+});
+
 describe('census pull — self-test', () => {
   it('passes, offline', { timeout: 120_000 }, () => {
     const r = spawnSync('bash', ['scripts/regime-census/census-pull.sh', '--self-test'], { encoding: 'utf8', timeout: 90_000 });

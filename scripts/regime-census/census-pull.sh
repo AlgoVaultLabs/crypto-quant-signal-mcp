@@ -7,8 +7,11 @@
 # Sessions (the statements are the generator's, src/scripts/regime-census/census-extract-sql.ts, never typed here):
 #   pg   ssh → docker exec -i <postgres> psql -U aoe_readonly -At -q -v window_start=… -v window_end=…
 #        one BEGIN READ ONLY, token line first; sections BOTKEY, REGIME, CHECKS
-#   bot  ssh → sqlite3 -readonly -bail 'file:<state.db>?immutable=1' (the only write-free open of a WAL file with no
-#        side files: mode=ro refuses or needs -shm/-wal created); PRAGMA query_only, token line first; section WATCHES
+#   bot  ssh → sqlite3 -safe -readonly -bail 'file:<state.db>?immutable=1' (immutable: the only write-free open of a WAL
+#        file with no side files — mode=ro refuses or needs -shm/-wal created; -safe: no .shell/.output/writefile, so
+#        the CLI cannot write even if a future script asked it to). PRAGMA query_only, token line first; section WATCHES.
+#        Preflight: the host's sqlite3 must be >= 3.37 (where -safe exists); older is INDETERMINATE, never a read
+#        without -safe.
 # Nothing is written on the host. The window is [end − 90 d, end), end = this pull's own UTC clock floored to the minute.
 #
 # Output in <dir> (refused inside the repository — the repo is public, the extracts are private):
@@ -29,6 +32,7 @@ PG_CTR='crypto-quant-signal-mcp-postgres-1'
 BOT_DB='/var/lib/algovault-bot/state.db'
 PG_TOKEN='TOKEN current_user=aoe_readonly transaction_read_only=on'
 BOT_TOKEN='TOKEN sqlite query_only=1'
+SQLITE_MIN='3.37.0'
 WINDOW_DAYS=90
 GEN='src/scripts/regime-census/census-extract-sql.ts'
 CODE_PATHS='src/scripts/regime-census scripts/regime-census'
@@ -90,6 +94,16 @@ window_bounds() {
 # header_of <headers-file> <NAME> → the registered header the generator prints for NAME
 header_of() { awk -F= -v k="$2" '$1 == k { print substr($0, length(k) + 2); exit }' "$1"; }
 
+# version_ge <a> <b> → 0 iff dotted version a >= b (numeric per field; an empty or non-numeric a is never >=)
+version_ge() {
+  case "$1" in '' | *[!0-9.]*) return 1 ;; esac
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    na = split(a, x, "."); nb = split(b, y, "."); n = (na > nb ? na : nb)
+    for (i = 1; i <= n; i++) { xi = (i <= na ? x[i] + 0 : 0); yi = (i <= nb ? y[i] + 0 : 0)
+      if (xi > yi) exit 0; if (xi < yi) exit 1 }
+    exit 0 }'
+}
+
 # inside <path> <root> → 0 iff path is root or below it
 inside() { case "$1/" in "$2/"*) return 0 ;; esac; return 1; }
 
@@ -133,12 +147,17 @@ run_pull() {
   local pull_at; pull_at="$(iso_of "$now")"
   log "window $ws → $we · pull_at $pull_at"
 
+  local sqlite_v
+  sqlite_v="$(ssh -o ConnectTimeout=20 -i "$KEY" "$HOST" 'sqlite3 --version' 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  version_ge "$sqlite_v" "$SQLITE_MIN" || ind_exit "host sqlite3 '${sqlite_v:-unreadable}' is older than $SQLITE_MIN: -safe is unavailable, and the bot read never runs without it"
+  log "host sqlite3 $sqlite_v (>= $SQLITE_MIN, -safe available)"
+
   local pg_raw="$out_abs/session-pg.raw" bot_raw="$out_abs/session-bot.raw" bot_err="$out_abs/session-bot.err"
   ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i "$KEY" "$HOST" \
     "docker exec -i $PG_CTR psql -U aoe_readonly -d signal_performance -At -q -v window_start=$ws -v window_end=$we" < "$pg_sql" > "$pg_raw"
   local rc_pg=$?
   ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i "$KEY" "$HOST" \
-    "{ test -e '$BOT_DB-wal' && echo bot_wal_present=1 || echo bot_wal_present=0; } >&2; sqlite3 -readonly -bail 'file:$BOT_DB?immutable=1'" < "$bot_sql" > "$bot_raw" 2> "$bot_err"
+    "{ test -e '$BOT_DB-wal' && echo bot_wal_present=1 || echo bot_wal_present=0; } >&2; sqlite3 -safe -readonly -bail 'file:$BOT_DB?immutable=1'" < "$bot_sql" > "$bot_raw" 2> "$bot_err"
   local rc_bot=$?
   local pg_tok bot_tok
   pg_tok="$(token_state "$pg_raw" "$PG_TOKEN")"
@@ -173,6 +192,7 @@ run_pull() {
     printf '  "code_sha": "%s",\n  "code_landed": %s,\n' "$head" "$landed"
     printf '  "session_pg_sql_sha256": "%s",\n  "session_bot_sql_sha256": "%s",\n' "$(sha "$pg_sql")" "$(sha "$bot_sql")"
     printf '  "pg_token": "%s",\n  "bot_token": "%s",\n  "bot_wal_present": %s,\n' "$pg_tok" "$bot_tok" "${bot_wal:-null}"
+    printf '  "host_sqlite_version": "%s",\n' "$sqlite_v"
     printf '  "files": {%s\n  },\n' "$files_json"
     printf '  "pull_verdict": "%s"\n}\n' "${vline#REGIME_CENSUS_PULL_VERDICT=}"
   } > "$meta"
@@ -206,6 +226,12 @@ self_test() {
   inside /a/repo/x /a/repo; check 'out inside the repo is refused' "$?" 0
   inside /a/repo /a/repo; check 'out at the repo root is refused' "$?" 0
   inside /a/repository-private /a/repo; check 'a sibling with the repo name as prefix is outside' "$?" 1
+  # the -safe preflight: sqlite3 >= 3.37, field by field
+  version_ge 3.45.1 "$SQLITE_MIN"; check 'host 3.45.1 has -safe' "$?" 0
+  version_ge 3.37.0 "$SQLITE_MIN"; check '3.37.0 is the floor' "$?" 0
+  version_ge 3.36.9 "$SQLITE_MIN"; check '3.36.9 lacks -safe' "$?" 1
+  version_ge 3.100.0 "$SQLITE_MIN"; check 'numeric, not lexical' "$?" 0
+  version_ge '' "$SQLITE_MIN"; check 'an unreadable version is never enough' "$?" 1
   # token_state() / section() / files_state() / header_of() on fixture sessions
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/census-pull-selftest.XXXXXX")" || { echo 'REGIME_CENSUS_PULL_SELFTEST_VERDICT=INDETERMINATE'; return 3; }
   printf '%s\n===BOTKEY===\nbot_keys,bot_rows\n2,10\n===REGIME===\nts,tool_name\n===CHECKS===\nchecked_at\n' "$PG_TOKEN" > "$tmp/good.raw"
@@ -231,7 +257,7 @@ self_test() {
   check 'header lookup' "$(header_of "$tmp/h.txt" REGIME)" 'ts,tool_name'
   check 'header lookup of an absent name' "$(header_of "$tmp/h.txt" WATCHES)" ''
   rm -rf "$tmp"
-  local exp=32
+  local exp=37
   if [ "$cases" -lt "$exp" ]; then log "self-test ran $cases cases, floor $exp"; echo 'REGIME_CENSUS_PULL_SELFTEST_VERDICT=INDETERMINATE'; return 3; fi
   if [ "$fails" -gt 0 ]; then echo 'REGIME_CENSUS_PULL_SELFTEST_VERDICT=FAIL'; return 1; fi
   log "self-test: $cases cases"
