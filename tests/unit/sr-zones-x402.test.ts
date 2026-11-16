@@ -112,6 +112,12 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_sr_zones at a flat $0.
     expect(r.resistance).toEqual(doc.results[0].resistance.slice(0, r.resistance.length));
     expect(r.support.length + r.resistance.length).toBeGreaterThan(0);
   });
+
+  it('R7: the output example carries no `order`, `formed_from` or `formed_to`', () => {
+    const text = JSON.stringify(BAZAAR_ROUTES.get_sr_zones!.output!.example);
+    expect(text).toContain('"distance_pct":');
+    for (const k of ['order', 'formed_from', 'formed_to']) expect(text, k).not.toContain(`"${k}":`);
+  });
 });
 
 // ── 2 ─────────────────────────────────────────────────────────────────────────────────────────

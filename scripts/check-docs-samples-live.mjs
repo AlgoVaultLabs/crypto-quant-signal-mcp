@@ -282,7 +282,8 @@ export const PROBES = [
   {
     // SR-ZONES-W2 R6 #5. The FOURTH `POST /mcp` sample, bound by `source` exactly as P6 and P9 are. It asserts the keys
     // the page's field tables document, at every level, and that the 1d the sample sends is the timeframe answered.
-    // A side with no zone is a fact about the chart, so zone keys are read only where a zone exists.
+    // A side with no zone is a fact about the chart, so zone keys are read only where a zone exists. R7: the page no
+    // longer documents `order` or a zone's `formed_from` / `formed_to`, so P10 no longer asks for them.
     id: 'P10', method: 'POST', path: '/mcp', source: 'get-sr-zones.html',
     what: 'the support and resistance zones sample answers its 1d with every documented key',
     accept: ACCEPT_BOTH,
@@ -294,7 +295,7 @@ export const PROBES = [
       let body;
       try { body = JSON.parse(text); } catch { f.push('result.content[0].text is not JSON — the documented double-parse is wrong'); return f; }
       if (res.json?.result?.isError) { f.push(`the documented sample was refused: ${body?.code ?? body?.error ?? 'unknown'} — ${body?.message ?? ''}`); return f; }
-      for (const k of ['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault']) {
+      for (const k of ['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp', '_algovault']) {
         if (!(k in body)) f.push(`response is missing documented key \`${k}\``);
       }
       const entry = Array.isArray(body.results) ? body.results.find((r) => r?.timeframe === '1d') : undefined;
@@ -304,7 +305,7 @@ export const PROBES = [
       }
       const zone = [...(Array.isArray(entry.support) ? entry.support : []), ...(Array.isArray(entry.resistance) ? entry.resistance : [])][0];
       if (zone) {
-        for (const k of ['rank', 'low', 'high', 'distance_pct', 'formed_from', 'formed_to', 'members', 'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps']) {
+        for (const k of ['rank', 'low', 'high', 'distance_pct', 'members', 'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps']) {
           if (!(k in zone)) f.push(`zone is missing documented key \`${k}\``);
         }
       }
@@ -897,19 +898,20 @@ export function selfTest() {
   check('P9 flags a REFUSED sample, naming the code', /TIER_LIMIT_REACHED/.test(P.P9.assert(refused).join()), true);
   // SR-ZONES-W2 R6 #5: P10 runs the get_sr_zones sample (BTC, timeframes ["1d"]) and asserts the keys its page documents.
   const p10 = P.P10 ?? { assert: () => ['P10 is not declared'] };
+  // R7: the served shape has no `order` and no zone `formed_from` / `formed_to` (Mr.1 2026-11-16).
   const zone = {
-    rank: 1, low: 62220, high: 63240, distance_pct: 1.72, formed_from: 'a', formed_to: 'b', members: 7, touch_bars_90: 1,
+    rank: 1, low: 62220, high: 63240, distance_pct: 1.71, members: 7, touch_bars_90: 1,
     tests_30: 1, last_touch: 'c', state: 'intact', broke_at: null, overlaps: [],
   };
   const srz = (over = {}, entry = {}) => ({
     status: 200,
     json: { result: { content: [{ text: JSON.stringify({
-      coin: 'BTC', venue: 'BINANCE', price: 64340.8, order: 'o', note: 'n',
+      coin: 'BTC', venue: 'BINANCE', price: 64340.8, note: 'n',
       results: [{ timeframe: '1d', summary: 's', volume_vs_20: null, flags: [], support: [zone], resistance: [], ...entry }],
       unserved: [], timestamp: 1, _algovault: {}, ...over,
     }) }] } },
   });
-  check('P10 accepts a served 1d response carrying every documented key', p10.assert(srz()).length, 0);
+  check('P10 accepts a served 1d response carrying every documented key (R7: no order, formed_from or formed_to)', p10.assert(srz()).length, 0);
   check('P10 flags a response missing `unserved`', p10.assert(srz({ unserved: undefined })).length, 1);
   check('P10 flags a results entry missing `summary`', p10.assert(srz({}, { summary: undefined })).length, 1);
   check('P10 flags a zone missing `broke_at`', p10.assert(srz({}, { support: [{ ...zone, broke_at: undefined }] })).length, 1);

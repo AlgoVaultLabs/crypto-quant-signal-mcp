@@ -53,9 +53,10 @@ const LOAD_TIMEOUT = /candle history did not load within \d+ s/;
 /** How long a check waits before calling once more on a load-timeout answer (R9 #3). */
 const RETRY_WAIT_MS = 15_000;
 const RESULT_KEYS = ['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance'];
-const TOP_KEYS = ['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
+/** R7 (Mr.1 2026-11-16): no `order`, and no zone `formed_from` / `formed_to`. */
+const TOP_KEYS = ['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
 const ZONE_KEYS = [
-  'rank', 'low', 'high', 'distance_pct', 'formed_from', 'formed_to', 'members',
+  'rank', 'low', 'high', 'distance_pct', 'members',
   'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
 ];
 /** SR-ZONES-W2 AC5.1: the Beta mark every public surface carries, and the /tools label it ends. */
@@ -374,12 +375,11 @@ async function runChecks({ rpcCall, toolCall, sleep, young, fetchToolsPage: tool
 /** A §0-shaped body for the self-test: one support and one resistance zone per timeframe. */
 function sampleBody(coin, timeframes) {
   const zone = (rank, low, high) => ({
-    rank, low, high, distance_pct: 1.5, formed_from: '2026-11-01T00:00:00.000Z', formed_to: '2026-11-02T00:00:00.000Z',
+    rank, low, high, distance_pct: 1.5,
     members: 2, touch_bars_90: 4, tests_30: 1, last_touch: '2026-11-10T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
   });
   return {
     coin, venue: 'BINANCE', price: 100,
-    order: 'Zones are ranked from the most recent price cluster outward: each next zone formed earlier and sits further from price.',
     note: 'Zones mark where price has clustered before. Price can move through any zone.',
     results: timeframes.map((timeframe) => ({
       timeframe,
@@ -491,6 +491,8 @@ async function selfTest() {
     ['a forbidden word in the description is caught', () => lintHits([['t', { description: 'Predicts the next bounce.' }, null]]).hits.length === 1],
     ['a fourth support zone is caught', () => shapeProblems(edit(btc, (b) => { b.results[0].support.push(...b.results[0].support, ...b.results[0].support, ...b.results[0].support); }), ['1d', '4h']).length > 0],
     ['a zone without overlaps is caught', () => shapeProblems(edit(btc, (b) => { delete b.results[1].resistance[0].overlaps; }), ['1d', '4h']).length > 0],
+    ['R7: a body still carrying `order` is caught', () => shapeProblems(edit(btc, (b) => { const { note, results, unserved, timestamp, _algovault } = b; for (const k of ['note', 'results', 'unserved', 'timestamp', '_algovault']) delete b[k]; Object.assign(b, { order: 'o', note, results, unserved, timestamp, _algovault }); }), ['1d', '4h']).length > 0],
+    ['R7: zones still carrying `formed_from` / `formed_to` are caught', () => shapeProblems(edit(btc, (b) => { for (const r of b.results) for (const side of ['support', 'resistance']) r[side] = r[side].map(({ rank, low, high, distance_pct, ...rest }) => ({ rank, low, high, distance_pct, formed_from: 'a', formed_to: 'b', ...rest })); }), ['1d', '4h']).length > 0],
     ['a missing result is caught', () => shapeProblems(edit(btc, (b) => { b.results.pop(); }), ['1d', '4h']).length > 0],
     ['top-level keys out of §0 order are caught', () => shapeProblems(edit(btc, (b) => { const { coin, ...rest } = b; Object.keys(b).forEach((k) => delete b[k]); Object.assign(b, rest, { coin }); }), ['1d', '4h']).length > 0],
     ['another venue is caught', () => shapeProblems(edit(btc, (b) => { b.venue = 'BYBIT'; }), ['1d', '4h']).length > 0],

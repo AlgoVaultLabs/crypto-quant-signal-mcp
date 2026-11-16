@@ -92,11 +92,19 @@ const floatDistance = (z: { low: number; high: number }, side: (typeof SIDES)[nu
   return gap > 0 ? Math.round((gap / price) * 100 * 100) / 100 : 0;
 };
 
+/** The keys Mr.1 took out of the response (R7): T1 served them, this build does not. */
+const REMOVED_TOP = ['order'];
+const REMOVED_ZONE = ['formed_from', 'formed_to'];
+
 function t1Masked(): GetSrZonesResponse {
-  const g = structuredClone(GOLDEN);
+  const g = structuredClone(GOLDEN) as GetSrZonesResponse & Record<string, unknown>;
   // The package version is the one field a release bump moves; the zones are what this test pins.
   g._algovault.version = PKG_VERSION;
-  g.results.forEach((r) => (r.summary = withoutRanges(r.summary)));
+  for (const k of REMOVED_TOP) delete g[k];
+  g.results.forEach((r) => {
+    r.summary = withoutRanges(r.summary);
+    for (const side of SIDES) for (const z of r[side]) for (const k of REMOVED_ZONE) delete (z as unknown as Record<string, unknown>)[k];
+  });
   return g;
 }
 
@@ -228,6 +236,8 @@ describe('SR-ZONES-W2 AC1.5 — apart from the served edges and what reads them,
   });
 
   it('the golden is the response the T1 setup produced (not vacuous: 6 zones, 1 timeframe, both ranges)', () => {
+    expect(Object.keys(GOLDEN)).toContain('order');
+    expect(Object.keys(GOLDEN.results[0].support[0])).toEqual(expect.arrayContaining(REMOVED_ZONE));
     expect(GOLDEN.results).toHaveLength(1);
     expect(GOLDEN.results[0].support).toHaveLength(3);
     expect(GOLDEN.results[0].resistance).toHaveLength(3);

@@ -1,8 +1,8 @@
 /**
  * SR-ZONES-W1 AC1.4 — the facts-only lint. get_sr_zones states where zones are; it never says what price will do.
  * Every string literal under src/lib/sr-zones/** and in the handler src/tools/get-sr-zones.ts (unserved reasons, the
- * refusal message and suggested_action — R6 #11), the tool description and its param strings, NOTE, ORDER and the
- * summary on each of the last 365 fixture candles must match none of FORBIDDEN. scripts/sr-zones-smoke.mjs runs the
+ * refusal message and suggested_action — R6 #11), the tool description and its param strings, NOTE and the
+ * summary on each of the last 365 fixture candles must match none of FORBIDDEN (ORDER left the response, R7). scripts/sr-zones-smoke.mjs runs the
  * same pattern over live responses; a test below pins the two patterns equal.
  *
  * The lint is a gate that could pass vacuously, so it carries a two-way self-test of the regex and a floor on how
@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSrZones } from '../../src/lib/sr-zones/zones.js';
-import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { SR_ZONES_NOTE, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
 import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
 import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
 import {
@@ -95,7 +95,7 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
     expect(FORBIDDEN.test(s)).toBe(true);
   });
 
-  it.each([SR_ZONES_NOTE, SR_ZONES_ORDER, 'support zone 1 at 62484–63235, 6.44% below', 'former_support', 'no_zone_above'])(
+  it.each([SR_ZONES_NOTE, 'support zone 1 at 62484–63235, 6.44% below', 'former_support', 'no_zone_above'])(
     'passes a fact: %s',
     (s) => {
       expect(FORBIDDEN.test(s)).toBe(false);
@@ -147,13 +147,9 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
     expect(m![2]).toBe(FORBIDDEN.flags);
   });
 
-  it('NOTE and ORDER are the frozen §0 strings and carry no prediction word', () => {
+  it('NOTE is the frozen §0 string and carries no prediction word', () => {
     expect(SR_ZONES_NOTE).toBe('Zones mark where price has clustered before. Price can move through any zone.');
-    expect(SR_ZONES_ORDER).toBe(
-      'Zones are ranked from the most recent price cluster outward: each next zone formed earlier and sits further from price.',
-    );
     expect(SR_ZONES_NOTE.match(FORBIDDEN)).toBeNull();
-    expect(SR_ZONES_ORDER.match(FORBIDDEN)).toBeNull();
   });
 
   it('the summary on each of the last 365 fixture candles carries no prediction word', () => {

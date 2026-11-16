@@ -30,7 +30,8 @@
  * and the summary's range, "inside" and distance read the served edges. Selection, order, side, state, broke_at,
  * touches, no_zone_above / no_zone_below and overlaps stay on the computed zone exactly as T1. The tick is Binance's
  * PRICE_FILTER from one exchangeInfo read shared by every coin for 24 h (batch class); a failed, unknown or
- * slower-than-2-s tick read serves the call with the significant-figure step.
+ * slower-than-2-s tick read serves the call with the significant-figure step. A served zone is an allow-list of
+ * fields (served.ts): formed_from and formed_to stay internal, and the response carries no `order` (Mr.1, R7).
  */
 import type { Candle, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
@@ -46,10 +47,10 @@ import { buildScanQuotaWall, buildScanQuotaState, type ScanQuotaWallBody } from 
 import { withAuthState } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { SR_ZONES_PARAMS } from '../lib/sr-zones/params.js';
-import { computeSrZones, attachSrZoneOverlaps, type SrZone, type SrZoneFlag, type SrZonesFrame } from '../lib/sr-zones/zones.js';
-import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
+import { computeSrZones, attachSrZoneOverlaps, type SrZoneFlag, type SrZonesFrame } from '../lib/sr-zones/zones.js';
+import { SR_ZONES_NOTE, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
 import { priceLevelStep } from '../lib/sr-zones/rounding.js';
-import { serveSrZonesFrame } from '../lib/sr-zones/served.js';
+import { serveSrZonesFrame, type SrServedZone } from '../lib/sr-zones/served.js';
 
 const GET_SR_ZONES_TOOL = 'get_sr_zones' as const;
 const VENUE = 'BINANCE' as const;
@@ -83,8 +84,8 @@ export interface SrZonesTimeframeResult {
   summary: string;
   volume_vs_20: number | null;
   flags: SrZoneFlag[];
-  support: SrZone[];
-  resistance: SrZone[];
+  support: SrServedZone[];
+  resistance: SrServedZone[];
 }
 
 export interface SrZonesUnserved {
@@ -102,7 +103,6 @@ export interface GetSrZonesResponse {
   coin: string;
   venue: typeof VENUE;
   price: number;
-  order: string;
   note: string;
   results: SrZonesTimeframeResult[];
   unserved: SrZonesUnserved[];
@@ -465,7 +465,6 @@ export async function runGetSrZones(
       coin,
       venue: VENUE,
       price,
-      order: SR_ZONES_ORDER,
       note: SR_ZONES_NOTE,
       results,
       unserved,

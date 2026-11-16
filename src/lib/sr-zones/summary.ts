@@ -2,20 +2,20 @@
  * summary.ts — SR-ZONES-W1 §0. The fixed strings of a get_sr_zones response and the one-sentence summary template.
  *
  * Facts only: every sentence states where zones are and what price and volume did, never what they will do. The
- * facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks every string literal in src/lib/sr-zones/**, NOTE, ORDER
- * and this template's output on the last 365 fixture candles.
+ * facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks every string literal in src/lib/sr-zones/**, NOTE and
+ * this template's output on the last 365 fixture candles. (ORDER and its `order` field left the response, R7.)
  *
  * SR-ZONES-W2 §0.1–§0.2 as R7 #3 amends it: a response's summary describes its SERVED frame (served.ts), so zone 1's
  * printed range, whether price is inside it and how far it is all read the edges the response carries; the state and
  * broke_at it prints are the computed zone's, which serving carries unchanged.
  */
-import { isPriceInsideZone, type SrZone, type SrZonesFrame } from './zones.js';
+import { isPriceInsideZone, type SrZone } from './zones.js';
 import { formatLevel } from './rounding.js';
 
-export const SR_ZONES_NOTE = 'Zones mark where price has clustered before. Price can move through any zone.';
+/** What the summary reads of a zone: a computed zone or a served one (served.ts). */
+type SummaryZone = Pick<SrZone, 'low' | 'high' | 'distance_pct' | 'state' | 'broke_at'>;
 
-export const SR_ZONES_ORDER =
-  'Zones are ranked from the most recent price cluster outward: each next zone formed earlier and sits further from price.';
+export const SR_ZONES_NOTE = 'Zones mark where price has clustered before. Price can move through any zone.';
 
 /** A price with up to 6 significant digits after the leading one and no trailing zeros. */
 function formatPrice(x: number): string {
@@ -30,7 +30,7 @@ function formatTime(isoTime: string, timeframe: string): string {
   return timeframe === '1d' ? isoTime.slice(0, 10) : `${isoTime.slice(0, 16).replace('T', ' ')} UTC`;
 }
 
-function nearestPart(zone: SrZone | undefined, side: 'support' | 'resistance', timeframe: string, price: number): string {
+function nearestPart(zone: SummaryZone | undefined, side: 'support' | 'resistance', timeframe: string, price: number): string {
   const where = side === 'support' ? 'below' : 'above';
   if (!zone) return `no ${side} zone ${where} in the loaded history`;
   const range = `${formatLevel(zone.low)}–${formatLevel(zone.high)}`;
@@ -44,7 +44,12 @@ function nearestPart(zone: SrZone | undefined, side: 'support' | 'resistance', t
 }
 
 /** One factual sentence describing a timeframe's zones as `frame` gives them (in a response, the served frame). */
-export function buildSrZonesSummary(coin: string, timeframe: string, price: number, frame: SrZonesFrame): string {
+export function buildSrZonesSummary(
+  coin: string,
+  timeframe: string,
+  price: number,
+  frame: { support: readonly SummaryZone[]; resistance: readonly SummaryZone[]; volume_vs_20: number | null },
+): string {
   const parts = [
     `${frame.support.length} support and ${frame.resistance.length} resistance zones`,
     nearestPart(frame.support[0], 'support', timeframe, price),

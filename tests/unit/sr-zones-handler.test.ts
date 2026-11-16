@@ -22,7 +22,7 @@ import { checkQuota, trackCall, _resetCallTrackersForTest, resetLicenseCache } f
 import { FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import { intervalMsFor } from '../../src/lib/candle-guard.js';
 import { StaleUpstreamWindowError, UpstreamRateLimitError } from '../../src/lib/errors.js';
-import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
+import { SR_ZONES_NOTE } from '../../src/lib/sr-zones/summary.js';
 import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
 import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
 import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
@@ -32,13 +32,15 @@ import { processScopedTag } from '../../src/lib/caller-tags.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00.000Z');
 
-/** The §0 contract's key lists, in served order (frozen). */
-const TOP_KEYS = ['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
+/** The §0 contract's key lists, in served order (frozen; R7: `order`, `formed_from` and `formed_to` are not served). */
+const TOP_KEYS = ['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp', '_algovault'];
 const RESULT_KEYS = ['timeframe', 'summary', 'volume_vs_20', 'flags', 'support', 'resistance'];
 const ZONE_KEYS = [
-  'rank', 'low', 'high', 'distance_pct', 'formed_from', 'formed_to', 'members',
+  'rank', 'low', 'high', 'distance_pct', 'members',
   'touch_bars_90', 'tests_30', 'last_touch', 'state', 'broke_at', 'overlaps',
 ];
+/** The keys Mr.1 took out of the response (R7, 2026-11-16): never served at any level. */
+const REMOVED_KEYS = ['order', 'formed_from', 'formed_to'];
 const UNSERVED_KEYS = ['timeframe', 'reason'];
 const OVERLAP_KEYS = ['timeframe', 'side', 'rank'];
 const STATE_VALUES = ['intact', 'former_support', 'former_resistance'];
@@ -769,7 +771,6 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
     expect(Object.keys(r)).toEqual(TOP_KEYS);
     expect(r.coin).toBe('BTC');
     expect(r.venue).toBe('BINANCE');
-    expect(r.order).toBe(SR_ZONES_ORDER);
     expect(r.note).toBe(SR_ZONES_NOTE);
     for (const res of r.results) {
       expect(Object.keys(res)).toEqual(RESULT_KEYS);
@@ -782,6 +783,13 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
     }
     expect(r._algovault).toMatchObject({ tool: 'get_sr_zones', quota: { used: 2 } });
     expect(r._algovault).toHaveProperty('auth');
+  });
+
+  it('R7: `order`, `formed_from` and `formed_to` are served at no level (formation times stay internal)', async () => {
+    const r = okOf(await runGetSrZones({ coin: 'TWIN', timeframes: ['1d', '4h', '1h'] }, keyed(), deps()));
+    const text = JSON.stringify(r);
+    for (const k of REMOVED_KEYS) expect(text, k).not.toContain(`"${k}":`);
+    expect(r.results.flatMap((x) => [...x.support, ...x.resistance]).length, 'vacuity guard: zones must be checked').toBeGreaterThan(0);
   });
 
   it('the quota wall refuses with 429 before any candle read', async () => {
@@ -798,7 +806,7 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
 });
 
 // SR-ZONES-W2 CH3: the 2026-11-16 successor (listed in Beta, an x402 route, rounded edges) supersedes the W1 snapshot;
-// every key list is unchanged.
+// R7: its key lists are W1's without `order`, `formed_from` and `formed_to`.
 describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-shape-snapshot-2026-11-16.json declares', () => {
   const audit = (f: string) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', f), 'utf8'));
   const snap = () => audit('get-sr-zones-shape-snapshot-2026-11-16.json');
@@ -811,8 +819,10 @@ describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-
     const w1 = audit('get-sr-zones-shape-snapshot-2026-11-15.json');
     expect(w1.superseded_by).toBe('get-sr-zones-shape-snapshot-2026-11-16.json');
     for (const k of ['allowed_keys', 'results_row_keys', 'zone_keys', 'unserved_row_keys', 'overlaps_row_keys', 'state_values', 'flag_values', 'forbidden_keys']) {
-      expect(s[k], k).toEqual(w1[k]);
+      expect(s[k], k).toEqual((w1[k] as string[]).filter((x) => !REMOVED_KEYS.includes(x)));
     }
+    expect(w1.allowed_keys).toContain('order');
+    expect(w1.zone_keys).toEqual(expect.arrayContaining(['formed_from', 'formed_to']));
     expect(s.allowed_keys).toEqual(TOP_KEYS);
     expect(s.results_row_keys).toEqual(RESULT_KEYS);
     expect(s.zone_keys).toEqual(ZONE_KEYS);

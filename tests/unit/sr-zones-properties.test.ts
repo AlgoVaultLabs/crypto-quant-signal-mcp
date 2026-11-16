@@ -1,9 +1,10 @@
 /**
  * SR-ZONES-W1 R6 (CH3 audit) — properties the response must hold on EVERY fixture candle, not only at the anchor.
  *
- *  #2  ORDER and the description say "each next zone formed earlier and sits further from price". Per side, the
- *      response's own numbers must say so: distance_pct strictly increases with rank, and each next zone's newest
- *      candle is older than the previous zone's oldest candle (next.formed_to < prev.formed_from).
+ *  #2  The description says "each next zone formed earlier and sits further from price". Per side, the computed
+ *      ladder's own numbers must say so: distance_pct strictly increases with rank, and each next zone's newest
+ *      candle is older than the previous zone's oldest candle (next.formed_to < prev.formed_from; formation times stay
+ *      internal, R7).
  *  #3  The summary says "price inside <side> zone 1" exactly when low <= price <= high for that zone — the predicate
  *      the price_inside_zone flag uses — and the flag is set exactly when some zone contains price.
  *

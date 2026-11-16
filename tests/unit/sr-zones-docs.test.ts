@@ -21,7 +21,7 @@ import {
   PARAM_DESC_SR_ZONES_TIMEFRAMES,
   PARAM_DESC_SR_ZONES_VENUE,
 } from '../../src/tool-descriptions.js';
-import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { SR_ZONES_NOTE, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
 import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
 import type { SrZone } from '../../src/lib/sr-zones/zones.js';
 
@@ -106,11 +106,20 @@ describe('SR-ZONES-W2 AC2.3 — the example: one request, one served BTC 1d resp
     expect(body.params).toEqual({ name: 'get_sr_zones', arguments: { coin: 'BTC', timeframes: ['1d'] } });
   });
 
-  it('the response answers that request: BTC, one 1d result, nothing unserved, NOTE and ORDER as served', () => {
+  it('the response answers that request: BTC, one 1d result, nothing unserved, NOTE as served', () => {
     const r = example();
-    expect(Object.keys(r)).toEqual(['coin', 'venue', 'price', 'order', 'note', 'results', 'unserved', 'timestamp']);
-    expect([r.coin, r.venue, r.order, r.note, r.unserved]).toEqual(['BTC', 'BINANCE', SR_ZONES_ORDER, SR_ZONES_NOTE, []]);
+    expect(Object.keys(r)).toEqual(['coin', 'venue', 'price', 'note', 'results', 'unserved', 'timestamp']);
+    expect([r.coin, r.venue, r.note, r.unserved]).toEqual(['BTC', 'BINANCE', SR_ZONES_NOTE, []]);
     expect(r.results.map((x) => x.timeframe)).toEqual(['1d']);
+  });
+
+  it('R7: the page names no `order`, `formed_from` or `formed_to` — not in a field table, not in the example', () => {
+    const tables = [...PARTIAL.matchAll(/<tr class="param-row"[^>]*><td>([^<]+)<\/td>/g)].map((m) => m[1]);
+    expect(tables.length).toBeGreaterThan(20);
+    for (const k of ['order', 'formed_from', 'formed_to']) {
+      expect(tables, k).not.toContain(k);
+      expect(codeBlocks()[1], k).not.toContain(`"${k}":`);
+    }
   });
 
   it('every edge is on the call\'s step (BTC tick 0.1 → 10), and each zone is a range', () => {

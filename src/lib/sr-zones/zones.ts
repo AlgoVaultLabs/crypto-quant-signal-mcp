@@ -15,7 +15,7 @@
  *     candle that printed them, then nearest to price first. Per side, the first point beyond price seeds zone 1.
  *     Each next seed is dated before the previous zone's oldest candle and sits beyond its far edge by at least
  *     seedSpacingAtr × ATR, and the zone it builds must sit strictly further from price at its near edge than the
- *     previous zone, as distance_pct states it (R6 #2: ORDER's "each next zone ... sits further from price"); a seed
+ *     previous zone, as distance_pct states it (R6 #2: "each next zone ... sits further from price"); a seed
  *     whose zone does not is skipped and the walk goes on older. At most maxZonesPerSide zones per side.
  *  3. Members. A zone's members are the seed, the points dated with it that sit within g_r × ATR of the seed price,
  *     then the points of each older date in turn while that date has at least one point within the band: the walk

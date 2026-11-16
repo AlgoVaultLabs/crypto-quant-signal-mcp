@@ -1,7 +1,7 @@
 {
   "wave": "SR-ZONES-W1",
   "superseded_by": "get-sr-zones-shape-snapshot-2026-11-16.json",
-  "superseded_reason": "SR-ZONES-W2: get_sr_zones is publicly listed in Beta and has an x402 HTTP route at $0.02, and its zone edges are rounded outward per call. This row says MCP only, unlisted and unrounded. Same key lists; kept on disk as history, the builder skips a superseded row.",
+  "superseded_reason": "SR-ZONES-W2: get_sr_zones is publicly listed in Beta and has an x402 HTTP route at $0.02; its zone edges are rounded outward per call and the distance and inside flag read them; `order` and each zone's `formed_from` / `formed_to` are no longer served (R7). This row says MCP only, unlisted and unrounded, and lists the removed keys. Kept on disk as history; the builder skips a superseded row.",
   "endpoint": "get_sr_zones (MCP tool)",
   "snapshot_date": "2026-11-15",
   "captured_at_utc": "2026-11-15",
