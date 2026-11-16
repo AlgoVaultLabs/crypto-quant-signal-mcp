@@ -168,6 +168,25 @@ describe('SR-ZONES-W2 AC1.4 — the handler: a failed tick read serves the call 
     }
   });
 
+  // CH4 audit #2: the 60 s failure memo was pinned, but not a failure that follows an EXPIRED good read. That read must
+  // never answer from the expired tick (a stale-OK cache would): the call is served with sig.
+  it('a read that fails after the 24 h read expired answers null, so the call is served with sig, never the expired tick', async () => {
+    let body: unknown = { symbols: [{ symbol: 'BTCUSDT', filters: [{ filterType: 'PRICE_FILTER', tickSize: '0.3' }] }] };
+    const f = stubExchangeInfo(() => body);
+    const a = new BinanceAdapter();
+    const viaAdapter: SrZonesDeps['getPriceTick'] = (coin) => a.getPriceTick(coin);
+    expect((await serve(viaAdapter)).results[0].support[0]).toMatchObject({ low: 62_475, high: 63_240 });
+    expect(f.reads()).toBe(1);
+    body = { code: -1, msg: 'not the exchangeInfo shape' };
+    vi.setSystemTime(new Date(NOW + DAY));
+    expect(await a.getPriceTick('BTC')).toBeNull();
+    expect(f.reads()).toBe(2);
+    const r = await serve(viaAdapter);
+    expect(r.results[0].support[0]).toMatchObject({ low: 62_480, high: 63_240 });
+    expect(r.results[0].summary).toContain('support zone 1 at 62480–63240');
+    expect(f.reads()).toBe(2);
+  });
+
   it('a tick read still running after 2 s: the call is served with sig and does not wait on', async () => {
     vi.useRealTimers();
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
