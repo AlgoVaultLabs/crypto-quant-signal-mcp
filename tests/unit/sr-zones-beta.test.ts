@@ -284,13 +284,16 @@ describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BA
   const RENAMED: Record<string, string> = { get_sr_zones: 'get_support_resistance_zones' };
   const renamed = <T,>(base: Record<string, T>): Record<string, T> =>
     Object.fromEntries(Object.entries(base).map(([k, v]) => [RENAMED[k] ?? k, v]));
+  /** R8 (Mr.1 Q3): the renamed tool's description is a new text; BASE stays the reference for every other tool. */
+  const R8_DESCRIPTION = 'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin.';
+  const described = (name: string, base: string): string => (name === 'get_support_resistance_zones' ? R8_DESCRIPTION : base);
 
   it('tools/list — description and title, default and ChatGPT callers', async () => {
     for (const [ua, base] of [[null, renamed(BASE.tools_list)], [CHATGPT_UA, renamed(BASE.tools_list_chatgpt)]] as const) {
       const now = await listTools(ua);
       expect(now.map((t) => t.name).sort()).toEqual(Object.keys(base).sort());
       for (const t of now) {
-        expect(t.description, `${ua ?? 'default'} ${t.name}`).toBe(expected(t.name, base[t.name].description));
+        expect(t.description, `${ua ?? 'default'} ${t.name}`).toBe(expected(t.name, described(t.name, base[t.name].description)));
         if (base[t.name].title === undefined) expect(t.annotations?.title, t.name).toBeUndefined();
         else expect(t.annotations?.title, `${ua ?? 'default'} ${t.name}`).toBe(expected(t.name, base[t.name].title!));
       }
@@ -301,7 +304,7 @@ describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BA
     const now = projectCapabilities().tools;
     const base = renamed(BASE.capabilities);
     expect(now.map((t) => t.name).sort()).toEqual(Object.keys(base).sort());
-    for (const t of now) expect(t.description, t.name).toBe(expected(t.name, base[t.name]));
+    for (const t of now) expect(t.description, t.name).toBe(expected(t.name, described(t.name, base[t.name])));
   });
 
   it('labels — BASE plus the one newly listed tool', () => {
@@ -309,8 +312,9 @@ describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BA
     expect(now).toEqual({ ...BASE.labels, get_support_resistance_zones: 'Support and Resistance Zones (Beta)' });
   });
 
-  it('the frozen copy is untouched: the description constant; ORDER (R7) and NOTE (R8) are gone', () => {
-    expect(GET_SR_ZONES_DESCRIPTION).toBe(BASE.tools_list.get_sr_zones.description);
+  it('the description constant is the R8 text, unmarked; ORDER (R7) and NOTE (R8) are gone', () => {
+    expect(GET_SR_ZONES_DESCRIPTION).toBe(R8_DESCRIPTION);
+    expect(BASE.tools_list.get_sr_zones.description).not.toBe(R8_DESCRIPTION);
     expect(GET_SR_ZONES_DESCRIPTION.endsWith(BETA_SUFFIX)).toBe(false);
     expect('SR_ZONES_ORDER' in srZonesSummary).toBe(false);
     expect('SR_ZONES_NOTE' in srZonesSummary).toBe(false);

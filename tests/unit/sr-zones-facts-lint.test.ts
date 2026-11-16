@@ -130,9 +130,9 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
     expect(s.match(FORBIDDEN)).toBeNull();
   });
 
-  it('the description and param strings are the frozen §0 copy and carry no prediction word', () => {
+  it('the description is Mr.1\'s R8 text, the param strings are the frozen §0 copy, and none carries a prediction word', () => {
     expect(GET_SR_ZONES_DESCRIPTION).toBe(
-      'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked from the most recent price cluster outward (each next zone formed earlier and sits further from price), each with its low and high, distance from price, the candles that formed it, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Zones describe where price clustered before. Use with get_trade_call or get_market_regime for the same coin.',
+      'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin.',
     );
     expect(PARAM_DESC_SR_ZONES_COIN).toBe('Coin symbol, e.g. BTC or ETH.');
     expect(PARAM_DESC_SR_ZONES_TIMEFRAMES).toBe('One to three candle timeframes, e.g. ["1h", "4h"]. One result per timeframe.');
