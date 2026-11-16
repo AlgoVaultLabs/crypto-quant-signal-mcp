@@ -29,6 +29,11 @@
  * by subprocess and compares the stated bound and verdict against it. SPAWN BUDGET DECLARED on every
  * block that reaches python3 or node — `scripts/check-test-budget.mjs` reads `timeout:` from the
  * options argument, and a cold python3 start blows the 5,000ms default on a loaded CI runner.
+ *
+ * PROCEDURE §4d (OPS-PREREG-SERVED-RULE-GATE-W1) applies only to a registration that DECLARES a
+ * served-rule study with a line starting `SERVED_RULE_STUDY:`. It must carry an answer-key ceiling
+ * and a component map (`servedRuleVerdict`). Presence and shape only; no subprocess. Six worked
+ * fixtures, one per outcome: tests/fixtures/served-rule/.
  */
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -360,6 +365,138 @@ export function identifiabilityArithmetic(label: string, rows: IdentRow[]): { fa
   return { failures, results };
 }
 
+/**
+ * PROCEDURE §4d — a study of a SERVED rule is a diagnosis (OPS-PREREG-SERVED-RULE-GATE-W1).
+ *
+ * Scoring only a served rule's output can say whether it works, never what to fix. A registration
+ * that DECLARES a served-rule study therefore carries (1) `## Answer-key ceiling`: one table of
+ * hindsight keys in the closed role set CEILING · NO_LAG · SERVED, each at least once, with the three
+ * diagnosis tokens NO_ROOM · INPUTS · LAG named, so the result first says whether there was anything to
+ * find; and (2) `## Component map`: slice → the dial it isolates (a backticked constant or literal) →
+ * works / broken / too little data (with its numeric floor), so the result says which part works.
+ *
+ * DECLARED, NEVER SNIFFED. The trigger is ONE line that starts with `SERVED_RULE_STUDY:` and names one
+ * repo path ending .ts/.py and one `<NAME>VERSION = <integer>` token; the separator is free. No line,
+ * no §4d: landed registrations and other arcs' studies are untouched, and a mention mid-line is not a
+ * declaration. Presence and shape, never truth — whether the keys and dials are the real ones is the
+ * declaring wave's audit.
+ */
+const SERVED_DECL_RE = /^SERVED_RULE_STUDY:(.*)$/gm;
+const SERVED_PATH_RE = /(?<![\w./-])[\w./-]*\w\.(?:ts|py)(?![\w./-])/g;
+const SERVED_VERSION_RE = /(?<!\w)[A-Z][A-Z0-9_]*VERSION[ \t]*=[ \t]*([^\s·,;|]*)/g;
+const ANSWER_KEY_SECTION_RE = /^(#{2,6})[ \t]+(?:§?\d+(?:\.\d+)*[a-z]?\.?[ \t]+)?answer[ -]key ceiling\b/im;
+const COMPONENT_MAP_SECTION_RE = /^(#{2,6})[ \t]+(?:§?\d+(?:\.\d+)*[a-z]?\.?[ \t]+)?component map\b/im;
+const SERVED_ROLES = ['CEILING', 'NO_LAG', 'SERVED'] as const;
+const SERVED_DIAGNOSES = ['NO_ROOM', 'INPUTS', 'LAG'] as const;
+const SERVED_FIXTURES = join(REPO_ROOT, 'tests/fixtures/served-rule');
+
+/** Exact, reasoned exemptions — the rule's own text is not a registration. Never a glob. */
+export const SERVED_RULE_EXEMPT: ReadonlyMap<string, string> = new Map([
+  ['audits/PREREGISTRATION-PROCEDURE.md', 'the procedure DEFINES §4d and shows the SERVED_RULE_STUDY declaration as an example at line start; it is the rule, not a served-rule study'],
+]);
+
+/** The fixture corpus is CONSTRUCTED here, so its vacuity guard lives here: exactly these six files. */
+const SERVED_FIXTURE_EXPECT: ReadonlyMap<string, { applies: boolean; ok: boolean; reason: RegExp | null }> = new Map([
+  ['compliant.md', { applies: true, ok: true, reason: null }],
+  ['missing-answer-key.md', { applies: true, ok: false, reason: /no "## Answer-key ceiling" section/ }],
+  ['missing-component-map.md', { applies: true, ok: false, reason: /no "## Component map" section/ }],
+  ['missing-role.md', { applies: true, ok: false, reason: /answer-key table has no NO_LAG row/ }],
+  ['bad-declaration.md', { applies: true, ok: false, reason: /SERVED_RULE_STUDY declaration names no repo path/ }],
+  ['undeclared.md', { applies: false, ok: true, reason: null }],
+]);
+
+export interface ServedRuleVerdict {
+  applies: boolean;
+  ok: boolean;
+  reason: string;
+}
+
+/** A heading-delimited section and the FIRST contiguous table inside it, or null when the heading is absent. */
+function servedSection(md: string, headingRe: RegExp): { text: string; table: string[] } | null {
+  const m = headingRe.exec(md);
+  if (!m) return null;
+  const after = md.slice(m.index + m[0].length);
+  const end = after.search(new RegExp(`^#{1,${m[1].length}}\\s`, 'm'));
+  const text = end === -1 ? after : after.slice(0, end);
+  const all = text.split('\n').map((l) => l.trim());
+  const first = all.findIndex((l) => l.startsWith('|'));
+  const table: string[] = [];
+  if (first !== -1) for (let i = first; i < all.length && all[i].startsWith('|'); i++) table.push(all[i]);
+  return { text, table };
+}
+
+/** Pure predicate over the markdown text. Exported so the self-test runs the REAL parser over the fixtures. */
+export function servedRuleVerdict(md: string): ServedRuleVerdict {
+  const decls = [...md.matchAll(SERVED_DECL_RE)];
+  if (decls.length === 0) return { applies: false, ok: true, reason: '' };
+  const fail = (reason: string): ServedRuleVerdict => ({ applies: true, ok: false, reason });
+
+  // 1. The declaration: one line, one repo path ending .ts/.py, one <NAME>VERSION = <integer>.
+  if (decls.length > 1) return fail(`declares SERVED_RULE_STUDY more than once (${decls.length} lines) — one line, one rule`);
+  const line = decls[0][0].trim();
+  const value = decls[0][1].replace(/`/g, ' ');
+  const paths = value.match(SERVED_PATH_RE) ?? [];
+  if (paths.length === 0) return fail(`SERVED_RULE_STUDY declaration names no repo path ending .ts or .py: ${line}`);
+  if (paths.length > 1) return fail(`SERVED_RULE_STUDY declaration must name exactly one repo path, found ${paths.length}: ${line}`);
+  if (paths[0].startsWith('/') || /(^|\/)\.\.(\/|$)/.test(paths[0])) {
+    return fail(`SERVED_RULE_STUDY rule source path must be repo-relative: ${paths[0]}`);
+  }
+  const versions = [...value.matchAll(SERVED_VERSION_RE)];
+  if (versions.length === 0) return fail(`SERVED_RULE_STUDY declaration names no <NAME>VERSION = <integer> token: ${line}`);
+  if (versions.length > 1) return fail(`SERVED_RULE_STUDY declaration must name exactly one <NAME>VERSION token, found ${versions.length}: ${line}`);
+  if (!/^\d+$/.test(versions[0][1])) return fail(`SERVED_RULE_STUDY version value "${versions[0][1]}" is not an integer: ${line}`);
+
+  // 2. The answer-key ceiling: four columns, the closed role set each at least once, the three diagnoses named.
+  const ak = servedSection(md, ANSWER_KEY_SECTION_RE);
+  if (!ak) return fail('no "## Answer-key ceiling" section (PROCEDURE §4d)');
+  if (ak.table.length < 3) return fail('answer-key table needs a header, a separator and at least one row');
+  const akCols = cellsOf(ak.table[0]).map((c) => c.replace(/[*`]/g, '').toLowerCase());
+  const akIdx = {
+    key: akCols.findIndex((c) => /^key\b/.test(c)),
+    role: akCols.findIndex((c) => /^role\b/.test(c)),
+    construction: akCols.findIndex((c) => c.includes('construction')),
+    'reading if it fails': akCols.findIndex((c) => c.includes('reading if it fails')),
+  };
+  for (const [name, i] of Object.entries(akIdx)) if (i === -1) return fail(`answer-key table lacks a "${name}" column`);
+  if (new Set(Object.values(akIdx)).size !== Object.keys(akIdx).length) return fail('two answer-key columns resolve to the same header cell');
+  const roles = new Set<string>();
+  for (const row of ak.table.slice(2)) {
+    const c = cellsOf(row);
+    if (c.length < akCols.length || c.some((x) => x.length === 0)) return fail(`answer-key row with an empty cell: ${row}`);
+    const role = c[akIdx.role].replace(/[*`]/g, '').trim();
+    if (!(SERVED_ROLES as readonly string[]).includes(role)) return fail(`answer-key role must be one of CEILING · NO_LAG · SERVED: ${row}`);
+    roles.add(role);
+  }
+  for (const role of SERVED_ROLES) if (!roles.has(role)) return fail(`answer-key table has no ${role} row`);
+  for (const token of SERVED_DIAGNOSES) {
+    if (!new RegExp(`(?<![A-Za-z0-9_])${token}(?![A-Za-z0-9_])`).test(ak.text)) {
+      return fail(`the Answer-key ceiling section does not name the diagnosis token ${token}`);
+    }
+  }
+
+  // 3. The component map: five columns, >= 1 row, a backticked dial, no empty cell, a numeric floor.
+  const cm = servedSection(md, COMPONENT_MAP_SECTION_RE);
+  if (!cm) return fail('no "## Component map" section (PROCEDURE §4d)');
+  if (cm.table.length < 3) return fail('component-map table needs a header, a separator and at least one row');
+  const cmCols = cellsOf(cm.table[0]).map((c) => c.replace(/[*`]/g, '').toLowerCase());
+  const cmIdx = {
+    slice: cmCols.findIndex((c) => /^slice\b/.test(c)),
+    dial: cmCols.findIndex((c) => /^dial\b/.test(c)),
+    works: cmCols.findIndex((c) => /^works\b/.test(c)),
+    broken: cmCols.findIndex((c) => /^broken\b/.test(c)),
+    'too little data': cmCols.findIndex((c) => c.includes('too little data')),
+  };
+  for (const [name, i] of Object.entries(cmIdx)) if (i === -1) return fail(`component-map table lacks a "${name}" column`);
+  if (new Set(Object.values(cmIdx)).size !== Object.keys(cmIdx).length) return fail('two component-map columns resolve to the same header cell');
+  for (const row of cm.table.slice(2)) {
+    const c = cellsOf(row);
+    if (c.length < cmCols.length || c.some((x) => x.length === 0)) return fail(`component-map row with an empty cell: ${row}`);
+    if (!/`[^`]+`/.test(c[cmIdx.dial])) return fail(`component-map dial names no backticked constant or literal: ${row}`);
+    if (!/\d/.test(c[cmIdx['too little data']])) return fail(`component-map "too little data" cell states no numeric floor: ${row}`);
+  }
+  return { applies: true, ok: true, reason: '' };
+}
+
 function discoverPreregistrations(): string[] {
   return readdirSync(AUDITS_DIR)
     .filter((f) => PREREG_FILE_RE.test(f))
@@ -609,5 +746,93 @@ describe('PROCEDURE §4c — identifiability at declaration (OPS-PREREG-IDENTIFI
     expect(live.stdout).toMatch(/^\[population-comparison\] identifiability: \d+ site\x28s\x29 declare a floor/m);
     expect(live.stdout).toMatch(/^POPULATION_COMPARISON_GATE_VERDICT=PASS$/m);
     expect(live.status).toBe(0);
+  });
+});
+
+describe('PROCEDURE §4d — a served-rule study is a diagnosis (OPS-PREREG-SERVED-RULE-GATE-W1)', () => {
+  const fixture = (name: string): string => readFileSync(join(SERVED_FIXTURES, name), 'utf8');
+
+  it('§4d exemptions are exact, reasoned, and name existing files', () => {
+    expect(SERVED_RULE_EXEMPT.size).toBeGreaterThan(0);
+    for (const [path, reason] of SERVED_RULE_EXEMPT) {
+      expect(path, 'rows are exact repo-relative paths, never globs').not.toMatch(/[*?[\]]/);
+      expect(path.startsWith('audits/'), `row outside audits/: ${path}`).toBe(true);
+      expect(reason.trim().length, `row has no reason: ${path}`).toBeGreaterThanOrEqual(40);
+      expect(existsSync(join(REPO_ROOT, path)), `stale §4d exemption: ${path}`).toBe(true);
+    }
+  });
+
+  it('every pre-registration that declares SERVED_RULE_STUDY carries a compliant answer-key ceiling and component map', () => {
+    const files = discoverPreregistrations().filter((f) => !SERVED_RULE_EXEMPT.has(f));
+    // Vacuity guard: the corpus is the repo, and it is known to hold pre-registrations.
+    expect(files.length, 'discovery found no audits/*preregistration*.md — the scan is broken').toBeGreaterThan(0);
+    const verdicts = files.map((rel) => ({ rel, v: servedRuleVerdict(readFileSync(join(REPO_ROOT, rel), 'utf8')) }));
+    const declaring = verdicts.filter(({ v }) => v.applies);
+    const failures = declaring
+      .filter(({ v }) => !v.ok)
+      .map(({ rel, v }) => `${rel}: ${v.reason} — see audits/PREREGISTRATION-PROCEDURE.md §4d`);
+    // The corpus size beside the zero: "0 declaring" is a fact about the scan only next to what it scanned.
+    // eslint-disable-next-line no-console
+    console.log(`SERVED_RULE_SCAN: ${verdicts.length} registration(s) scanned, ${declaring.length} declare SERVED_RULE_STUDY, ${failures.length} fail §4d`);
+    expect(failures, failures.join('\n')).toEqual([]);
+  });
+
+  it('self-test, §4d fixtures: exactly six, the compliant one passes, each defect fails with its named reason, the undeclared one does not apply', () => {
+    // Vacuity guard where the corpus is CONSTRUCTED: the fixture set is exactly the declared six.
+    const names = readdirSync(SERVED_FIXTURES).filter((n) => !n.startsWith('.')).sort();
+    expect(names).toEqual([...SERVED_FIXTURE_EXPECT.keys()].sort());
+    for (const [name, want] of SERVED_FIXTURE_EXPECT) {
+      const v = servedRuleVerdict(fixture(name));
+      expect(v.applies, `${name}: applies`).toBe(want.applies);
+      expect(v.ok, `${name}: ${v.reason}`).toBe(want.ok);
+      if (want.reason) expect(v.reason, name).toMatch(want.reason);
+      else expect(v.reason, name).toBe('');
+    }
+  });
+
+  it('self-test, §4d shapes: every other defect in the compliant fixture fails with its named reason', () => {
+    const good = fixture('compliant.md');
+    expect(servedRuleVerdict(good)).toEqual({ applies: true, ok: true, reason: '' });
+    const DECL = 'SERVED_RULE_STUDY: src/lib/market-regime-core.ts · MARKET_REGIME_RULE_VERSION = 2';
+    expect(good).toContain(DECL);
+
+    // The separator is free and the tokens may be backticked; a numbered or deeper heading still counts.
+    for (const ok of [
+      good.replace(DECL, 'SERVED_RULE_STUDY: `src/lib/market-regime-core.ts`, `MARKET_REGIME_RULE_VERSION = 2`'),
+      good.replace(DECL, 'SERVED_RULE_STUDY: ops/monitoring/regime_rule.py ; RULE_VERSION=3'),
+      good.replace('## 5. Answer-key ceiling (PROCEDURE §4d)', '### Answer key ceiling'),
+    ]) expect(servedRuleVerdict(ok)).toEqual({ applies: true, ok: true, reason: '' });
+
+    const defective: Array<[string, string, RegExp]> = [
+      ['declared twice', good.replace(DECL, `${DECL}\n${DECL}`), /more than once/],
+      ['no version token', good.replace(DECL, 'SERVED_RULE_STUDY: src/lib/market-regime-core.ts'), /VERSION = <integer>/],
+      ['non-integer version', good.replace(DECL, DECL.replace('= 2', '= 2.5')), /not an integer/],
+      ['two version tokens', good.replace(DECL, `${DECL} · OTHER_VERSION = 1`), /exactly one .*VERSION/],
+      ['absolute path', good.replace(DECL, DECL.replace('src/lib', '/Users/someone/src/lib')), /repo-relative/],
+      ['two paths', good.replace(DECL, DECL.replace(' ·', ' src/lib/other.ts ·')), /exactly one repo path/],
+      ['unknown role', good.replace('| S | SERVED |', '| S | LIVE |'), /role must be one of CEILING · NO_LAG · SERVED/],
+      ['no CEILING row', good.replace(/^\| A \| CEILING \|.*\n/m, ''), /no CEILING row/],
+      ['no SERVED row', good.replace(/^\| S \| SERVED \|.*\n/m, ''), /no SERVED row/],
+      ['no LAG token', good.replace(/\bLAG:/, 'late:').replace('`LAG` (NO_LAG wins', 'late (NO_LAG wins'), /diagnosis token LAG/],
+      ['no NO_ROOM token', good.replace(/NO_ROOM/g, 'no room'), /diagnosis token NO_ROOM/],
+      ['answer-key column missing', good.replace('| reading if it fails |', '| reading |'), /lacks a "reading if it fails" column/],
+      ['answer-key empty cell', good.replace('| A | CEILING |', '|  | CEILING |'), /answer-key row with an empty cell/],
+      ['answer-key header only', good.replace(/^\| [ABS] \|.*\n/gm, ''), /answer-key table needs/],
+      ['map column missing', good.replace('| too little data |', '| sparse |'), /lacks a "too little data" column/],
+      ['dial not backticked', good.replace('`EXAMPLE_TREND_DIAL`', 'EXAMPLE_TREND_DIAL'), /names no backticked constant or literal/],
+      ['empty criterion cell', good.replace('| beats every registered baseline on the slice | loses', '|  | loses'), /component-map row with an empty cell/],
+      ['floor without a number', good.replace(/fewer than 20 independent days on the slice \|$/m, 'too few days |'), /states no numeric floor/],
+      ['map header only', good.replace(/^\| calls labelled .*\n/gm, ''), /component-map table needs/],
+    ];
+    for (const [label, md, reason] of defective) {
+      const v = servedRuleVerdict(md);
+      expect(v.applies, `${label} must apply`).toBe(true);
+      expect(v.ok, `${label} must fail`).toBe(false);
+      expect(v.reason, label).toMatch(reason);
+    }
+
+    // Declared, never sniffed: the token mid-line, or indented, is a mention and not a declaration.
+    expect(servedRuleVerdict(good.replace(DECL, `This is a ${DECL}`)).applies).toBe(false);
+    expect(servedRuleVerdict(good.replace(DECL, `    ${DECL}`)).applies).toBe(false);
   });
 });
