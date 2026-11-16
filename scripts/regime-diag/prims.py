@@ -7,6 +7,11 @@ kish_eff, bh, perm_test, FLOOR_CLUSTERS) and `ops/monitoring/population_comparis
 reply on stdout. Standard library only. Any error is a non-zero exit with the reason on stderr: a caller never
 reads a number from a failed call.
 
+The request is framed (EDGE-REGIME-DIAG-BRIDGE-W1): `prims.py --bytes <n>` reads exactly n bytes of UTF-8 JSON
+from stdin, answers and exits. It never waits for end-of-input, which once never came (a `bounds` child blocked
+in `read()` for an hour inside `json.load(sys.stdin)`). Fewer than n bytes at end-of-input is a truncated
+request: a non-zero exit, `truncated request` on stderr, nothing on stdout.
+
 Request: {"ops": [ {"op": ...}, ... ]}   Reply: {"out": [ ... ]}  (one entry per op, in order)
   {"op": "seeds", "label": str, "arms": [str]}                      -> [int]
   {"op": "bounds", "alpha": float, "series": [[float]]}             -> [[lower, upper]]
@@ -21,6 +26,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,10 +41,22 @@ def _load(name, rel):
     return mod
 
 
+def read_request(argv, stdin):
+    """The framed request: `--bytes <n>`, then exactly n bytes from `stdin` (a binary stream). Never reads past
+    them and never waits for end-of-input."""
+    if len(argv) != 2 or argv[0] != "--bytes" or not re.fullmatch(r"[0-9]+", argv[1]):
+        raise SystemExit("usage: prims.py --bytes <n>  (the request's exact length in bytes)")
+    n = int(argv[1])
+    data = stdin.read(n)
+    if len(data) < n:
+        raise SystemExit("truncated request: %d of %d bytes before end-of-input" % (len(data), n))
+    return json.loads(data.decode("utf-8"))
+
+
 def main():
     cps = _load("cluster_perm_stats", "src/scripts/cluster-perm-stats.py")
     pc = _load("population_comparison", "ops/monitoring/population_comparison.py")
-    req = json.load(sys.stdin)
+    req = read_request(sys.argv[1:], sys.stdin.buffer)
     out = []
     for o in req["ops"]:
         op = o["op"]
