@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.0] - 2026-11-16
+
+### Added
+- `get_support_resistance_zones` (Beta). Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin. $0.02 per call over x402, on `POST /x402/get_support_resistance_zones`.
+
+### Changed
+- `get_trade_call` on the 30m and 1h timeframes follows the same rule as 3m: `_receipts.rule_variant` `"fade"` marks a call that takes the opposite side of the raw reading, and the call's reasons say so.
+
 ## [1.34.0] - 2026-11-08
 
 ### Added
