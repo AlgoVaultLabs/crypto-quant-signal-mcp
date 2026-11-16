@@ -8,10 +8,14 @@
  *      the price_inside_zone flag uses — and the flag is set exactly when some zone contains price.
  *
  * Every frame from the 21st closed candle on is computed at that candle's close.
+ *
+ * SR-ZONES-W2 §0.2: the summary prints the served (rounded) range, but "inside" stays the predicate on the computed
+ * zone, so #3 holds on the served summary unchanged (BTCUSDT tick 0.1).
  */
 import { describe, it, expect } from 'vitest';
 import { computeSrZones, type SrZone, type SrZonesFrame } from '../../src/lib/sr-zones/zones.js';
 import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
 import { SR_ZONES_PARAMS } from '../../src/lib/sr-zones/params.js';
 import { loadBtcFixture, isoDay } from './sr-zones-helpers.js';
 
@@ -65,7 +69,7 @@ describe('SR-ZONES-W1 R6 — fixture-wide properties', () => {
   it('#3 the summary says "price inside" exactly when zone 1 contains price, and the flag exactly when any zone does', () => {
     const violations: string[] = [];
     for (const { day, price, frame } of frames) {
-      const text = buildSrZonesSummary('BTC', '1d', price, frame);
+      const text = buildSrZonesSummary('BTC', '1d', price, frame, roundFrameOutward(frame, priceLevelStep(price, 0.1)));
       for (const side of SIDES) {
         const z1 = frame[side][0];
         const says = text.includes(`price inside ${side} zone 1`);

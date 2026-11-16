@@ -23,6 +23,13 @@
  * Load-timeout (R8). A call waits at most 10 s for a full read; past that, the timeframe is `unserved` for that call
  * (unbilled, not remembered as a failure) while the read finishes in the background, single-flight, and caches its
  * window (or has its failure remembered) for the next call. See boundedWait.
+ *
+ * Served edges (SR-ZONES-W2 §0.1–§0.2). Every zone's low and high are rounded outward to one step per call, from the
+ * response's price and the venue's price tick (src/lib/sr-zones/rounding.ts), once, where the response is built; the
+ * summary prints those served ranges. Selection, order, side, state, broke_at, flags, touches, distance_pct, overlaps
+ * and the summary's "inside" stay on the computed zone exactly as T1. The tick is Binance's PRICE_FILTER from one
+ * exchangeInfo read shared by every coin for 24 h (batch class); a failed, unknown or slower-than-2-s tick read serves
+ * the call with the significant-figure step.
  */
 import type { Candle, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
@@ -38,8 +45,9 @@ import { buildScanQuotaWall, buildScanQuotaState, type ScanQuotaWallBody } from 
 import { withAuthState } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { SR_ZONES_PARAMS } from '../lib/sr-zones/params.js';
-import { computeSrZones, attachSrZoneOverlaps, type SrZone, type SrZoneFlag } from '../lib/sr-zones/zones.js';
+import { computeSrZones, attachSrZoneOverlaps, type SrZone, type SrZoneFlag, type SrZonesFrame } from '../lib/sr-zones/zones.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
+import { priceLevelStep, roundFrameOutward } from '../lib/sr-zones/rounding.js';
 
 const GET_SR_ZONES_TOOL = 'get_sr_zones' as const;
 const VENUE = 'BINANCE' as const;
@@ -59,6 +67,8 @@ const FAILED_READ_TTL_MS = 20_000;
 const MAX_FAILED_READS = 1024;
 /** A call waits this long for a full read; past it the timeframe is unserved for that call and the read goes on (R8). */
 const FULL_READ_TIMEOUT_MS = 10_000;
+/** A call waits this long for the venue tick once its windows are in; past it the step is sig and the read goes on. */
+const PRICE_TICK_WAIT_MS = 2_000;
 
 export interface GetSrZonesParams {
   coin: string;
@@ -134,6 +144,8 @@ export interface SrZonesDeps {
   cache: Map<string, SrZonesWindow>;
   /** venue × coin × timeframe → what the last full read threw, and until when that answers instead of a new read. */
   failures: Map<string, { error: unknown; untilMs: number }>;
+  /** SR-ZONES-W2: the venue's price tick for the coin, null when unknown; the step falls back to sig without it. */
+  getPriceTick: (coin: string) => Promise<number | null>;
 }
 
 export const DEFAULT_SR_ZONES_DEPS: SrZonesDeps = {
@@ -141,6 +153,10 @@ export const DEFAULT_SR_ZONES_DEPS: SrZonesDeps = {
   nowMs: () => Date.now(),
   cache: new Map(),
   failures: new Map(),
+  // One exchangeInfo read serves every coin for 24 h; it reads in the batch class, like the history pages, so a cold
+  // read never spends the interactive reserve. processScopedTag, not a literal: the handler has 3 entrypoints.
+  getPriceTick: (coin) =>
+    runAsBatch(async () => (await getAdapter(VENUE).getPriceTick?.(coin)) ?? null, processScopedTag('get_sr_zones')),
 };
 
 /** Concurrent reads of one key share one read: `<key>#full` for the whole window, `<key>#head` for the newest page. */
@@ -184,6 +200,29 @@ async function boundedWait(read: Promise<SrZonesWindow>): Promise<SrZonesWindow>
 }
 
 const ident = (): SrZonesIdentity => ({ tool: GET_SR_ZONES_TOOL, version: PKG_VERSION, session_id: getRequestSessionId() ?? null });
+
+/** The tick read, which never rejects: a failed, throwing or unusable read is "no tick". */
+function readPriceTick(deps: SrZonesDeps, coin: string): Promise<number | null> {
+  return Promise.resolve()
+    .then(() => deps.getPriceTick(coin))
+    .then(
+      (t) => (typeof t === 'number' && Number.isFinite(t) && t > 0 ? t : null),
+      () => null,
+    );
+}
+
+/** The tick, waited for at most PRICE_TICK_WAIT_MS; a read still running then answers null and goes on (shared cache). */
+async function tickWithin(read: Promise<number | null>): Promise<number | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), PRICE_TICK_WAIT_MS);
+  });
+  try {
+    return await Promise.race([read, bound]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * One timeframe's window, newest WINDOW_BARS candles, ascending. The head page is a serving read (no endTime) of the
@@ -341,6 +380,9 @@ export async function runGetSrZones(
     };
   }
 
+  // The venue tick behind the step, read alongside the windows (it is cached for 24 h; see tickWithin).
+  const tickRead = readPriceTick(deps, coin);
+
   // 2. Windows, one per timeframe; each failure stays with its timeframe.
   const unserved: SrZonesUnserved[] = [];
   let transient = false;
@@ -366,7 +408,7 @@ export async function runGetSrZones(
     .reduce<SrZonesWindow | null>((a, w) => (a === null || w.window.readAtMs > a.readAtMs ? w.window : a), null);
   const price = freshest?.candles[freshest.candles.length - 1]?.close;
 
-  const results: SrZonesTimeframeResult[] = [];
+  const frames: Array<{ timeframe: string } & SrZonesFrame> = [];
   if (freshest && price !== undefined) {
     for (const { timeframe, stepMs, window } of windows) {
       const closed = window.candles.filter((c) => c.time + stepMs <= window.readAtMs);
@@ -375,21 +417,13 @@ export async function runGetSrZones(
         unserved.push({ timeframe, reason: computed.reason });
         continue;
       }
-      const f = computed.frame;
-      results.push({
-        timeframe,
-        summary: buildSrZonesSummary(coin, timeframe, price, f),
-        volume_vs_20: f.volume_vs_20,
-        flags: f.flags,
-        support: f.support,
-        resistance: f.resistance,
-      });
+      frames.push({ timeframe, ...computed.frame });
     }
   }
   unserved.sort((a, b) => timeframes.indexOf(a.timeframe) - timeframes.indexOf(b.timeframe));
 
   // 3. Nothing served → refused, unbilled.
-  if (results.length === 0 || freshest === null || price === undefined) {
+  if (frames.length === 0 || freshest === null || price === undefined) {
     return {
       kind: 'refused',
       status: transient ? 503 : 422,
@@ -406,8 +440,21 @@ export async function runGetSrZones(
     };
   }
 
-  // 4. Bill the served timeframes and answer.
-  attachSrZoneOverlaps(results);
+  // 4. Overlaps on the computed edges (§0.2), then the served edges: rounded outward once, one step for the call,
+  //    from the response's price and the venue tick (§0.1). The summary prints the served ranges. Bill and answer.
+  attachSrZoneOverlaps(frames);
+  const step = priceLevelStep(price, await tickWithin(tickRead));
+  const results: SrZonesTimeframeResult[] = frames.map((f) => {
+    const served = roundFrameOutward(f, step);
+    return {
+      timeframe: f.timeframe,
+      summary: buildSrZonesSummary(coin, f.timeframe, price, f, served),
+      volume_vs_20: f.volume_vs_20,
+      flags: f.flags,
+      support: served.support,
+      resistance: served.resistance,
+    };
+  });
   const tracked = trackCall(license, results.length);
   return {
     kind: 'ok',

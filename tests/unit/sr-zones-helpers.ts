@@ -18,6 +18,14 @@ export function loadBtcFixture(): Candle[] {
 export const DAY_MS = 86_400_000;
 export const SYNTH_START_MS = Date.UTC(2026, 0, 1);
 
+/** SR-ZONES-W2: the fixture plus the forming 2026-11-14 candle closing at `price` — what Binance serves at 2026-11-14T10:00Z. */
+export function btcFixtureWithForming(price: number): Candle[] {
+  const closed = loadBtcFixture();
+  const last = closed[closed.length - 1];
+  const open = last.close;
+  return [...closed, { time: last.time + DAY_MS, open, high: Math.max(open, price), low: Math.min(open, price), close: price, volume: 1 }];
+}
+
 /**
  * Builds a synthetic daily series step by step. Trend candles move 6 per candle with a 0.5 wick on each side; a base
  * at level L is candles (open L+2, high L+4, low L, close L+3), opened with a gap from wherever price was.

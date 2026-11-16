@@ -17,13 +17,14 @@ vi.mock('../../src/lib/exchange-adapter.js', async (orig) => ({
 }));
 
 import type { Candle, LicenseInfo } from '../../src/types.js';
-import { runGetSrZones, DEFAULT_SR_ZONES_DEPS, type SrZonesDeps, type GetSrZonesOutcome } from '../../src/tools/get-sr-zones.js';
+import { runGetSrZones, DEFAULT_SR_ZONES_DEPS, type SrZonesDeps, type GetSrZonesOutcome, type GetSrZonesResponse } from '../../src/tools/get-sr-zones.js';
 import { checkQuota, trackCall, _resetCallTrackersForTest, resetLicenseCache } from '../../src/lib/license.js';
 import { FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import { intervalMsFor } from '../../src/lib/candle-guard.js';
 import { StaleUpstreamWindowError, UpstreamRateLimitError } from '../../src/lib/errors.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
 import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
+import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
 import { currentCaller, currentWeightClass, runAsCaller, WeightBudgetSkipError } from '../../src/lib/upstream-weight-budget.js';
 import { processScopedTag } from '../../src/lib/caller-tags.js';
@@ -99,8 +100,18 @@ function deps(over: Partial<SrZonesDeps> = {}): SrZonesDeps & { calls: CallLog }
       calls.push([coin, tf, startTime, endTime]);
       return answer(coin, tf, startTime, endTime);
     },
+    // SR-ZONES-W2: no venue tick unless a test sets one — the step is then four significant figures of the price.
+    getPriceTick: over.getPriceTick ?? (async () => null),
     calls,
   };
+}
+
+/** SR-ZONES-W2: what the handler computes for one window before it rounds the edges (§0.2: everything but low/high). */
+function computedFrame(series: Candle[], price: number) {
+  const closed = series.slice(-1001, -1); // the window's 1000 closed candles, the forming one excluded
+  const r = computeSrZones(closed, closed.length - 1, price);
+  if (!r.ok) throw new Error(r.reason);
+  return r.frame;
 }
 
 /** Binance-shaped klines whose forming candle has moved to `price` (a later read inside the same candle). */
@@ -353,36 +364,65 @@ describe('SR-ZONES-W1 R6 #4 — only closed candles reach the formula', () => {
     forming.volume *= 1000;
     const d = deps({ getCandles: async (_coin, _tf, startTime) => series.filter((c) => c.time >= startTime).slice(0, 200) });
     const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
-    const closed = series.slice(-1001, -1); // the window's 1000 closed candles, the forming one excluded
-    const expected = computeSrZones(closed, closed.length - 1, forming.close);
-    if (!expected.ok) throw new Error(expected.reason);
+    const expected = computedFrame(series, forming.close);
+    // SR-ZONES-W2: the served edges are the computed ones rounded outward to the call's step (no tick here).
+    const served = roundFrameOutward(expected, priceLevelStep(forming.close, null));
     expect(r.price).toBe(forming.close);
     const [res] = r.results;
-    expect(res.support).toEqual(expected.frame.support);
-    expect(res.resistance).toEqual(expected.frame.resistance);
-    expect(res.flags).toEqual(expected.frame.flags);
-    expect(res.volume_vs_20).toBe(expected.frame.volume_vs_20);
+    expect(res.support).toEqual(served.support);
+    expect(res.resistance).toEqual(served.resistance);
+    expect(res.flags).toEqual(expected.flags);
+    expect(res.volume_vs_20).toBe(expected.volume_vs_20);
   });
 });
 
 describe('SR-ZONES-W1 R6 #5 — overlaps reach the response', () => {
-  it('every zone lists exactly the intersecting zones of the other requested timeframe, both ways', async () => {
-    const r = okOf(await runGetSrZones({ coin: 'TWIN', timeframes: ['1d', '4h'] }, keyed(), deps()));
-    type Res = (typeof r.results)[number];
-    const zonesOf = (res: Res) => (['support', 'resistance'] as const).flatMap((side) => res[side].map((zone: SrZone) => ({ side, zone })));
-    const meets = (x: SrZone, y: SrZone): boolean => x.low <= y.high && y.low <= x.high;
+  type Side = 'support' | 'resistance';
+  const SIDES_ = ['support', 'resistance'] as const;
+  const meets = (x: { low: number; high: number }, y: { low: number; high: number }): boolean => x.low <= y.high && y.low <= x.high;
+
+  /**
+   * SR-ZONES-W2 §0.2: overlaps are judged on the COMPUTED edges, exactly as T1 — never on the rounded ones served.
+   * Returns how many overlap entries were checked, and how many cross-timeframe pairs meet ONLY on the served edges
+   * (a pair a served-edge overlap would wrongly list).
+   */
+  function checkOverlaps(r: GetSrZonesResponse, series: Record<string, Candle[]>): { pairs: number; onlyServed: number } {
+    const computed = Object.fromEntries(r.results.map((res) => [res.timeframe, computedFrame(series[res.timeframe], r.price)]));
+    const zonesOf = (tf: string) => SIDES_.flatMap((side: Side) => computed[tf][side].map((zone: SrZone) => ({ side, zone })));
     const [a, b] = r.results;
     let pairs = 0;
+    let onlyServed = 0;
     for (const [self, other] of [[a, b], [b, a]] as const) {
-      for (const { zone } of zonesOf(self)) {
-        const expected = zonesOf(other)
-          .filter((o) => meets(zone, o.zone))
-          .map((o) => ({ timeframe: other.timeframe, side: o.side, rank: o.zone.rank }));
-        expect(zone.overlaps).toEqual(expected);
-        pairs += expected.length;
+      for (const side of SIDES_) {
+        self[side].forEach((zone, i) => {
+          const raw = computed[self.timeframe][side][i];
+          expect([zone.rank, zone.state]).toEqual([raw.rank, raw.state]);
+          const expected = zonesOf(other.timeframe)
+            .filter((o) => meets(raw, o.zone))
+            .map((o) => ({ timeframe: other.timeframe, side: o.side, rank: o.zone.rank }));
+          expect(zone.overlaps).toEqual(expected);
+          pairs += expected.length;
+          for (const os of SIDES_) {
+            other[os].forEach((o, j) => {
+              if (meets(zone, o) && !meets(raw, computed[other.timeframe][os][j])) onlyServed++;
+            });
+          }
+        });
       }
     }
-    expect(pairs).toBeGreaterThan(0); // the twin series share zones, so the check is not vacuous
+    return { pairs, onlyServed };
+  }
+
+  it('every zone lists exactly the intersecting zones of the other requested timeframe, both ways', async () => {
+    const r = okOf(await runGetSrZones({ coin: 'TWIN', timeframes: ['1d', '4h'] }, keyed(), deps()));
+    expect(checkOverlaps(r, DATA.TWIN).pairs).toBeGreaterThan(0); // the twin series share zones, so the check is not vacuous
+  });
+
+  it('SR-ZONES-W2 §0.2: with a coarse step, zones that meet only on their rounded edges are not listed', async () => {
+    // A 1000 tick makes the step 1000 at price ~60,000, so rounded edges reach where computed ones do not.
+    const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, keyed(), deps({ getPriceTick: async () => 1000 })));
+    const { onlyServed } = checkOverlaps(r, DATA.BTC);
+    expect(onlyServed).toBeGreaterThan(0); // non-vacuous: an overlap judged on served edges would differ here
   });
 });
 

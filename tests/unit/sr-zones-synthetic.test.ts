@@ -17,6 +17,10 @@ import {
   type SrZonesFrame,
 } from '../../src/lib/sr-zones/zones.js';
 import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+
+/** The summary of a computed frame served unrounded (SR-ZONES-W2 rounds in the handler; these tests pin the wording). */
+const summaryOf = (coin: string, timeframe: string, price: number, f: SrZonesFrame): string =>
+  buildSrZonesSummary(coin, timeframe, price, f, f);
 import { SeriesBuilder } from './sr-zones-helpers.js';
 
 function frameOf(candles: SeriesBuilder['candles'], price: number): SrZonesFrame {
@@ -200,7 +204,7 @@ describe('SR-ZONES-W1 — volume, short history, overlaps, summary', () => {
   it('the summary is one factual sentence naming both nearest zones', () => {
     const s = ladderSeries();
     const f = frameOf(s.candles, 132);
-    const text = buildSrZonesSummary('SYN', '1d', 132, f);
+    const text = summaryOf('SYN', '1d', 132, f);
     expect(text.startsWith('SYN 1d at 132: 3 support and 2 resistance zones; support zone 1 at 111–113, 14.39% below; resistance zone 1 at 156–')).toBe(true);
     expect(text.endsWith('; last closed candle volume 1× its 20-candle average.')).toBe(true);
     expect(text.match(/\.\s/g)).toBeNull();
@@ -209,7 +213,7 @@ describe('SR-ZONES-W1 — volume, short history, overlaps, summary', () => {
   it('the summary names a flip and an empty side', () => {
     const b = new SeriesBuilder(150).trendTo(108).base(99, 6);
     b.trendTo(60);
-    const text = buildSrZonesSummary('SYN', '1d', 60, frameOf(b.candles, 60));
+    const text = summaryOf('SYN', '1d', 60, frameOf(b.candles, 60));
     expect(text).toContain('no support zone below in the loaded history');
     expect(text).toMatch(/resistance zone 1 at 102–[\d.]+, [\d.]+% above \(support until \d{4}-\d{2}-\d{2}\)/);
   });
@@ -341,18 +345,18 @@ describe('SR-ZONES-W1 R6 #3 — "price inside" in the summary is the flag\'s pre
   const frame = (support: SrZone[], resistance: SrZone[]): SrZonesFrame => ({ support, resistance, flags: [], volume_vs_20: null });
 
   it('a gap under 0.005% rounds distance_pct to 0, and the summary still says below, not inside', () => {
-    const text = buildSrZonesSummary('BTC', '1d', 63_456.7, frame([zone(62_800, 63_454.6, 0)], []));
+    const text = summaryOf('BTC', '1d', 63_456.7, frame([zone(62_800, 63_454.6, 0)], []));
     expect(text).toContain('support zone 1 at 62800–63454.6, 0% below');
     expect(text).not.toContain('price inside');
   });
 
   it('price on an edge or between the edges is inside', () => {
-    expect(buildSrZonesSummary('BTC', '1d', 63_454.6, frame([zone(62_800, 63_454.6, 0)], []))).toContain('price inside support zone 1 at 62800–63454.6');
-    expect(buildSrZonesSummary('BTC', '1d', 70_000, frame([], [zone(69_900, 70_100, 0)]))).toContain('price inside resistance zone 1 at 69900–70100');
+    expect(summaryOf('BTC', '1d', 63_454.6, frame([zone(62_800, 63_454.6, 0)], []))).toContain('price inside support zone 1 at 62800–63454.6');
+    expect(summaryOf('BTC', '1d', 70_000, frame([], [zone(69_900, 70_100, 0)]))).toContain('price inside resistance zone 1 at 69900–70100');
   });
 
   it('mirror: a resistance zone a hair above price is above, not inside', () => {
-    const text = buildSrZonesSummary('BTC', '1d', 69_899, frame([], [zone(69_900, 70_100, 0)]));
+    const text = summaryOf('BTC', '1d', 69_899, frame([], [zone(69_900, 70_100, 0)]));
     expect(text).toContain('resistance zone 1 at 69900–70100, 0% above');
     expect(text).not.toContain('price inside');
   });

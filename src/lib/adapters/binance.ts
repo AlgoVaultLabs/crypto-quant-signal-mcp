@@ -109,6 +109,37 @@ const fundingInfoCache = coalescedCache<Map<string, number>>({
   negativeTtlMs: FUNDING_INFO_NEGATIVE_TTL_MS,
 });
 
+// ── SR-ZONES-W2: the price tick per symbol (PRICE_FILTER.tickSize), behind get_sr_zones's served zone edges ──
+// One /fapi/v1/exchangeInfo read answers every coin for 24 h (all symbols, ~1.2 MB; weight 1, measured 2026-11-16 —
+// weightForBinance's default 5 over-counts it, never under). A failed read, or one where no symbol carries a usable
+// tick, answers "no tick" (an empty map) for exactly 60 s and is then read again; get_sr_zones then rounds to the
+// significant-figure step (AC1.4). A failed read is never answered from an older one.
+const PRICE_TICK_TTL_MS = 24 * 3_600_000;
+const PRICE_TICK_FAILURE_TTL_MS = 60_000;
+
+interface BinanceExchangeInfo {
+  symbols?: unknown;
+}
+
+const priceTickCache = coalescedCache<ReadonlyMap<string, number>>({
+  load: async () => {
+    const info = await binGet<BinanceExchangeInfo>('/fapi/v1/exchangeInfo');
+    if (!Array.isArray(info?.symbols)) throw new Error('Binance /fapi/v1/exchangeInfo: no symbols array');
+    const bySymbol = new Map<string, number>();
+    for (const s of info.symbols as Array<{ symbol?: unknown; filters?: unknown }>) {
+      const filters = Array.isArray(s?.filters) ? (s.filters as Array<{ filterType?: unknown; tickSize?: unknown }>) : [];
+      const tick = safeUpstreamNum(filters.find((f) => f?.filterType === 'PRICE_FILTER')?.tickSize);
+      if (typeof s?.symbol === 'string' && tick !== null && tick > 0) bySymbol.set(s.symbol, tick);
+    }
+    if (bySymbol.size === 0) throw new Error('Binance /fapi/v1/exchangeInfo: no symbol carries a PRICE_FILTER tick');
+    return bySymbol;
+  },
+  ttlMs: PRICE_TICK_TTL_MS,
+  negativeTtlMs: PRICE_TICK_FAILURE_TTL_MS,
+  jitterPct: 0,
+  fallback: () => new Map(),
+});
+
 let ticker24hrCache: Ticker24hrCacheEntry | null = null;
 let ticker24hrInflight: Promise<BinanceTicker24hr[]> | null = null;
 let premiumIndexCache: PremiumIndexCacheEntry | null = null;
@@ -241,6 +272,7 @@ export function _resetBinanceAdapterCaches(): void {
   premiumIndexCache = null;
   premiumIndexInflight = null;
   fundingInfoCache._clear();
+  priceTickCache._clear();
 }
 
 async function binGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
@@ -424,6 +456,16 @@ export class BinanceAdapter implements ExchangeAdapter {
       const symbol = toBinanceSymbol(coin);
       const data = await binGet<BinancePremiumIndex>('/fapi/v1/premiumIndex', { symbol });
       return safeUpstreamNum(data.markPrice);
+    } catch {
+      return null;
+    }
+  }
+
+  /** SR-ZONES-W2: the coin's PRICE_FILTER tick, from the shared 24 h exchangeInfo read; null when unknown or unread. */
+  async getPriceTick(coin: string): Promise<number | null> {
+    try {
+      const ticks = await priceTickCache.get('all');
+      return ticks.get(toBinanceSymbol(coin)) ?? null;
     } catch {
       return null;
     }

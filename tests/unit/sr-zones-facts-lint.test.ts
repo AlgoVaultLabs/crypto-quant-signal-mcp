@@ -7,6 +7,9 @@
  *
  * The lint is a gate that could pass vacuously, so it carries a two-way self-test of the regex and a floor on how
  * many strings it read.
+ *
+ * SR-ZONES-W2 AC1.5: the summaries are the served ones — zone edges rounded outward (src/lib/sr-zones/rounding.ts) at
+ * BTCUSDT's Binance tick 0.1 (PRICE_FILTER, measured 2026-11-16) — and the new rounding.ts is read with the lib.
  */
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
@@ -15,6 +18,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSrZones } from '../../src/lib/sr-zones/zones.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
 import {
   GET_SR_ZONES_DESCRIPTION,
   PARAM_DESC_SR_ZONES_COIN,
@@ -67,8 +71,9 @@ const handlerLiterals: Array<[string, string]> = stringLiterals(HANDLER).map((s)
 const candles = loadBtcFixture();
 const summaries: string[] = [];
 for (let t = candles.length - 365; t < candles.length; t++) {
-  const r = computeSrZones(candles, t, candles[t].close);
-  if (r.ok) summaries.push(buildSrZonesSummary('BTC', '1d', candles[t].close, r.frame));
+  const price = candles[t].close;
+  const r = computeSrZones(candles, t, price);
+  if (r.ok) summaries.push(buildSrZonesSummary('BTC', '1d', price, r.frame, roundFrameOutward(r.frame, priceLevelStep(price, 0.1))));
 }
 
 describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
@@ -99,7 +104,7 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
 
 describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
   it('read the lib and the fixture (non-vacuity)', () => {
-    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['params.ts', 'summary.ts', 'zones.ts']);
+    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['params.ts', 'rounding.ts', 'summary.ts', 'zones.ts']);
     expect(libLiterals.length).toBeGreaterThanOrEqual(20);
     expect(summaries).toHaveLength(365);
   });

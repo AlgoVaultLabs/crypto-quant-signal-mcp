@@ -132,6 +132,9 @@ export interface ExchangeAdapter {
   getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]>;
   getCurrentPrice(coin: string, dex?: DexType): Promise<number | null>;
   getName(): string;
+  // SR-ZONES-W2: the venue's price tick for one coin's perpetual, null when unknown. Optional: only Binance
+  // implements it (PRICE_FILTER.tickSize); get_sr_zones rounds served zone edges to a multiple of it.
+  getPriceTick?(coin: string): Promise<number | null>;
 }
 
 // ── Exchange Types ──
