@@ -251,10 +251,16 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
   });
 
   it('refuses a store or an output directory inside the repository, and writes nothing there', { timeout: 60_000 }, () => {
-    const a = go('fit', 'unused', { out: path.join(repo, 'out') }), b = go('fit', 'unused', { store: path.join(repo, 'store') });
+    const before = logged().length;
+    const a = go('fit', 'unused', { out: path.join(repo, 'out') });
+    // the store is outside the repository, so this refusal is logged like every other
+    expect(logged().slice(before)).toEqual([expect.objectContaining({ ok: false, leg: 'out', mode: 'fit', reason: a.reason })]);
+    const b = go('fit', 'unused', { store: path.join(repo, 'store') });
+    // a store inside the repository is never written to, its log included
+    expect(logged()).toHaveLength(before + 1);
     expect([a.verdict, b.verdict]).toEqual(['REFUSED', 'REFUSED']);
-    expect(a.reason).toMatch(/outside the repository/);
-    expect(b.reason).toMatch(/outside the repository/);
+    expect(a.reason).toMatch(/output directory must sit outside the repository/);
+    expect(b.reason).toMatch(/store must sit outside the repository/);
     expect([fs.existsSync(path.join(repo, 'out')), fs.existsSync(path.join(repo, 'store'))]).toEqual([false, false]);
     expect(git(repo, 'status', '--porcelain')).toBe('');
   });

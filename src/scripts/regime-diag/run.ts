@@ -477,7 +477,13 @@ export function outcomeRun(input: RunInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-diag: ${l}\n`); });
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   const { mode, store } = input;
-  if (within(store, input.repo) || within(input.out, input.repo)) return stop('REFUSED', 'the store and the output directory must sit outside the repository');
+  // A store inside the repository is never written to, its guard log included; every later refusal is logged.
+  if (within(store, input.repo)) return stop('REFUSED', 'the store must sit outside the repository');
+  if (within(input.out, input.repo)) {
+    const reason = 'the output directory must sit outside the repository';
+    logGuard(store, { mode, ok: false, leg: 'out', reason });
+    return stop('REFUSED', reason);
+  }
   if (!input.study && !isPinnedSource(__filename, input.repo)) {
     const reason = 'the registered study is read by the pinned sources of its repository (tsx src/scripts/regime-diag/run.ts), never a compiled or copied harness';
     logGuard(store, { mode, ok: false, leg: 'source', reason });
