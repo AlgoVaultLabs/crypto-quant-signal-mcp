@@ -7,11 +7,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import { FIRST_MONTH, LAST_MONTH, MIN_MS, type Span } from './diag-spec.js';
+import { MIN_MS, type Span } from './diag-spec.js';
 
 export const sha256 = (data: string | Buffer): string => crypto.createHash('sha256').update(data).digest('hex');
 
-export function months(first = FIRST_MONTH, last = LAST_MONTH): string[] {
+/** The months `first … last`, both named by the caller: a study's months come from its record. */
+export function months(first: string, last: string): string[] {
   const out: string[] = [];
   let [y, m] = first.split('-').map(Number);
   const [ly, lm] = last.split('-').map(Number);
@@ -137,6 +138,15 @@ export function aggregate(g: Grid, min: number): Bars {
 
 export interface ArchiveStore { cache: string; overlay: string }
 export const archiveName = (coin: string, interval: string, ym: string): string => `${coin}USDT-${interval}-${ym}.zip`;
+/** The venue's archive origin (registration §3). */
+export const ARCHIVE_ORIGIN = 'https://data.binance.vision';
+/**
+ * The URL of a coin-month's 1 m archive, in the reader's form (§3: `ARCHIVE_URL` of scripts/odds-calibration-study.py,
+ * `<SYMBOL> = <COIN>USDT`; a test holds the two together). Derived in this one place: the absence probe requests it,
+ * and the guard accepts a probe record of no other URL. `origin` moves the origin alone (the probe's tests).
+ */
+export const archiveUrl = (coin: string, ym: string, origin: string = ARCHIVE_ORIGIN): string =>
+  `${origin}/data/futures/um/monthly/klines/${coin}USDT/1m/${archiveName(coin, '1m', ym)}`;
 
 /** The overlay copy when there is one, else the cached copy, else null (§2 D7). */
 export function resolveArchive(store: ArchiveStore, coin: string, interval: string, ym: string): { file: string; source: 'overlay' | 'cache' } | null {
@@ -146,16 +156,16 @@ export function resolveArchive(store: ArchiveStore, coin: string, interval: stri
   return null;
 }
 
-export const coinArchives = (store: ArchiveStore, coin: string): string[] =>
-  months().map((ym) => resolveArchive(store, coin, '1m', ym)).filter((r): r is NonNullable<typeof r> => r !== null).map((r) => r.file);
+export const coinArchives = (store: ArchiveStore, coin: string, yms: readonly string[]): string[] =>
+  yms.map((ym) => resolveArchive(store, coin, '1m', ym)).filter((r): r is NonNullable<typeof r> => r !== null).map((r) => r.file);
 
 export interface ArchiveManifest { interval: '1m'; first: string; last: string; files: Array<{ name: string; source: 'overlay' | 'cache'; bytes: number; sha256: string }> }
 
-/** Every 1 m archive the panel resolves to, with its bytes and sha256. Deterministic: same stores, same text. */
-export function buildArchiveManifest(store: ArchiveStore, panel: readonly string[]): ArchiveManifest {
+/** Every 1 m archive the panel resolves to in `first … last`, with its bytes and sha256. Deterministic: same stores, same text. */
+export function buildArchiveManifest(store: ArchiveStore, panel: readonly string[], first: string, last: string): ArchiveManifest {
   const files: ArchiveManifest['files'] = [];
   for (const coin of panel) {
-    for (const ym of months()) {
+    for (const ym of months(first, last)) {
       const r = resolveArchive(store, coin, '1m', ym);
       if (!r) continue;
       const buf = fs.readFileSync(r.file);
@@ -163,6 +173,6 @@ export function buildArchiveManifest(store: ArchiveStore, panel: readonly string
     }
   }
   files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  return { interval: '1m', first: FIRST_MONTH, last: LAST_MONTH, files };
+  return { interval: '1m', first, last, files };
 }
 export const archiveManifestText = (m: ArchiveManifest): string => `${JSON.stringify(m, null, 1)}\n`;

@@ -133,12 +133,17 @@ describe('regime-diag: the entry draw', () => {
 
   it('one seeded draw per window × position: round(24 × eligible / 1,440) instants, without replacement, reproducible', () => {
     const e = labeler.eligibleMinutes(g, win);
-    const d = labeler.drawEntries(g, win, 'P03');
+    const d = labeler.drawEntries(g, win, 'P03', '20261116');
     expect([d.eligible, d.picks.length]).toEqual([e.length, Math.round((24 * e.length) / 1440)]);
     expect([...d.picks]).toEqual([...sampleWithoutReplacement(e, d.picks.length, rngFor('20261116|fit|P03'))]);
     expect(new Set(d.picks).size).toBe(d.picks.length);
-    expect([...labeler.drawEntries(g, win, 'P03').picks]).toEqual([...d.picks]);
-    expect([...labeler.drawEntries(g, win, 'P04').picks]).not.toEqual([...d.picks]);
-    expect([...labeler.drawEntries(g, { ...win, name: 'holdout' }, 'P03').picks]).not.toEqual([...d.picks]);
+    expect([...labeler.drawEntries(g, win, 'P03', '20261116').picks]).toEqual([...d.picks]);
+    expect([...labeler.drawEntries(g, win, 'P04', '20261116').picks]).not.toEqual([...d.picks]);
+    expect([...labeler.drawEntries(g, { ...win, name: 'holdout' }, 'P03', '20261116').picks]).not.toEqual([...d.picks]);
+    // the label is the study's: another study draws other instants of the same eligible minutes
+    const other = labeler.drawEntries(g, win, 'P03', '20261117');
+    expect([other.eligible, other.picks.length]).toEqual([d.eligible, d.picks.length]);
+    expect([...other.picks]).toEqual([...sampleWithoutReplacement(e, d.picks.length, rngFor('20261117|fit|P03'))]);
+    expect([...other.picks]).not.toEqual([...d.picks]);
   });
 });

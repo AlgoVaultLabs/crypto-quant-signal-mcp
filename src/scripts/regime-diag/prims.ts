@@ -11,7 +11,6 @@
 // seed, so the re-issue returns the same bytes — and a second timeout throws.
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { SEED } from './diag-spec.js';
 
 export const REPO = path.resolve(__dirname, '../../..');
 export const PRIMS_PY = 'scripts/regime-diag/prims.py';
@@ -74,8 +73,8 @@ export function prims(ops: Op[], repo = REPO, timeouts: BridgeTimeouts = BRIDGE_
   return out;
 }
 
-/** `arm_seed('20261116', arm)` for each arm. */
-export const seedsFor = (arms: string[], repo = REPO): number[] => (arms.length ? (prims([{ op: 'seeds', label: SEED, arms }], repo)[0] as number[]) : []);
+/** `arm_seed(label, arm)` for each arm; `label` is the study's seed label. */
+export const seedsFor = (label: string, arms: string[], repo = REPO): number[] => (arms.length ? (prims([{ op: 'seeds', label, arms }], repo)[0] as number[]) : []);
 /** `[ci_lower(values, alpha), ci_upper(values, alpha)]` per series. */
 export const boundsOf = (series: number[][], alpha: number, repo = REPO): Array<[number, number]> =>
   (series.length ? (prims([{ op: 'bounds', alpha, series }], repo)[0] as Array<[number, number]>) : []);

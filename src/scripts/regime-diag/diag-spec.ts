@@ -3,6 +3,10 @@
 // Every value here is fixed by audits/regime-diagnostic-preregistration-2026-11-16.md (and its appended sections).
 // The section that fixes a value is named beside it. Nothing in this file is tuned by a result.
 //
+// EDGE-REGIME-CONFIRM-W1: the harness serves a study, not a constant. `STUDIES` holds one frozen record per study;
+// a run names its study, and no function of the harness falls back to one. The statistics, comparators, shapes,
+// holds, floors and clusters below are shared: the successor reuses them unchanged (its registration cites each).
+//
 // The file is not called spec.ts: the caller-tag gate (scripts/check-caller-tags.mjs) names every file under
 // src/scripts by its basename, and this one reaches the served constants' modules, as src/scripts/ads1/spec.ts does.
 import { CANDLE_COUNTS } from '../../lib/serving-windows.js';
@@ -25,6 +29,63 @@ export const FIT: Win = { name: 'fit', lo: 0, hi: (Date.UTC(2026, 0, 1) - SPAN.t
 export const HOLDOUT: Win = { name: 'holdout', lo: FIT.hi, hi: SPAN.n };
 export const FIRST_MONTH = '2024-01';
 export const LAST_MONTH = '2026-10';
+
+/** The one fit result a successor carries: its sha256, and the registration commit it was read under. */
+export interface Carry { sha256: string; registrationCommit: string }
+/** One read a study serves: the result line's name and the result file's name. */
+export interface Read { line: 'REGIME_DIAG_FIT' | 'REGIME_DIAG_VERDICT' | 'REGIME_CONFIRM_VERDICT'; file: string }
+/**
+ * A study: everything a run takes from its registration by name. Frozen; a run names one by `id`.
+ * `months.pinned` is the last month the archive-store manifest pins; later months are checked at read time.
+ * `skeleton` says what the read does with the label-only skeleton: compare it with the registered tables, or
+ * record it (a corpus that did not exist at registration has no table to compare with).
+ */
+export interface StudyRecord {
+  id: string; wave: string; registration: string; seed: string; span: Span; windows: readonly Win[];
+  months: { first: string; pinned: string; last: string };
+  seal: string;
+  reads: { fit?: Read; holdout: Read };
+  skeleton: 'registered' | 'recorded';
+  carry: Carry | null;
+  /** The registered read date: no run before it. */
+  notBefore: string | null;
+  /** A closed study has spent its read. It keeps refusing. */
+  closed: boolean;
+}
+
+/** T3 (EDGE-REGIME-DIAG-W1): its values unchanged. Closed — the 2026 hold-out is spent, and its seal keeps refusing. */
+const T3: StudyRecord = {
+  id: 'diag-2026-11-16', wave: WAVE, registration: REGISTRATION, seed: SEED, span: SPAN, windows: [FIT, HOLDOUT],
+  months: { first: FIRST_MONTH, pinned: LAST_MONTH, last: LAST_MONTH },
+  seal: 'holdout.seal',
+  reads: { fit: { line: 'REGIME_DIAG_FIT', file: 'regime-diag-fit.json' }, holdout: { line: 'REGIME_DIAG_VERDICT', file: 'regime-diag-holdout.json' } },
+  skeleton: 'registered', carry: null, notBefore: null, closed: true,
+};
+
+/** The successor's grid: T3's origin, through T_END2 = 2027-05-31T23:59Z (its registration, §1). */
+const CONFIRM_SPAN: Span = { t0Ms: SPAN.t0Ms, n: (Date.UTC(2027, 5, 1) - SPAN.t0Ms) / MIN_MS };
+/**
+ * The successor (EDGE-REGIME-CONFIRM-W1): T3 §6's hold-out test on entries after T_END, read once. Nothing is
+ * re-fit: it has no fit read, and it carries T3's fit result by sha256. History reaches back into T3's months.
+ */
+const CONFIRM: StudyRecord = {
+  id: 'confirm', wave: 'EDGE-REGIME-CONFIRM-W1', registration: 'audits/regime-confirmation-preregistration-2026-11-17.md', seed: '20261117',
+  span: CONFIRM_SPAN, windows: [{ name: 'holdout', lo: SPAN.n, hi: CONFIRM_SPAN.n }],
+  months: { first: FIRST_MONTH, pinned: LAST_MONTH, last: '2027-05' },
+  seal: 'confirm.seal',
+  reads: { holdout: { line: 'REGIME_CONFIRM_VERDICT', file: 'regime-confirm.json' } },
+  skeleton: 'recorded',
+  carry: { sha256: '46454f07a58c53154a081fa50bcc2709fb5ec11043d5e4db612e19a39cb0b312', registrationCommit: '22f01dc912beade374ab4bd7c0f6706e07df332e' },
+  notBefore: '2027-06-16T00:00:00Z', closed: false,
+};
+
+const frozen = (r: StudyRecord): StudyRecord =>
+  Object.freeze({ ...r, span: Object.freeze({ ...r.span }), windows: Object.freeze(r.windows.map((w) => Object.freeze({ ...w }))), months: Object.freeze({ ...r.months }),
+    reads: Object.freeze({ ...(r.reads.fit ? { fit: Object.freeze({ ...r.reads.fit }) } : {}), holdout: Object.freeze({ ...r.reads.holdout }) }),
+    carry: r.carry ? Object.freeze({ ...r.carry }) : null });
+export const STUDIES: readonly StudyRecord[] = Object.freeze([frozen(T3), frozen(CONFIRM)]);
+/** The study a run names, or null: there is no default. */
+export const studyOf = (id: unknown): StudyRecord | null => STUDIES.find((s) => s.id === id) ?? null;
 
 export interface Tf { key: '1h' | '4h' | '1d'; min: number; n: number }
 /** §4.1: I_τ in minutes and n_τ = CANDLE_COUNTS[τ]. */

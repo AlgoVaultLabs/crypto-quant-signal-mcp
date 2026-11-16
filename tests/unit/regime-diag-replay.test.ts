@@ -111,7 +111,7 @@ describe('regime-diag: registered constants', () => {
     expect(new Date(spec.SPAN.t0Ms + (spec.SPAN.n - 1) * 60_000).toISOString()).toBe('2026-10-31T23:59:00.000Z');
     expect(new Date(spec.SPAN.t0Ms + spec.FIT.hi * 60_000).toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect([spec.HOLDOUT.lo, spec.HOLDOUT.hi]).toEqual([spec.FIT.hi, spec.SPAN.n]);
-    expect(months()).toHaveLength(34);
+    expect(months(spec.FIRST_MONTH, spec.LAST_MONTH)).toHaveLength(34);
     expect([spec.N_CELLS, spec.N_CS, spec.SHAPES.map((s) => s.id).join(''), spec.HOLDS_H.join()]).toEqual([45, 90, 'S1S2S3S4S5S6S7S8S9', '0.5,4,8,24,72']);
     expect(spec.SHAPES.filter((s) => s.sigma).map((s) => s.id)).toEqual(['S5', 'S7', 'S9']);
   });

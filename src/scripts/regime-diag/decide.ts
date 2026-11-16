@@ -5,7 +5,7 @@
 // reads a row: every function takes point values, interval bounds, shuffle tails and effective-cluster counts.
 // Every comparison is written so that an undefined number (NaN) can satisfy neither `works` nor `broken`.
 import type { Reading } from './engine.js';
-import { FLOOR_RATIO } from './diag-spec.js';
+import { FLOOR_RATIO, type Read } from './diag-spec.js';
 
 export type FitState = 'works' | 'broken' | 'too_little_data';
 export type HoldState = 'CONFIRMED' | 'NOT_CONFIRMED' | 'NOT_IDENTIFIABLE';
@@ -245,7 +245,7 @@ export function flagsOf(state: string, v: { day: string; week: string; unit: str
 }
 
 /** §6: `REGIME_DIAG_FIT=A1:…;…;A5:…` and `REGIME_DIAG_VERDICT=…`. */
-export function resultLine(name: 'REGIME_DIAG_FIT' | 'REGIME_DIAG_VERDICT', states: readonly string[]): string {
+export function resultLine(name: Read['line'], states: readonly string[]): string {
   if (states.length !== 5) throw new Error(`regime-diag: ${name} carries five states, got ${states.length}`);
   return `${name}=${states.map((s, i) => `A${i + 1}:${s}`).join(';')}`;
 }

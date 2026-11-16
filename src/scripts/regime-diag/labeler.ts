@@ -4,7 +4,7 @@ import { noEdgeOdds } from '../../lib/pre-trade-calc.js';
 import { noGap, type Grid } from './archive.js';
 import { MUTATE } from './mutate.js';
 import { rngFor, sampleWithoutReplacement } from './rng.js';
-import { ENTRIES_PER_DAY, FEE_PCT, HISTORY_MIN, HOLDS_H, N_CS, N_HOLDS, N_SHAPES, PATH_MIN, SEED, SHAPES, cellOf, csOf, type Win } from './diag-spec.js';
+import { ENTRIES_PER_DAY, FEE_PCT, HISTORY_MIN, HOLDS_H, N_CS, N_HOLDS, N_SHAPES, PATH_MIN, SHAPES, cellOf, csOf, type Win } from './diag-spec.js';
 
 /** §4.2: the 1 m opens of a window with 10,080 unbroken minutes of history, an unbroken 72 h path, and t + 72 h inside the window. */
 export function eligibleMinutes(g: Grid, win: Win): Int32Array {
@@ -13,11 +13,11 @@ export function eligibleMinutes(g: Grid, win: Win): Int32Array {
   return Int32Array.from(out);
 }
 
-/** §4.2: one seeded draw per window × position — 24 entries per eligible coin-day, uniform, without replacement. */
-export function drawEntries(g: Grid, win: Win, pos: string): { eligible: number; picks: Int32Array } {
+/** §4.2: one seeded draw per window × position — 24 entries per eligible coin-day, uniform, without replacement. `seed` is the study's label. */
+export function drawEntries(g: Grid, win: Win, pos: string, seed: string): { eligible: number; picks: Int32Array } {
   const e = eligibleMinutes(g, win);
   const n = Math.round((ENTRIES_PER_DAY * e.length) / 1440);
-  return { eligible: e.length, picks: sampleWithoutReplacement(e, n, rngFor(`${SEED}|${win.name}|${pos}`)) };
+  return { eligible: e.length, picks: sampleWithoutReplacement(e, n, rngFor(`${seed}|${win.name}|${pos}`)) };
 }
 
 export const OUT_TIMEOUT = 0;

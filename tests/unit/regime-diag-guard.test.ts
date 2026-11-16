@@ -8,17 +8,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { archiveManifestText, buildArchiveManifest, coinArchives, resolveArchive, sha256, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
+import { archiveManifestText, archiveName, archiveUrl, buildArchiveManifest, coinArchives, months, resolveArchive, sha256, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
 import { buildFrames, parseCensus, skeletonOf, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { PARITY_FIXTURE } from '../../src/scripts/regime-diag/parity.js';
 import * as run from '../../src/scripts/regime-diag/run.js';
 import { pinsOf, storePin } from '../../src/scripts/sr-backtest/guard.js';
-import { REGISTRATION, SPAN, STATISTICS, VENUE, type Win } from '../../src/scripts/regime-diag/diag-spec.js';
+import { REGISTRATION, SPAN, STATISTICS, VENUE, studyOf, type Carry, type StudyRecord, type Win } from '../../src/scripts/regime-diag/diag-spec.js';
 import { synthCsv } from '../../src/scripts/regime-diag/synth.js';
 import { SYNTH_CENSUS_TEXT, SYNTH_SPAN, synthLoad, zipSingle } from '../fixtures/regime-diag/synth-study.js';
 
 const REPO = path.resolve(__dirname, '../..');
+/** The two studies the harness serves: T3 (closed) and its successor. Every run and every guard call names one. */
+const T3 = studyOf('diag-2026-11-16') as StudyRecord, CONFIRM = studyOf('confirm') as StudyRecord;
 // Most tests here block the worker (git, the replay, the resamples), and back-to-back synchronous tests never
 // give it a macrotask turn to read vitest's RPC replies: past 60 s the file ends "Timeout calling onTaskUpdate"
 // (exit 1) with every test green. Measured here 2026-11-16: the eight regime-diag files run together ended that
@@ -66,14 +68,17 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
   let dir = '', repo = '', store = '', home = '', censusFile = '';
   let archives: ArchiveStore = { cache: '', overlay: '' };
   let unlanded: guard.DiagGuardResult, unlandedRun: run.RunResult;
+  /** The sandbox registration's pins: the harness and library files as copied, the manifests, the census. */
+  const pins: Record<string, string> = {};
   const lines: string[] = [];
   const study = (): run.Study => ({ span: SYNTH_SPAN, fit: FIT, holdout: HOLD, load: synthLoad, counts: () => ({ boot: 200, shuffle: 100, perm: 50 }), floorClusters: 25, log: (l) => lines.push(l), sealHome: home });
-  const inp = (registration: string, mode: 'fit' | 'holdout' = 'fit'): guard.DiagGuardInput => ({ repo, registration, store, sealHome: home, censusFile, archives, mode });
+  const inp = (registration: string, mode: 'fit' | 'holdout' = 'fit'): guard.DiagGuardInput => ({ study: T3, carry: null, repo, registration, store, sealHome: home, censusFile, archives, mode });
   const go = (mode: 'fit' | 'holdout', out: string, more: Partial<run.RunInput> = {}): run.RunResult => {
     lines.length = 0;
-    return run.outcomeRun({ mode, repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, out), study: study(), ...more });
+    return run.outcomeRun({ studyId: T3.id, mode, repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, out), study: study(), ...more });
   };
-  const logged = (): Array<Record<string, unknown>> => fs.readFileSync(guard.guardLog(store), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+  const loggedIn = (s: string): Array<Record<string, unknown>> => (fs.existsSync(guard.guardLog(s)) ? fs.readFileSync(guard.guardLog(s), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>) : []);
+  const logged = (): Array<Record<string, unknown>> => loggedIn(store);
   const json = (file: string): any => JSON.parse(fs.readFileSync(file, 'utf8')); // eslint-disable-line @typescript-eslint/no-explicit-any
   /** A two-hour archive of one month: each month's rows sit in their own minutes of the registered span. */
   const zip = (name: string, key: string): Buffer => {
@@ -104,11 +109,10 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     fs.writeFileSync(path.join(archives.cache, 'SYNBUSDT-1m-2024-01.zip'), zip('SYNBUSDT-1m-2024-01.zip', 'b1'));
     fs.writeFileSync(censusFile, SYNTH_CENSUS_TEXT);
     const census = parseCensus(SYNTH_CENSUS_TEXT);
-    const made = guard.initStore(store, archives, census.panel);
+    const made = guard.initStore(store, archives, census.panel, T3);
     expect(made.archiveFiles).toBe(3);
 
-    const sk = skeletonOf(buildFrames(SYNTH_SPAN, [FIT, HOLD], census, synthLoad, { outcomes: false }));
-    const pins: Record<string, string> = {};
+    const sk = skeletonOf(buildFrames(SYNTH_SPAN, [FIT, HOLD], census, synthLoad, { outcomes: false, seed: T3.seed }));
     for (const rel of [...guard.HARNESS_FILES, ...EXTRA]) pins[rel] = sha256(fs.readFileSync(path.join(repo, rel)));
     pins['store:manifest-BINANCE.json'] = made.guardStoreSha256;
     pins[guard.CENSUS_PIN] = sha256(SYNTH_CENSUS_TEXT);
@@ -125,6 +129,8 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
       badarchives: `${pinTable({ ...pins, [guard.ARCHIVES_PIN]: 'e'.repeat(64) })}\n${tables(sk)}`,
       parity: `${pinTable({ ...pins, [PARITY_FIXTURE]: sha256(corrupt(fs.readFileSync(path.join(repo, PARITY_FIXTURE), 'utf8'))) })}\n${tables(sk)}`,
       skel: `${pinTable(pins)}\n${tables(moved)}`,
+      // T3's registration as it stands in this checkout: its pins are those of the harness T3 was read by
+      t3: fs.readFileSync(path.join(REPO, REGISTRATION), 'utf8'),
     };
     fs.mkdirSync(path.join(repo, 'audits'));
     for (const [name, text] of Object.entries(regs)) { fs.writeFileSync(path.join(repo, 'audits', `reg-${name}.md`), text); git(repo, 'add', `audits/reg-${name}.md`); }
@@ -228,11 +234,11 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
    */
   const sealOnce = (m: typeof guard): void => {
     const h = path.join(fs.mkdtempSync(path.join(dir, 'seal-')), 'home', 'not-yet-made'), s1 = fs.mkdtempSync(path.join(dir, 'seal-store-')), s2 = fs.mkdtempSync(path.join(dir, 'seal-store-'));
-    const first = m.claimSeal(h, s1, { n: 1 }), second = m.claimSeal(h, s1, { n: 2 }), third = m.claimSeal(h, s2, { n: 3 });
-    const kept = (JSON.parse(fs.readFileSync(m.sealFile(h), 'utf8')) as { n: number; wave: string });
+    const first = m.claimSeal(h, s1, T3, { n: 1 }), second = m.claimSeal(h, s1, T3, { n: 2 }), third = m.claimSeal(h, s2, T3, { n: 3 });
+    const kept = (JSON.parse(fs.readFileSync(m.sealFile(h, T3), 'utf8')) as { n: number; wave: string });
     expect([first.ok, second.ok, third.ok, kept.n, kept.wave]).toEqual([true, false, false, 1, 'EDGE-REGIME-DIAG-W1']);
     expect([second.reason, third.reason]).toEqual([expect.stringMatching(/seal exists/), expect.stringMatching(/seal exists/)]);
-    expect(m.sealFile(h)).toBe(path.join(h, 'holdout.seal'));
+    expect(m.sealFile(h, T3)).toBe(path.join(h, 'holdout.seal'));
     expect([s1, s2].map((s) => fs.readdirSync(s))).toEqual([['guard.log'], ['guard.log']]);
     const log = (s: string): Array<[boolean, string]> => fs.readFileSync(m.guardLog(s), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { ok: boolean; leg: string }).map((l) => [l.ok, l.leg]);
     expect([log(s1), log(s2)]).toEqual([[[true, 'seal'], [false, 'seal']], [[false, 'seal']]]);
@@ -246,17 +252,21 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(resolveArchive(archives, 'SYNA', '1m', '2024-02')).toEqual({ file: path.join(archives.overlay, 'SYNAUSDT-1m-2024-02.zip'), source: 'overlay' });
     expect(resolveArchive(archives, 'SYNA', '1m', '2024-01')?.source).toBe('cache');
     expect(resolveArchive(archives, 'SYNA', '1m', '2024-03')).toBeNull();
-    expect(coinArchives(archives, 'SYNA').map((f) => path.basename(path.dirname(f)))).toEqual(['cache', 'overlay']);
+    expect(coinArchives(archives, 'SYNA', months(T3.months.first, T3.months.last)).map((f) => path.basename(path.dirname(f)))).toEqual(['cache', 'overlay']);
     const panel = parseCensus(SYNTH_CENSUS_TEXT).panel;
-    const m = buildArchiveManifest(archives, panel);
+    const m = buildArchiveManifest(archives, panel, T3.months.first, T3.months.pinned);
     expect(m.files.map((f) => [f.name, f.source])).toEqual([['SYNAUSDT-1m-2024-01.zip', 'cache'], ['SYNAUSDT-1m-2024-02.zip', 'overlay'], ['SYNBUSDT-1m-2024-01.zip', 'cache']]);
     expect(m.files[1].sha256).toBe(sha256(fs.readFileSync(path.join(archives.overlay, 'SYNAUSDT-1m-2024-02.zip'))));
-    expect(archiveManifestText(buildArchiveManifest(archives, panel))).toBe(fs.readFileSync(guard.archivesFile(store), 'utf8'));
-    const st = run.registeredStudy(archives, panel);
-    expect([st.span, st.fit.name, st.holdout.name, st.counts, st.floorClusters]).toEqual([SPAN, 'fit', 'holdout', undefined, undefined]);
+    expect(archiveManifestText(buildArchiveManifest(archives, panel, T3.months.first, T3.months.pinned))).toBe(fs.readFileSync(guard.archivesFile(store), 'utf8'));
+    const st = run.registeredStudy(archives, panel, T3);
+    expect([st.span, st.fit?.name, st.holdout.name, st.counts, st.floorClusters]).toEqual([SPAN, 'fit', 'holdout', undefined, undefined]);
     const first = st.load(0), third = st.load(2);
     expect([first.g?.counts.rows, first.noArchive]).toEqual([240, 32]);
     expect(third).toEqual({ g: null, noArchive: 34 });
+    // the successor reads its own span, window and months off its record: T3's grid origin, entries after T_END alone
+    const sc = run.registeredStudy(archives, panel, CONFIRM);
+    expect([sc.span, sc.fit, sc.holdout]).toEqual([CONFIRM.span, undefined, CONFIRM.windows[0]]);
+    expect([sc.load(0).noArchive, sc.load(2)]).toEqual([39, { g: null, noArchive: 41 }]);
   });
 
   it('refuses a store or an output directory inside the repository, and writes nothing there', { timeout: 60_000 }, () => {
@@ -279,12 +289,12 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(run.isPinnedSource(path.join(REPO, self), REPO)).toBe(true);
     expect(run.isPinnedSource(path.join(REPO, 'dist/scripts/regime-diag/run.js'), REPO)).toBe(false);
     expect(run.isPinnedSource(path.join(REPO, self), repo)).toBe(false);
-    // no study injected: this is the registered study, and the harness running it is not the sandbox repository's own
+    // no study injected: this is the registered successor, and the harness running it is not the sandbox repository's own
     const before = logged().length;
-    const r = run.outcomeRun({ mode: 'fit', repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, 'out-copied') });
+    const r = run.outcomeRun({ studyId: CONFIRM.id, mode: 'holdout', repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, 'out-copied'), fitResult: path.join(dir, 'absent.json') });
     expect([r.verdict, r.line, r.file]).toEqual(['REFUSED', null, null]);
     expect(r.reason).toMatch(/pinned sources/);
-    expect(logged().slice(before)).toMatchObject([{ ok: false, leg: 'source', mode: 'fit', reason: r.reason }]);
+    expect(logged().slice(before)).toMatchObject([{ ok: false, leg: 'source', mode: 'holdout', wave: 'EDGE-REGIME-CONFIRM-W1', reason: r.reason }]);
     expect(fs.existsSync(path.join(dir, 'out-copied'))).toBe(false);
   });
 
@@ -314,7 +324,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(at('floors: fit')).toBeGreaterThan(at('skeleton: equal'));
     expect(at('outcomes: fit')).toBeGreaterThan(at('floors: fit'));
     expect(lines.some((l) => l.startsWith('outcomes: holdout'))).toBe(false);
-    expect(fs.existsSync(guard.sealFile(home))).toBe(false);
+    expect(fs.existsSync(guard.sealFile(home, T3))).toBe(false);
     const j = json(fitFile);
     expect([j.kind, j.study, j.line, j.floor_clusters]).toEqual(['fit', 'injected', r.line, 25]);
     expect(Date.parse(j.clocks.outcome_read_at)).toBeGreaterThanOrEqual(Date.parse(j.clocks.registration_landed_at.first_seen));
@@ -396,7 +406,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect([missing.verdict, missing.reason]).toEqual(['REFUSED', expect.stringMatching(/fit result/)]);
     expect(missing.reason).not.toBe(other.reason);
     expect(logged().at(-1)).toMatchObject({ ok: false, leg: 'fit-result', mode: 'holdout', reason: missing.reason });
-    expect(fs.existsSync(guard.sealFile(home))).toBe(false);
+    expect(fs.existsSync(guard.sealFile(home, T3))).toBe(false);
     expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
   });
 
@@ -414,7 +424,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(at('outcomes: holdout')).toBeGreaterThan(at('seal: claimed'));
     expect(lines.some((l) => l.startsWith('outcomes: fit'))).toBe(false);
     const j = json(holdFile), fit = json(fitFile);
-    const seal = json(guard.sealFile(home));
+    const seal = json(guard.sealFile(home, T3));
     // the seal is in its home and nowhere in the store
     expect(fs.readdirSync(home)).toEqual(['holdout.seal']);
     expect(fs.existsSync(path.join(store, 'holdout.seal'))).toBe(false);
@@ -453,13 +463,13 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
   });
 
   it('AC2.3 a second hold-out read is refused: the seal exists', { timeout: 60_000 }, () => {
-    const before = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home), 'utf8');
+    const before = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home, T3), 'utf8');
     const r = go('holdout', 'out-hold-2', { fitResult: fitFile });
     expect(r.verdict).toBe('REFUSED');
     expect(r.reason).toMatch(/^guard \(seal\): the hold-out seal exists/);
     expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'out-hold-2'))).toBe(false);
-    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home), 'utf8')]).toEqual([before, seal]);
+    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home, T3), 'utf8')]).toEqual([before, seal]);
     expect(guard.checkDiagGuard(inp('audits/reg-good.md', 'holdout')).leg).toBe('seal');
     // the fit window can still be read: the seal guards the hold-out alone
     expect(guard.checkDiagGuard(inp('audits/reg-good.md', 'fit')).ok).toBe(true);
@@ -468,20 +478,20 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
 
   it('AC2.3 the seal has one place: a second store directory that reproduces both pinned manifests does not re-open the hold-out', { timeout: 120_000 }, () => {
     const store2 = path.join(dir, 'store-2');
-    const made = guard.initStore(store2, archives, parseCensus(SYNTH_CENSUS_TEXT).panel);
+    const made = guard.initStore(store2, archives, parseCensus(SYNTH_CENSUS_TEXT).panel, T3);
     const first = guard.checkDiagGuard(inp('audits/reg-good.md', 'fit'));
     // the second store reproduces both pinned manifests: only the seal stands between it and a second read
     expect([made.archivesSha256, made.guardStoreSha256]).toEqual([first.pins[guard.ARCHIVES_PIN], first.pins[storePin(VENUE)]]);
     expect(guard.checkDiagGuard({ ...inp('audits/reg-good.md', 'fit'), store: store2 }).ok).toBe(true);
     expect(fs.existsSync(path.join(store2, 'holdout.seal'))).toBe(false);
-    const held = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home), 'utf8');
+    const held = fs.readFileSync(holdFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home, T3), 'utf8');
     const r = go('holdout', 'out-hold-3', { fitResult: fitFile, store: store2 });
     expect(r.verdict).toBe('REFUSED');
     expect(r.reason).toMatch(/^guard \(seal\): the hold-out seal exists/);
     expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'out-hold-3'))).toBe(false);
     expect(fs.existsSync(path.join(store2, 'holdout.seal'))).toBe(false);
-    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home), 'utf8')]).toEqual([held, seal]);
+    expect([fs.readFileSync(holdFile, 'utf8'), fs.readFileSync(guard.sealFile(home, T3), 'utf8')]).toEqual([held, seal]);
     expect(guard.checkDiagGuard({ ...inp('audits/reg-good.md', 'holdout'), store: store2 }).leg).toBe('seal');
     // the refusal is logged in the store the run named, and no outcome was read from it
     const log2 = fs.readFileSync(guard.guardLog(store2), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
@@ -497,7 +507,9 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     const keep = process.env.HOME;
     process.env.HOME = path.join(dir, 'another-home');
     try { expect(guard.sealHome()).toBe(fixed); } finally { if (keep === undefined) delete process.env.HOME; else process.env.HOME = keep; }
-    expect(guard.sealFile(guard.sealHome())).toBe(path.join(fixed, 'holdout.seal'));
+    expect(guard.sealFile(guard.sealHome(), T3)).toBe(path.join(fixed, 'holdout.seal'));
+    // one home, one file per study: the successor's seal sits beside T3's and is another file
+    expect(guard.sealFile(guard.sealHome(), CONFIRM)).toBe(path.join(fixed, 'confirm.seal'));
     // the sandbox's seal is not there: the synthetic study names its own home
     expect(within(home, dir)).toBe(true);
     expect(within(guard.sealHome(), dir)).toBe(false);
@@ -514,12 +526,245 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(fs.existsSync(path.join(dir, 'out-no-home'))).toBe(false);
   });
 
-  const cli =(...args: string[]): Promise<{ code: number; stdout: string }> =>
+
+  // ── EDGE-REGIME-CONFIRM-W1: the successor, served by the same harness, in the same sandbox ─────────────────────
+  describe('the successor: one read of the entries after T_END, carrying the fit result', () => {
+    const LATER = months(CONFIRM.months.pinned, CONFIRM.months.last).slice(1);
+    const NOW = Date.parse(CONFIRM.notBefore as string);
+    const SERVED = 'SYNAUSDT-1m-2026-11.zip';
+    /** The record of a coin-month the venue serves no archive of, as the probe writes it: probed on the read date. */
+    const probeRecord = (coin: string, ym: string, more: Record<string, unknown> = {}): string => `${JSON.stringify({ url: archiveUrl(coin, ym), status: 404, probed_at: CONFIRM.notBefore, ...more })}\n`;
+    let storeC = '', carry: Carry = { sha256: '', registrationCommit: '' };
+    const cstudy = (more: Partial<run.Study> = {}): run.Study => ({ span: SYNTH_SPAN, holdout: HOLD, load: synthLoad, counts: () => ({ boot: 200, shuffle: 100, perm: 50 }), floorClusters: 25, log: (l) => lines.push(l), sealHome: home, carry, now: NOW, ...more });
+    const cgo = (out: string, more: Partial<run.RunInput> = {}): run.RunResult => {
+      lines.length = 0;
+      return run.outcomeRun({ studyId: CONFIRM.id, mode: 'holdout', repo, registration: 'audits/reg-confirm.md', store: storeC, censusFile, archives, out: path.join(dir, out), fitResult: fitFile, study: cstudy(), ...more });
+    };
+    const cinp = (mode: 'fit' | 'holdout', more: Partial<guard.DiagGuardInput> = {}): guard.DiagGuardInput => ({ study: CONFIRM, carry: carry.sha256, repo, registration: 'audits/reg-confirm.md', store: storeC, sealHome: home, censusFile, archives, mode, ...more });
+    const sealed = (): boolean => fs.existsSync(guard.sealFile(home, CONFIRM));
+    const noOutcome = (): boolean => !lines.some((l) => l.startsWith('outcomes')) && !loggedIn(storeC).some((l) => l.leg === 'outcomes');
+
+    beforeAll(() => {
+      storeC = path.join(dir, 'store-confirm');
+      const panel = parseCensus(SYNTH_CENSUS_TEXT).panel;
+      const made = guard.initStore(storeC, archives, panel, CONFIRM);
+      // the history months are T3's: the same archive manifest. The guard's own store manifest is the study's.
+      expect([made.archivesSha256, made.guardStoreSha256 === pins[storePin(VENUE)]]).toEqual([pins[guard.ARCHIVES_PIN], false]);
+      carry = { sha256: sha256(fs.readFileSync(fitFile)), registrationCommit: json(fitFile).registration.commit as string };
+      // the months no registration could pin: one archive the venue serves, with its checksum; every other coin-month on record as absent
+      const served = zip(SERVED, 'a-later');
+      fs.writeFileSync(path.join(archives.cache, SERVED), served);
+      fs.writeFileSync(path.join(archives.cache, `${SERVED}.CHECKSUM`), `${sha256(served)}  ${SERVED}\n`);
+      for (const coin of panel) for (const ym of LATER) { const name = archiveName(coin, '1m', ym); if (name !== SERVED) fs.writeFileSync(path.join(archives.overlay, `${name}.ABSENT`), probeRecord(coin, ym)); }
+      const cpins = { ...pins, [storePin(VENUE)]: made.guardStoreSha256, [guard.CARRY_PIN]: carry.sha256 };
+      const regs: Record<string, string> = {
+        confirm: pinTable(cpins),
+        'confirm-nocarry': pinTable(Object.fromEntries(Object.entries(cpins).filter(([k]) => k !== guard.CARRY_PIN))),
+        'confirm-othercarry': pinTable({ ...cpins, [guard.CARRY_PIN]: 'd'.repeat(64) }),
+      };
+      for (const [name, text] of Object.entries(regs)) { fs.writeFileSync(path.join(repo, 'audits', `reg-${name}.md`), text); git(repo, 'add', `audits/reg-${name}.md`); }
+      git(repo, 'commit', '-q', '-m', 'the successor registrations'); git(repo, 'push', '-q', 'origin', 'main');
+    }, 120_000);
+
+    it('AC1.1 a run names its study: none, or an unknown one, is refused, and nothing defaults to T3', { timeout: 60_000 }, () => {
+      const before = loggedIn(storeC).length;
+      for (const id of [undefined, 'registered', '']) {
+        const r = cgo('out-c-none', { studyId: id as unknown as string });
+        expect([r.verdict, r.line, r.file], String(id)).toEqual(['REFUSED', null, null]);
+        expect(r.reason, String(id)).toMatch(/^a run names its study \(diag-2026-11-16 \| confirm\): /);
+      }
+      expect(loggedIn(storeC).slice(before)).toMatchObject([{ ok: false, leg: 'study', wave: null }, { ok: false, leg: 'study', wave: null }, { ok: false, leg: 'study', wave: null }]);
+      expect([lines, fs.existsSync(path.join(dir, 'out-c-none')), sealed()]).toEqual([[], false, false]);
+    });
+
+    it('nothing is re-fit, and nothing is read early: no fit read, no read before the registered date, no borrowed carry', { timeout: 60_000 }, () => {
+      const before = loggedIn(storeC).length;
+      const fit = cgo('out-c-early', { mode: 'fit' });
+      const early = cgo('out-c-early', { study: cstudy({ now: NOW - 1 }) });
+      const borrowed = cgo('out-c-early', { study: cstudy({ carry: undefined }) });
+      expect([fit.verdict, fit.reason]).toEqual(['REFUSED', 'the confirm study has no fit read: nothing is re-fit']);
+      expect([early.verdict, early.reason]).toEqual(['REFUSED', 'the confirm study is read once, not before 2027-06-16T00:00:00Z']);
+      expect([borrowed.verdict, borrowed.reason]).toEqual(['REFUSED', 'a synthetic study that carries a fit result must name its own']);
+      expect(loggedIn(storeC).slice(before)).toMatchObject([{ ok: false, leg: 'study', mode: 'fit', wave: CONFIRM.wave }, { ok: false, leg: 'clock', mode: 'holdout' }, { ok: false, leg: 'fit-result', mode: 'holdout' }]);
+      expect([lines, fs.existsSync(path.join(dir, 'out-c-early')), sealed()]).toEqual([[], false, false]);
+    });
+
+    it('AC1.1 the carry-over: only the fit result of that sha256, pinned by the registration and read under its commit; anything else is refused before the seal', { timeout: 60_000 }, () => {
+      const changed = path.join(dir, 'fit-changed.json');
+      fs.writeFileSync(changed, `${fs.readFileSync(fitFile, 'utf8')} `); // the same JSON value, one byte more
+      const a = cgo('out-c-carry', { fitResult: changed });
+      expect([a.verdict, a.reason]).toEqual(['REFUSED', expect.stringMatching(/^the fit result is not the one this study carries \(sha256 /)]);
+      expect(loggedIn(storeC).at(-1)).toMatchObject({ ok: false, leg: 'fit-result', mode: 'holdout', reason: a.reason });
+      // T3's own hold-out result is not a fit result this study carries either
+      expect(cgo('out-c-carry', { fitResult: holdFile }).reason).toMatch(/not the one this study carries/);
+      const absent = cgo('out-c-carry', { fitResult: path.join(dir, 'absent.json') });
+      expect([absent.verdict, absent.reason]).toEqual(['REFUSED', 'the fit result is absent']);
+      // the registration pins the carried result: one that pins none, or another, is refused by the guard
+      const none = cgo('out-c-carry', { registration: 'audits/reg-confirm-nocarry.md' }), other = cgo('out-c-carry', { registration: 'audits/reg-confirm-othercarry.md' });
+      expect([none.verdict, none.reason]).toEqual(['REFUSED', `guard (carry): the registration does not pin ${guard.CARRY_PIN}`]);
+      expect([other.verdict, other.reason]).toEqual(['REFUSED', expect.stringMatching(/^guard \(carry\): the registration pins another fit result/)]);
+      // the carried result was read under one registration commit: the carry names it
+      const commit = cgo('out-c-carry', { study: cstudy({ carry: { ...carry, registrationCommit: 'c'.repeat(40) } }) });
+      expect([commit.verdict, commit.reason]).toEqual(['REFUSED', 'the fit result was read under another registration commit']);
+      expect([fs.existsSync(path.join(dir, 'out-c-carry')), sealed(), noOutcome()]).toEqual([false, false, true]);
+    });
+
+    it('the months after the pinned manifest are verified at read time: an unverified or unaccounted coin-month refuses the read', { timeout: 60_000 }, () => {
+      const record = path.join(archives.overlay, `${archiveName('SYNC', '1m', LATER[LATER.length - 1])}.ABSENT`), sum = path.join(archives.cache, `${SERVED}.CHECKSUM`);
+      const keep = fs.readFileSync(record);
+      fs.rmSync(record);
+      let r: run.RunResult;
+      try { r = cgo('out-c-later'); } finally { fs.writeFileSync(record, keep); }
+      expect([r.verdict, r.reason]).toEqual(['REFUSED', expect.stringMatching(/^guard \(archives\): SYNCUSDT-1m-2027-05\.zip is neither in the store nor recorded as absent/)]);
+      const moved = withFile(sum, () => `${'0'.repeat(64)}  ${SERVED}\n`, () => cgo('out-c-later'));
+      expect([moved.verdict, moved.reason]).toEqual(['REFUSED', expect.stringMatching(/^guard \(archives\): SYNAUSDT-1m-2026-11\.zip is not the venue's file/)]);
+      // "absent" is a checked probe record, never a file that merely exists: an empty one, one of another URL or
+      // status, and one probed before the registered read date each refuse the read before the seal
+      const last = LATER[LATER.length - 1], early = new Date(NOW - 1000).toISOString();
+      const unchecked: Array<[string, RegExp]> = [
+        ['', /^guard \(archives\): SYNCUSDT-1m-2027-05\.zip\.ABSENT is not a probe record/],
+        ['HTTP 404\n', /^guard \(archives\): SYNCUSDT-1m-2027-05\.zip\.ABSENT is not a probe record/],
+        [probeRecord('SYNB', last), /^guard \(archives\): SYNCUSDT-1m-2027-05\.zip\.ABSENT records another URL than the venue's for this coin-month/],
+        [probeRecord('SYNC', last, { status: 503 }), /^guard \(archives\): SYNCUSDT-1m-2027-05\.zip\.ABSENT records HTTP 503, not 404/],
+        [probeRecord('SYNC', last, { probed_at: early }), /^guard \(archives\): SYNCUSDT-1m-2027-05\.zip\.ABSENT was probed before the registered read date/],
+      ];
+      for (const [text, why] of unchecked) {
+        const u = withFile(record, () => text, () => cgo('out-c-later'));
+        expect([u.verdict, u.reason], text).toEqual(['REFUSED', expect.stringMatching(why)]);
+        expect(loggedIn(storeC).at(-1), text).toMatchObject({ ok: false, leg: 'archives', mode: 'holdout' });
+      }
+      expect([fs.existsSync(path.join(dir, 'out-c-later')), sealed(), noOutcome()]).toEqual([false, false, true]);
+      const ok = guard.checkDiagGuard(cinp('holdout'));
+      expect([ok.ok, ok.leg, ok.later?.files.map((f) => f.name), ok.later?.absent.length]).toEqual([true, 'ok', [SERVED], 3 * LATER.length - 1]);
+    });
+
+    let confirmFile = '';
+    it('AC1.1 the successor reads once, behind its own seal: the realized skeleton is recorded first, T3\'s test is run on the carried estimates', { timeout: 120_000 }, () => {
+      const t3seal = fs.readFileSync(guard.sealFile(home, T3), 'utf8'), t3hold = fs.readFileSync(holdFile, 'utf8');
+      const r = cgo('out-confirm');
+      expect(r.reason).toBe('ok');
+      expect(r.verdict).toBe('PASS');
+      expect(r.line).toMatch(new RegExp(`^REGIME_CONFIRM_VERDICT=${five(HOLD_STATE)}$`));
+      confirmFile = r.file as string;
+      expect(confirmFile).toBe(path.join(dir, 'out-confirm', 'regime-confirm.json'));
+      // the order of the read: nothing of the outcomes before the guard, the recorded skeleton, the floors and the seal
+      const at = (p: string): number => lines.findIndex((l) => l.startsWith(p));
+      expect(at('guard: ok')).toBeGreaterThanOrEqual(0);
+      expect(at('skeleton: recorded')).toBeGreaterThan(at('guard: ok'));
+      expect(at('floors: holdout')).toBeGreaterThan(at('skeleton: recorded'));
+      expect(at('seal: claimed')).toBeGreaterThan(at('floors: holdout'));
+      expect(at('outcomes: holdout')).toBeGreaterThan(at('seal: claimed'));
+      expect(lines.some((l) => l.startsWith('skeleton: equal') || l.startsWith('outcomes: fit'))).toBe(false);
+      // its own seal, beside T3's, which is as it was
+      expect(fs.readdirSync(home).sort()).toEqual(['confirm.seal', 'holdout.seal']);
+      expect([fs.readFileSync(guard.sealFile(home, T3), 'utf8'), fs.readFileSync(holdFile, 'utf8')]).toEqual([t3seal, t3hold]);
+      const j = json(confirmFile), fit = json(fitFile), seal = json(guard.sealFile(home, CONFIRM));
+      expect(seal).toMatchObject({ wave: 'EDGE-REGIME-CONFIRM-W1', registration_commit: git(repo, 'rev-parse', 'HEAD'), fit_result_sha256: carry.sha256 });
+      expect(seal).toEqual({ wave: 'EDGE-REGIME-CONFIRM-W1', ...j.seal });
+      expect([j.wave, j.kind, j.study, j.study_id, j.seed, j.line]).toEqual(['EDGE-REGIME-CONFIRM-W1', 'holdout', 'injected', 'confirm', CONFIRM.seed, r.line]);
+      expect(j.registration).toMatchObject({ path: 'audits/reg-confirm.md', commit: seal.registration_commit });
+      // nothing is re-fit and nothing is selected: each primary carries its fit-window state and estimate, A3 its fit-selected cell
+      expect(j.fit_states).toEqual(Object.fromEntries(['A1', 'A2', 'A3', 'A4', 'A5'].map((a) => [a, fit.primaries[a].state])));
+      for (const a of ['A1', 'A2', 'A3', 'A4', 'A5']) expect(j.primaries[a].fit_point, a).toBe(fit.fit_points[a]);
+      expect(j.primaries.A3.cell).toBe(fit.primaries.A3.selected);
+      expect(j.common_positions).toEqual(fit.positions);
+      for (const a of ['A1', 'A2', 'A4']) expect(j.primaries[a].reading.alpha, a).toBe(0.025);
+      expect(Object.keys(j.variants)).toEqual(['day', 'week', 'unit', 'panel13']);
+      // the realized skeleton: in the result, and its sha256 in the guard log before the seal was claimed
+      expect(Object.keys(j.skeleton)).toEqual(['2a', '2b', '2c', '2d', '2e']);
+      expect(Object.keys(j.skeleton['2c'])).toEqual(['hold-out']); // one window: there is no fit window to build
+      const log = loggedIn(storeC), legs = log.map((l) => l.leg);
+      const skel = log[legs.lastIndexOf('skeleton')];
+      expect(skel).toMatchObject({ ok: true, mode: 'holdout', skeleton_sha256: sha256(JSON.stringify(j.skeleton)) });
+      expect(legs.lastIndexOf('skeleton')).toBeLessThan(legs.lastIndexOf('seal'));
+      // the guard log of the read, in order: the guard's pass, the skeleton, the floors, the seal, the outcomes
+      expect(legs.slice(legs.lastIndexOf('skeleton') - 1)).toEqual(['ok', 'skeleton', 'floors', 'seal', 'outcomes', 'result']);
+      expect(log[legs.lastIndexOf('skeleton') - 1]).toMatchObject({ ok: true, leg: 'ok', mode: 'holdout', wave: 'EDGE-REGIME-CONFIRM-W1' });
+      // the achieved clusters are on record before the seal is claimed and before any outcome is read (PROCEDURE
+      // §4a): every Table 2d row set and A3's fit-selected cell, against the floor
+      const floors = log[legs.lastIndexOf('floors')];
+      expect(floors).toMatchObject({ ok: true, mode: 'holdout', floor_clusters: 25 });
+      expect(floors.row_sets).toEqual(j.floors.map((x: { row_set: string; eff: number }) => ({ row_set: x.row_set, eff: x.eff })));
+      expect(floors.row_sets).toHaveLength(8);
+      expect(floors.a3_selected).toEqual({ cell: fit.primaries.A3.selected, eff: j.primaries.A3.pre.eff });
+      expect([typeof j.primaries.A3.pre.eff, fit.primaries.A3.selected_index >= 0]).toEqual(['number', true]);
+      expect(Date.parse(floors.at as string)).toBeLessThanOrEqual(Date.parse(j.seal.claimed_at as string));
+      expect(new Set(log.filter((l) => l.leg !== 'study' || l.wave !== null).map((l) => l.wave))).toEqual(new Set(['EDGE-REGIME-CONFIRM-W1']));
+      // what was verified at read time is in the result, and pinned with it
+      expect([j.archives_verified_at_read.files.map((f: { name: string }) => f.name), j.archives_verified_at_read.absent.length]).toEqual([[SERVED], 3 * LATER.length - 1]);
+      expect([j.pins[guard.CARRY_PIN], j.pins[guard.LATER_PIN]]).toEqual([carry.sha256, sha256(JSON.stringify(j.archives_verified_at_read))]);
+      expect(log.at(-1)).toMatchObject({ leg: 'result', mode: 'holdout', line: r.line });
+      // T3's own results carry none of the successor's fields
+      for (const k of ['study_id', 'skeleton', 'archives_verified_at_read', 'fit_states']) expect([k in fit, k in json(holdFile)], k).toEqual([false, false]);
+    });
+
+    it('AC1.1 a second read of the successor is refused: its seal exists, whatever store names it', { timeout: 120_000 }, () => {
+      const held = fs.readFileSync(confirmFile, 'utf8'), seal = fs.readFileSync(guard.sealFile(home, CONFIRM), 'utf8');
+      const again = cgo('out-confirm-2');
+      expect([again.verdict, again.reason]).toEqual(['REFUSED', 'guard (seal): the hold-out seal exists: the hold-out has been read']);
+      // a second store that reproduces both pinned manifests does not re-open it (the F3 test, for this study)
+      const store2 = path.join(dir, 'store-confirm-2');
+      const made = guard.initStore(store2, archives, parseCensus(SYNTH_CENSUS_TEXT).panel, CONFIRM);
+      const first = guard.checkDiagGuard(cinp('fit'));
+      expect([made.archivesSha256, made.guardStoreSha256]).toEqual([first.pins[guard.ARCHIVES_PIN], first.pins[storePin(VENUE)]]);
+      expect(guard.checkDiagGuard(cinp('fit', { store: store2 })).ok).toBe(true);
+      const other = cgo('out-confirm-3', { store: store2 });
+      expect([other.verdict, other.reason]).toEqual(['REFUSED', 'guard (seal): the hold-out seal exists: the hold-out has been read']);
+      expect(guard.checkDiagGuard(cinp('holdout', { store: store2 })).leg).toBe('seal');
+      expect(lines.some((l) => l.startsWith('outcomes'))).toBe(false);
+      expect([fs.existsSync(path.join(dir, 'out-confirm-2')), fs.existsSync(path.join(dir, 'out-confirm-3')), fs.existsSync(path.join(store2, 'confirm.seal'))]).toEqual([false, false, false]);
+      expect([fs.readFileSync(confirmFile, 'utf8'), fs.readFileSync(guard.sealFile(home, CONFIRM), 'utf8')]).toEqual([held, seal]);
+      const log2 = loggedIn(store2);
+      expect(log2.at(-1)).toMatchObject({ ok: false, leg: 'seal', mode: 'holdout', wave: 'EDGE-REGIME-CONFIRM-W1' });
+      expect(log2.some((l) => l.leg === 'outcomes')).toBe(false);
+    });
+
+    it('AC1.1 T3 keeps refusing after the successor\'s read: its seal, its pins, and it is closed', { timeout: 60_000 }, () => {
+      // its seal: the successor's claim opened nothing of T3's
+      const again = go('holdout', 'out-hold-4', { fitResult: fitFile });
+      expect([again.verdict, again.reason]).toEqual(['REFUSED', 'guard (seal): the hold-out seal exists: the hold-out has been read']);
+      expect(guard.checkDiagGuard(inp('audits/reg-good.md', 'holdout')).leg).toBe('seal');
+      // its pins: T3's registration, as it stands, against the harness of this checkout
+      for (const mode of ['fit', 'holdout'] as const) {
+        const r = guard.checkDiagGuard(inp('audits/reg-t3.md', mode));
+        expect([r.ok, r.leg], mode).toEqual([false, 'pins']);
+        expect(r.reason, mode).toMatch(/^src\/scripts\/regime-diag\/[a-z-]+\.ts is not the registered file/);
+      }
+      // and the registered T3 is closed: no run of it reaches the guard
+      const before = logged().length;
+      for (const mode of ['fit', 'holdout'] as const) {
+        const r = run.outcomeRun({ studyId: T3.id, mode, repo, registration: 'audits/reg-good.md', store, censusFile, archives, out: path.join(dir, 'out-closed'), fitResult: fitFile });
+        expect([r.verdict, r.reason, r.line, r.file], mode).toEqual(['REFUSED', 'the diag-2026-11-16 study is closed: its hold-out is spent', null, null]);
+      }
+      expect(logged().slice(before)).toMatchObject([{ ok: false, leg: 'study', mode: 'fit', wave: 'EDGE-REGIME-DIAG-W1' }, { ok: false, leg: 'study', mode: 'holdout', wave: 'EDGE-REGIME-DIAG-W1' }]);
+      expect([fs.existsSync(path.join(dir, 'out-hold-4')), fs.existsSync(path.join(dir, 'out-closed'))]).toEqual([false, false]);
+    });
+  });
+
+  const cli = (...args: string[]): Promise<{ code: number; stdout: string }> =>
     promisify(execFile)(path.join(REPO, 'node_modules/.bin/tsx'), [path.join(REPO, 'src/scripts/regime-diag/run.ts'), ...args], { cwd: REPO, timeout: 80_000 })
       .then((x) => ({ code: 0, stdout: x.stdout }), (e: { code: number; stdout: string }) => ({ code: e.code, stdout: e.stdout }));
 
+  it('the CLI refuses a run that names no study, or an unknown one: REFUSED, exit 1, before anything is read', { timeout: 90_000 }, async () => {
+    for (const args of [['--fit'], ['--study', 'registered', '--fit'], ['--study', '--fit'], ['--skeleton', '--census', censusFile, '--cache', archives.cache, '--overlay', archives.overlay]]) {
+      const r = await cli(...args);
+      expect(r.code, args.join(' ')).toBe(1);
+      expect(r.stdout, args.join(' ')).toBe('REGIME_DIAG_RUN_VERDICT=REFUSED — a run names its study: --study diag-2026-11-16 | confirm\n');
+    }
+  });
+
+  it('the CLI serves the successor no fit read and no skeleton look: REFUSED, exit 1', { timeout: 90_000 }, async () => {
+    const empty = { cache: path.join(dir, 'empty-cache-c'), overlay: path.join(dir, 'empty-overlay-c') }, s = path.join(dir, 'store-cli-c'), o = path.join(dir, 'out-cli-c');
+    for (const d of Object.values(empty)) fs.mkdirSync(d, { recursive: true });
+    const common = ['--study', 'confirm', '--census', censusFile, '--cache', empty.cache, '--overlay', empty.overlay];
+    const fit = await cli(...common, '--fit', '--store', s, '--out', o), look = await cli(...common, '--skeleton');
+    expect([fit.code, fit.stdout]).toEqual([1, 'REGIME_DIAG_RUN_VERDICT=REFUSED — the confirm study has no fit read: nothing is re-fit\n']);
+    expect([look.code, look.stdout]).toEqual([1, 'REGIME_DIAG_RUN_VERDICT=REFUSED — the confirm study records its skeleton in its one read: it has no skeleton look\n']);
+    expect([fs.existsSync(o), fs.readdirSync(s)]).toEqual([false, ['guard.log']]);
+  });
+
   it('the CLI names a usage error INDETERMINATE and exits 3', { timeout: 90_000 }, async () => {
-    const r = await cli('--fit');
+    const r = await cli('--study', T3.id, '--fit');
     expect(r.code).toBe(3);
     expect(r.stdout).toMatch(/^REGIME_DIAG_RUN_VERDICT=INDETERMINATE — usage/m);
     expect(r.stdout).not.toMatch(/REGIME_DIAG_RUN_VERDICT=PASS/);
@@ -527,7 +772,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
 
   it('the CLI refuses a store inside the repository: REFUSED, exit 1, nothing written', { timeout: 90_000 }, async () => {
     const inside = path.join(REPO, 'tests/fixtures/regime-diag/no-such-store');
-    const r = await cli('--init-store', '--census', censusFile, '--cache', archives.cache, '--overlay', archives.overlay, '--store', inside);
+    const r = await cli('--study', T3.id, '--init-store', '--census', censusFile, '--cache', archives.cache, '--overlay', archives.overlay, '--store', inside);
     expect(r.code).toBe(1);
     expect(r.stdout).toMatch(/^REGIME_DIAG_RUN_VERDICT=REFUSED — the store must sit outside the repository$/m);
     expect(r.stdout).not.toMatch(/REGIME_DIAG_RUN_VERDICT=PASS/);
@@ -537,7 +782,7 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
   it('the CLI never passes a skeleton it could not build: empty archive stores are INDETERMINATE, exit 3', { timeout: 90_000 }, async () => {
     const empty = { cache: path.join(dir, 'empty-cache'), overlay: path.join(dir, 'empty-overlay') };
     for (const d of Object.values(empty)) fs.mkdirSync(d, { recursive: true });
-    const r = await cli('--skeleton', '--census', censusFile, '--cache', empty.cache, '--overlay', empty.overlay);
+    const r = await cli('--study', T3.id, '--skeleton', '--census', censusFile, '--cache', empty.cache, '--overlay', empty.overlay);
     expect(r.code).toBe(3);
     expect(r.stdout).toMatch(/^REGIME_DIAG_RUN_VERDICT=INDETERMINATE — skeleton: the study holds no entry$/m);
     expect(r.stdout).not.toMatch(/REGIME_DIAG_RUN_VERDICT=(PASS|REFUSED)/);
@@ -563,14 +808,21 @@ describe('regime-diag: what was registered is what is run', () => {
 
   it('it pins every harness file, the archive-store manifest, the guard\'s store manifest and the census', () => {
     const p = pinsOf(bytes().toString('utf8'));
-    for (const rel of [...guard.HARNESS_FILES, guard.ARCHIVES_PIN, storePin(VENUE), guard.CENSUS_PIN]) expect(p.get(rel), rel).toMatch(/^[0-9a-f]{64}$/);
+    // the absence probe is the successor's (EDGE-REGIME-CONFIRM-W1): T3 read no month a registration could not pin
+    const PROBE = 'src/scripts/regime-diag/probe-absent.ts';
+    expect([guard.HARNESS_FILES.includes(PROBE), p.has(PROBE)]).toEqual([true, false]);
+    for (const rel of [...guard.HARNESS_FILES.filter((x) => x !== PROBE), guard.ARCHIVES_PIN, storePin(VENUE), guard.CENSUS_PIN]) expect(p.get(rel), rel).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('T3 is closed: only the two bridge files differ from their T3 pins (EDGE-REGIME-DIAG-BRIDGE-W1); every other pinned harness file is the file in this checkout; T9 re-pins', () => {
+  it('T3\'s pins are historical: T3 is closed, its registration is these bytes, and the harness that serves a study now is not the one it pins', () => {
+    // nothing more is appended to a closed study's registration (EDGE-REGIME-CONFIRM-W1: T3's successor has its own)
+    expect([bytes().length, sha256(bytes())]).toEqual([121_650, 'f5c54aeb1fe3bc5f788bfd1a49267d77a4317d95ef7ee3df966b3a59ce8581ee']);
     const p = pinsOf(bytes().toString('utf8'));
-    const drifted = guard.HARNESS_FILES.filter((rel) => p.get(rel) !== sha256(fs.readFileSync(path.join(REPO, rel)))).sort();
-    expect(drifted).toEqual(['scripts/regime-diag/prims.py', 'src/scripts/regime-diag/prims.ts']);
-    for (const rel of guard.HARNESS_FILES.filter((f) => !drifted.includes(f))) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
+    const drifted = guard.HARNESS_FILES.filter((rel) => p.get(rel) !== sha256(fs.readFileSync(path.join(REPO, rel))));
+    // the guard asks every harness file for its pin (leg ii): T3 refuses on its pins leg while one of these differs
+    expect(drifted).toEqual(expect.arrayContaining(['src/scripts/regime-diag/diag-spec.ts', 'src/scripts/regime-diag/guard.ts', 'src/scripts/regime-diag/run.ts']));
+    // what T3 pinned outside the harness is not a study's to change: the classifier and the two statistics libraries are the pinned files still
+    for (const rel of ['src/lib/market-regime-core.ts', 'src/scripts/cluster-perm-stats.py', 'ops/monitoring/population_comparison.py']) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
   });
 
   it('the statistic registry it states is the registry the harness holds, id for id and count for count', () => {

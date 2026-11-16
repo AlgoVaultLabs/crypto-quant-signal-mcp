@@ -579,14 +579,14 @@ describe('regime-diag: the pinned primitives through the bridge', () => {
   it('seeds, bounds, effective clusters, BH and the attainable bound are the module\'s own functions', { timeout: SPAWN }, () => {
     const arm = spec.seedArm('fit', 'A1.S', 'bootstrap');
     expect(arm).toBe('fit|A1.S|bootstrap');
-    expect(seedsFor([arm, 'x'])).toEqual([arm, 'x'].map((a) => parseInt(createHash('sha256').update(`${spec.SEED}:${a}`).digest('hex').slice(0, 8), 16)));
+    expect(seedsFor(spec.SEED, [arm, 'x'])).toEqual([arm, 'x'].map((a) => parseInt(createHash('sha256').update(`${spec.SEED}:${a}`).digest('hex').slice(0, 8), 16)));
     expect(boundsOf([Array.from({ length: 100 }, (_, i) => 100 - i), [5]], 0.025)).toEqual([[3, 98], [5, 5]]);
     expect(boundsOf([Array.from({ length: 20_000 }, (_, i) => i + 1)], 0.025 / 36)).toEqual([[14, 19_987]]);
     expect(kishOf([[1, 1, 1, 1], [10, 1], [0]])).toEqual([4, 121 / 101, 0]);
     expect(bhOf([0.001, 0.5, 0.04, 0.2], 0.1)).toEqual([true, false, true, false]);
     expect(attainableOf([0.5, 0.01, 0.4555])).toEqual([100, 2, 100 * 2 * 0.4555]);
     expect(floorClusters()).toBe(50);
-    expect([seedsFor([]), boundsOf([], 0.025), kishOf([]), bhOf([], 0.1), attainableOf([])]).toEqual([[], [], [], [], []]);
+    expect([seedsFor(spec.SEED, []), boundsOf([], 0.025), kishOf([]), bhOf([], 0.1), attainableOf([])]).toEqual([[], [], [], [], []]);
   });
 
   it('the permutation test is the module\'s own: an ordered relation is found, a constant level has no rho and p = 1', { timeout: SPAWN }, () => {
@@ -611,7 +611,7 @@ describe('regime-diag: the pinned primitives through the bridge', () => {
     expect(() => boundsOf([[]], 0.025)).toThrow();
     expect(() => boundsOf([[1, 2]], 0.6)).toThrow();
     expect(() => prims([{ op: 'nope' } as never])).toThrow();
-    expect(() => seedsFor(['a'], '/nonexistent-repo')).toThrow();
+    expect(() => seedsFor(spec.SEED, ['a'], '/nonexistent-repo')).toThrow();
     expect(() => spec.seedArm('fit', 'A9.S', 'bootstrap')).toThrow(/not in the statistic registry/);
   });
 

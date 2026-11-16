@@ -1,9 +1,17 @@
 // regime-diag/run.ts — EDGE-REGIME-DIAG-W1: the run CLI (registration §1, §5, §6).
 //
-//   npx tsx src/scripts/regime-diag/run.ts --init-store --store S --census F --cache C --overlay O
-//   npx tsx src/scripts/regime-diag/run.ts --skeleton   --census F --cache C --overlay O
-//   npx tsx src/scripts/regime-diag/run.ts --fit        --store S --census F --cache C --overlay O --out DIR
-//   npx tsx src/scripts/regime-diag/run.ts --holdout    --store S --census F --cache C --overlay O --out DIR --fit-result FILE
+//   npx tsx src/scripts/regime-diag/run.ts --study ID --init-store --store S --census F --cache C --overlay O
+//   npx tsx src/scripts/regime-diag/run.ts --study ID --skeleton   --census F --cache C --overlay O
+//   npx tsx src/scripts/regime-diag/run.ts --study ID --fit        --store S --census F --cache C --overlay O --out DIR
+//   npx tsx src/scripts/regime-diag/run.ts --study ID --holdout    --store S --census F --cache C --overlay O --out DIR --fit-result FILE
+//
+// EDGE-REGIME-CONFIRM-W1: a run names its study (`--study`, a `StudyRecord` of diag-spec.ts); there is no default,
+// and a run that names none is refused. `diag-2026-11-16` is T3: closed, and it keeps refusing on its pins and its
+// seal. `confirm` is the successor: one hold-out read (`--holdout`) on entries after T_END, not before its registered
+// date, carrying T3's fit result by sha256, behind its own seal file. It has no fit read and no skeleton look:
+// its one read logs the realized skeleton's sha256 and, against the floor, the clusters it achieved (guard-log legs
+// `skeleton`, `floors`) before the seal is claimed. A coin-month of its outcome months without an archive is absent
+// only by the probe's record (probe-absent.ts, its own CLI; this file never imports it).
 //
 // `--init-store` writes the two manifests a pin section records and prints their sha256. `--skeleton` rebuilds
 // Tables 2a–2e from the archives and compares them with the registration: labels and cardinalities only.
@@ -31,14 +39,14 @@ import {
   N_TF, ROW_SETS, buildFrames, confBin, diffSkeleton, parseCensus, posName, registeredSkeleton, skeletonOf, withOutcomes,
   type Census, type Frame, type Lab, type Loaded, type Skeleton,
 } from './frame.js';
-import { ARCHIVES_PIN, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from './guard.js';
+import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from './guard.js';
 import { PHASE_UP, keyBLead } from './keys.js';
 import { OUT_NULL } from './labeler.js';
 import { attainableOf, bhOf, floorClusters, prims, seedsFor } from './prims.js';
 import {
-  A3_FAMILY, ALPHA, BH_Q, FIT, FLOOR_PP, FLOOR_RATIO, HOLDOUT, KEY_B_DESCRIPTIVE_LEADS, LAST_MONTH, L_UP, L_VOLATILE,
-  REGIME_AGAINST_MIN_CONFIDENCE, REGISTRATION, SECONDARY_IDS, SEED, SPAN, STAT_IDS, TFS, VENUE, VOLATILE_MIN_CONFIDENCE, WAVE,
-  seedArm, statDef, type Span, type Variant, type Win,
+  A3_FAMILY, ALPHA, BH_Q, FLOOR_PP, FLOOR_RATIO, KEY_B_DESCRIPTIVE_LEADS, L_UP, L_VOLATILE,
+  REGIME_AGAINST_MIN_CONFIDENCE, SECONDARY_IDS, STAT_IDS, STUDIES, TFS, VENUE, VOLATILE_MIN_CONFIDENCE,
+  seedArm, statDef, studyOf, type Carry, type Read, type Span, type StudyRecord, type Variant, type Win,
 } from './diag-spec.js';
 import { A3_CELLS, a3CellId, a3Stat, a4, delta1, delta1ByHold, minorityShare, pick, primaryRows, registered, s2, trendDir, type A3Cell, type Built } from './stats.js';
 
@@ -47,12 +55,13 @@ const TOKEN = 'REGIME_DIAG_RUN_VERDICT';
 
 export interface Counts { boot: number; shuffle: number; perm: number }
 /**
- * What a run reads. The registered study is the archive store over the registered span and windows. A test
- * injects a synthetic one, and may shrink the resample counts and lower the cluster floor; its results carry
- * `study: 'injected'`, and a hold-out refuses a fit result of the other kind.
+ * What a run reads. The registered study is the archive store over the span and windows of the study record the
+ * run names. A test injects a synthetic one, and may shrink the resample counts and lower the cluster floor; its
+ * results carry `study: 'injected'`, and a hold-out refuses a fit result of the other kind. A study with no fit
+ * read (the successor) has no fit window.
  */
 export interface Study {
-  span: Span; fit: Win; holdout: Win;
+  span: Span; fit?: Win; holdout: Win;
   load: (pos: number) => Loaded;
   counts?: (id: string) => Counts;
   floorClusters?: number;
@@ -62,15 +71,26 @@ export interface Study {
    * study has none, and its seal is at `sealHome()` whatever store the run names.
    */
   sealHome?: string;
+  /** The fit result a synthetic successor carries: it names its own, never the registered one. */
+  carry?: Carry;
+  /** The instant a synthetic successor's clock leg reads (ms). Absent: the wall clock, as in a registered run. */
+  now?: number;
 }
-export function registeredStudy(archives: ArchiveStore, panel: readonly string[]): Study {
-  return { span: SPAN, fit: FIT, holdout: HOLDOUT, load: (pos) => {
-    const files = coinArchives(archives, panel[pos]);
-    return { g: files.length ? buildGrid(SPAN, files) : null, noArchive: months().length - files.length };
+export function registeredStudy(archives: ArchiveStore, panel: readonly string[], rec: StudyRecord): Study {
+  const yms = months(rec.months.first, rec.months.last);
+  const win = (name: Win['name']): Win | undefined => rec.windows.find((w) => w.name === name);
+  return { span: rec.span, fit: win('fit'), holdout: win('holdout') as Win, load: (pos) => {
+    const files = coinArchives(archives, panel[pos], yms);
+    return { g: files.length ? buildGrid(rec.span, files) : null, noArchive: yms.length - files.length };
   } };
 }
+/** The clock leg: a study with a registered read date computes nothing before it. Null when the read may proceed. */
+export const clockRefusal = (rec: StudyRecord, nowMs: number): string | null =>
+  rec.notBefore && nowMs < Date.parse(rec.notBefore) ? `the ${rec.id} study is read once, not before ${rec.notBefore}` : null;
 
 export interface RunInput {
+  /** The study the run names: the `id` of a record of `STUDIES`. There is no default. */
+  studyId: string;
   mode: 'fit' | 'holdout';
   repo: string;
   /** Repo-relative path of the registration. */
@@ -102,9 +122,9 @@ class Session {
   private readonly ctxs = new Map<string, Ctx>();
   private readonly pres = new Map<string, Pre>();
   private readonly a5effs = new Map<string, number>();
-  constructor(readonly study: Study, public f: Frame, readonly keep?: ReadonlySet<number>) {
+  constructor(readonly rec: StudyRecord, readonly study: Study, public f: Frame, readonly keep?: ReadonlySet<number>) {
     const arms = STAT_IDS.flatMap((id) => PURPOSES.map((p) => seedArm(f.win.name, id, p)));
-    const seeds = seedsFor(arms);
+    const seeds = seedsFor(rec.seed, arms);
     arms.forEach((a, i) => this.seeds.set(a, seeds[i]));
     this.F = study.floorClusters ?? floorClusters();
   }
@@ -323,7 +343,7 @@ function readSecondary(S: Session, ladders: Record<'A1' | 'A2', Ladder | null>):
 
 const winName = (f: Frame): string => (f.win.name === 'holdout' ? 'hold-out' : 'fit');
 /** §5: effective clusters and direction mix of every Table 2d row set, from the bare frame, under the design weights. */
-function floorsOf(S: Session): unknown[] {
+function floorsOf(S: Session): Array<{ window: string; row_set: string; eff: number; [k: string]: unknown }> {
   const f = S.f, ctx = S.ctx();
   const sels = ROW_SETS.map(([, inSet]) => {
     const sel = new Uint8Array(f.has.length);
@@ -415,41 +435,53 @@ const addMonths = (ym: string, k: number): string => {
  * the panel supplies them by. Only where the half-width is above the floor. The fit window can be extended, so it
  * needs the coin-days it lacks; the hold-out cannot, so a successor needs the whole multiple on new months.
  */
-function underpowered(lb: number, ub: number, eff: number, F: number, coinDays: number, extend: boolean): Record<string, unknown> | null {
+function underpowered(lb: number, ub: number, eff: number, F: number, coinDays: number, extend: boolean, lastMonth: string): Record<string, unknown> | null {
   const h = (ub - lb) / 2, multiple = (h / F) ** 2;
   if (!(multiple > 1)) return null;
   const needed = (extend ? multiple - 1 : multiple) * coinDays;
   return { label: 'too little data — underpowered', half_width: h, effective_clusters: eff, multiple, coin_days_in_window: coinDays, coin_days_needed: needed,
-    month: addMonths(LAST_MONTH, Math.ceil(needed / 450)) };
+    month: addMonths(lastMonth, Math.ceil(needed / 450)) };
 }
 
 // ── the skeleton check, and the fit result a hold-out reads ──────────────────────────────────────────────────────
 
-export interface SkeletonCheck { verdict: 'PASS' | 'REFUSED' | 'INDETERMINATE'; reason: string; differences: string[]; frames: Frame[] }
-/** Step 1 of the read: rebuild the skeleton and compare it with the registration's tables. Labels only. */
-export function skeletonCheck(registrationText: string, census: Census, study: Study): SkeletonCheck {
-  let want: Skeleton;
-  try {
-    want = registeredSkeleton(registrationText);
-  } catch (e) {
-    return { verdict: 'INDETERMINATE', reason: `skeleton: ${e instanceof Error ? e.message : String(e)}`, differences: [], frames: [] };
+export interface SkeletonCheck { verdict: 'PASS' | 'REFUSED' | 'INDETERMINATE'; reason: string; differences: string[]; frames: Frame[]; skeleton: Skeleton | null }
+/**
+ * Step 1 of the read: rebuild the skeleton, labels only. A study whose skeleton is `registered` compares it with
+ * the registration's tables; one whose corpus did not exist at registration (`recorded`) has no table to compare
+ * with, and the read records the realized skeleton before any outcome.
+ */
+export function skeletonCheck(registrationText: string, census: Census, study: Study, rec: StudyRecord): SkeletonCheck {
+  let want: Skeleton | null = null;
+  if (rec.skeleton === 'registered') {
+    try {
+      want = registeredSkeleton(registrationText);
+    } catch (e) {
+      return { verdict: 'INDETERMINATE', reason: `skeleton: ${e instanceof Error ? e.message : String(e)}`, differences: [], frames: [], skeleton: null };
+    }
   }
-  const frames = buildFrames(study.span, [study.fit, study.holdout], census, study.load, { outcomes: false, log: study.log ? (l) => study.log?.(`frames: ${l}`) : undefined });
-  if (frames.every((f) => f.nE === 0)) return { verdict: 'INDETERMINATE', reason: 'skeleton: the study holds no entry', differences: [], frames };
-  const differences = diffSkeleton(skeletonOf(frames), want);
-  if (differences.length) return { verdict: 'REFUSED', reason: `skeleton: ${differences.length} cells differ from the registered tables — ${differences.slice(0, 3).join('; ')}`, differences, frames };
-  return { verdict: 'PASS', reason: 'ok', differences, frames };
+  const wins = [study.fit, study.holdout].filter((w): w is Win => w !== undefined);
+  const frames = buildFrames(study.span, wins, census, study.load, { outcomes: false, seed: rec.seed, log: study.log ? (l) => study.log?.(`frames: ${l}`) : undefined });
+  if (frames.every((f) => f.nE === 0)) return { verdict: 'INDETERMINATE', reason: 'skeleton: the study holds no entry', differences: [], frames, skeleton: null };
+  const skeleton = skeletonOf(frames);
+  if (!want) return { verdict: 'PASS', reason: 'ok', differences: [], frames, skeleton };
+  const differences = diffSkeleton(skeleton, want);
+  if (differences.length) return { verdict: 'REFUSED', reason: `skeleton: ${differences.length} cells differ from the registered tables — ${differences.slice(0, 3).join('; ')}`, differences, frames, skeleton };
+  return { verdict: 'PASS', reason: 'ok', differences, frames, skeleton };
 }
 
 interface FitFile {
   kind: string; study: string; registration: { commit: string }; positions: number[];
   fit_points: Record<string, number | null>;
-  primaries: { A3: { selected: string | null; selected_index: number } };
+  primaries: { A3: { selected: string | null; selected_index: number } } & Record<string, { state?: string } | undefined>;
   variants: Record<string, { points: Array<number | null> }>;
 }
-function readFitResult(file: string, marker: string, commit: string): { fit: FitFile; sha: string } | string {
+/** The fit result a hold-out reads. A carried one is that file by sha256, read under the commit the carry names. */
+function readFitResult(file: string, marker: string, commit: string, carry: Carry | null): { fit: FitFile; sha: string } | string {
   if (!fs.existsSync(file)) return 'the fit result is absent';
   const bytes = fs.readFileSync(file);
+  const not = carry ? carryRefusal(bytes, carry) : null;
+  if (not) return not;
   let fit: FitFile;
   try { fit = JSON.parse(bytes.toString('utf8')) as FitFile; } catch { return 'the fit result is not JSON'; }
   const idx = fit?.primaries?.A3?.selected_index;
@@ -476,8 +508,9 @@ export const isPinnedSource = (file: string, repo: string): boolean => real(file
 // ── the outcome run ──────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * A fit-window or a hold-out read, in the registered order: the guard, the skeleton, the floors and the
- * identifiability of every row set, and only then the outcomes. A refusal computes no outcome and is logged.
+ * A fit-window or a hold-out read of the study the run names, in the registered order: the guard, the skeleton,
+ * the floors and the identifiability of every row set, and only then the outcomes. A refusal computes no outcome
+ * and is logged.
  */
 export function outcomeRun(input: RunInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-diag: ${l}\n`); });
@@ -485,55 +518,64 @@ export function outcomeRun(input: RunInput): RunResult {
   const { mode, store } = input;
   // A store inside the repository is never written to, its guard log included; every later refusal is logged.
   if (within(store, input.repo)) return stop('REFUSED', 'the store must sit outside the repository');
-  if (within(input.out, input.repo)) {
-    const reason = 'the output directory must sit outside the repository';
-    logGuard(store, { mode, ok: false, leg: 'out', reason });
-    return stop('REFUSED', reason);
-  }
+  const rec = studyOf(input.studyId);
+  const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, rec ? rec.wave : null, { mode, ok: false, leg, reason }); return stop(verdict, reason); };
+  // A run names its study: nothing defaults to one.
+  if (!rec) return refuse('study', 'REFUSED', `a run names its study (${STUDIES.map((x) => x.id).join(' | ')}): ${input.studyId === undefined ? 'none was named' : `${String(input.studyId)} is not one`}`);
+  if (within(input.out, input.repo)) return refuse('out', 'REFUSED', 'the output directory must sit outside the repository');
+  const read = rec.reads[mode];
+  if (!read) return refuse('study', 'REFUSED', `the ${rec.id} study has no ${mode} read: nothing is re-fit`);
+  if (!input.study && rec.closed) return refuse('study', 'REFUSED', `the ${rec.id} study is closed: its hold-out is spent`);
   if (!input.study && !isPinnedSource(__filename, input.repo)) {
-    const reason = 'the registered study is read by the pinned sources of its repository (tsx src/scripts/regime-diag/run.ts), never a compiled or copied harness';
-    logGuard(store, { mode, ok: false, leg: 'source', reason });
-    return stop('REFUSED', reason);
+    return refuse('source', 'REFUSED', 'the registered study is read by the pinned sources of its repository (tsx src/scripts/regime-diag/run.ts), never a compiled or copied harness');
   }
   // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
   const home = input.study ? input.study.sealHome : sealHome();
-  if (!home) {
-    const reason = 'a synthetic study must name its own seal home';
-    logGuard(store, { mode, ok: false, leg: 'seal-home', reason });
-    return stop('REFUSED', reason);
-  }
-  if (mode === 'holdout' && !input.fitResult) {
-    const reason = 'a hold-out run needs the fit result';
-    logGuard(store, { mode, ok: false, leg: 'fit-result', reason });
-    return stop('REFUSED', reason);
-  }
+  if (!home) return refuse('seal-home', 'REFUSED', 'a synthetic study must name its own seal home');
+  if (mode === 'holdout' && !input.fitResult) return refuse('fit-result', 'REFUSED', 'a hold-out run needs the fit result');
+  // A study that carries a fit result accepts that one file; a synthetic one names its own, never the registered one.
+  const carry = rec.carry ? (input.study ? input.study.carry ?? null : rec.carry) : null;
+  if (rec.carry && !carry) return refuse('fit-result', 'REFUSED', 'a synthetic study that carries a fit result must name its own');
+  const late = clockRefusal(rec, input.study?.now ?? Date.now());
+  if (late) return refuse('clock', 'REFUSED', late);
 
-  const g = checkDiagGuard({ repo: input.repo, registration: input.registration, store, sealHome: home, censusFile: input.censusFile, archives: input.archives, mode });
+  const g = checkDiagGuard({ study: rec, carry: carry ? carry.sha256 : null, repo: input.repo, registration: input.registration, store, sealHome: home, censusFile: input.censusFile, archives: input.archives, mode });
   if (!g.ok) return stop('REFUSED', `guard (${g.leg}): ${g.reason}`);
   log('guard: ok');
-  const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, { mode, ok: false, leg, reason }); return stop(verdict, reason); };
   const census = parseCensus(fs.readFileSync(input.censusFile, 'utf8'));
-  const study = input.study ?? { ...registeredStudy(input.archives, census.panel), log };
+  const study = input.study ?? { ...registeredStudy(input.archives, census.panel, rec), log };
   const marker = input.study ? 'injected' : 'registered';
   let fit: FitFile | null = null, fitSha = '';
   if (mode === 'holdout') {
-    const v = readFitResult(input.fitResult as string, marker, g.registrationCommit as string);
+    const v = readFitResult(input.fitResult as string, marker, carry ? carry.registrationCommit : (g.registrationCommit as string), carry);
     if (typeof v === 'string') return refuse('fit-result', 'REFUSED', v);
     fit = v.fit; fitSha = v.sha;
   }
 
-  const sk = skeletonCheck(g.registrationText as string, census, study);
+  const sk = skeletonCheck(g.registrationText as string, census, study, rec);
   if (sk.verdict !== 'PASS') return refuse('skeleton', sk.verdict, sk.reason);
-  log('skeleton: equal');
-  const bare = sk.frames[mode === 'fit' ? 0 : 1];
+  const recorded = rec.skeleton === 'recorded' ? sk.skeleton : null;
+  if (recorded) logGuard(store, rec.wave, { mode, ok: true, leg: 'skeleton', skeleton_sha256: sha256(JSON.stringify(recorded)) });
+  log(recorded ? 'skeleton: recorded' : 'skeleton: equal');
+  const bare = sk.frames.find((f) => f.win.name === mode) as Frame;
   if (bare.nE === 0) return refuse('skeleton', 'INDETERMINATE', `the ${winName(bare)} window holds no entry`);
 
   const keep = fit ? new Set<number>(fit.positions) : undefined;
-  const S = new Session(study, bare, keep);
+  const S = new Session(rec, study, bare, keep);
   const floors = floorsOf(S);
   const selected = fit && fit.primaries.A3.selected_index >= 0 ? A3_CELLS[fit.primaries.A3.selected_index] : undefined;
   const variants: Array<Variant | undefined> = mode === 'fit' ? [undefined, 'day', 'week', 'unit'] : [undefined, 'day', 'week', 'unit', 'panel13'];
   floorsFirst(S, variants, mode === 'fit' ? A3_CELLS : selected ? [selected] : []);
+  // A study whose skeleton is recorded reads an accruing corpus: the clusters it achieved go on record against the
+  // floor before the seal is claimed and before any outcome is read (PROCEDURE §4a) — every Table 2d row set, and
+  // A3's fit-selected cell. Both are computed on the bare frame: no outcome of the window exists yet.
+  if (recorded) {
+    logGuard(store, rec.wave, {
+      mode, ok: true, leg: 'floors', floor_clusters: S.F,
+      row_sets: floors.map((x) => ({ row_set: x.row_set, eff: x.eff })),
+      a3_selected: selected ? { cell: a3CellId(selected), eff: S.pre([{ base: 'A3.S', cell: selected }])[0].eff } : null,
+    });
+  }
   log(`floors: ${mode}`);
   fs.mkdirSync(input.out, { recursive: true });
   fs.accessSync(input.out, fs.constants.W_OK);
@@ -541,31 +583,33 @@ export function outcomeRun(input: RunInput): RunResult {
   let seal: Record<string, unknown> | null = null;
   if (mode === 'holdout') {
     seal = { registration_commit: g.registrationCommit, origin_main: g.originMain, fit_result_sha256: fitSha, claimed_at: new Date().toISOString() };
-    const claim = claimSeal(home, store, seal);
+    const claim = claimSeal(home, store, rec, seal);
     if (!claim.ok) return stop('REFUSED', `seal: ${claim.reason}`);
     log('seal: claimed');
   }
   const outcome_read_at = new Date().toISOString();
-  logGuard(store, { mode, ok: true, leg: 'outcomes', outcome_read_at });
+  logGuard(store, rec.wave, { mode, ok: true, leg: 'outcomes', outcome_read_at });
   log(`outcomes: ${mode}`);
   S.f = withOutcomes(bare, study.load);
 
   const head = {
-    wave: WAVE, kind: mode, study: marker, seed: SEED, floor_clusters: S.F,
+    wave: rec.wave, kind: mode, study: marker, seed: rec.seed, floor_clusters: S.F,
     registration: { path: input.registration, commit: g.registrationCommit, origin_main: g.originMain },
     clocks: { registration_landed_at: g.landedAt, outcome_read_at },
     pins: g.pins, positions: S.f.coins.filter((c) => c.e1 > c.e0).map((c) => c.pos), entries: S.f.nE, floors,
+    // what only a successor's read records: its study, the realized skeleton, the archives verified at read time
+    ...(recorded ? { study_id: rec.id, skeleton: recorded, archives_verified_at_read: g.later } : {}),
   };
-  const body = mode === 'fit' ? fitStep(S) : holdStep(S, fit as FitFile, selected, seal as Record<string, unknown>);
-  const file = path.join(input.out, `regime-diag-${mode}.json`);
+  const body = mode === 'fit' ? fitStep(S, read.line) : holdStep(S, read.line, fit as FitFile, selected, seal as Record<string, unknown>);
+  const file = path.join(input.out, read.file);
   const text = jsonText({ ...head, line: body.line, ...body.result, drops: S.f.drops, counts: S.used });
   writeAtomic(file, text);
-  logGuard(store, { mode, ok: true, leg: 'result', line: body.line, result_sha256: sha256(text) });
+  logGuard(store, rec.wave, { mode, ok: true, leg: 'result', line: body.line, result_sha256: sha256(text) });
   log(body.line);
   return { verdict: 'PASS', reason: 'ok', line: body.line, file };
 }
 
-function fitStep(S: Session): { line: string; result: Record<string, unknown> } {
+function fitStep(S: Session, line: Read['line']): { line: string; result: Record<string, unknown> } {
   const coinDays = S.ctx().nCl;
   const p = fitRead(S);
   const keys = readKeys(S, p);
@@ -579,7 +623,7 @@ function fitStep(S: Session): { line: string; result: Record<string, unknown> } 
   const family = a3Family(S, p.A3);
   const row = (r: RowRead, i: number): Record<string, unknown> => ({
     state: p.decisions[i].state, cause: p.decisions[i].cause, pre: r.pre, reading: r.reading ? slim(r.reading) : null, flags: flags[i],
-    underpowered: p.decisions[i].state === 'too_little_data' && r.reading ? underpowered(r.reading.lb[0], r.reading.ub[0], r.reading.eff, FLOOR_PP, coinDays, true) : null,
+    underpowered: p.decisions[i].state === 'too_little_data' && r.reading ? underpowered(r.reading.lb[0], r.reading.ub[0], r.reading.eff, FLOOR_PP, coinDays, true, S.rec.months.last) : null,
   });
   const a3row = p.A3.row, r5 = p.A5.reading;
   const primaries = {
@@ -587,14 +631,14 @@ function fitStep(S: Session): { line: string; result: Record<string, unknown> } 
     A3: {
       state: p.decisions[2].state, cause: p.decisions[2].cause, alpha: ALPHA / A3_FAMILY, selected: p.A3.selected >= 0 ? p.A3.cells[p.A3.selected].id : null, selected_index: p.A3.selected,
       cells: p.A3.cells.map(({ k, ...c }) => { void k; return c; }), family, pre: a3row ? a3row.pre : null, reading: a3row && a3row.reading ? slim(a3row.reading) : null, flags: flags[2],
-      underpowered: p.decisions[2].state === 'too_little_data' && a3row && a3row.reading ? underpowered(a3row.reading.lb[0], a3row.reading.ub[0], a3row.reading.eff, FLOOR_PP, coinDays, true) : null,
+      underpowered: p.decisions[2].state === 'too_little_data' && a3row && a3row.reading ? underpowered(a3row.reading.lb[0], a3row.reading.ub[0], a3row.reading.eff, FLOOR_PP, coinDays, true, S.rec.months.last) : null,
     },
     A4: row(p.A4, 3),
     A5: { state: p.decisions[4].state, cause: p.decisions[4].cause, pre: { eff: p.A5.eff, ok: p.A5.eff >= S.F }, reading: r5, flags: flags[4],
-      underpowered: p.decisions[4].state === 'too_little_data' && r5 ? underpowered(r5.lb, r5.ub, r5.eff, FLOOR_RATIO - 1, coinDays, true) : null },
+      underpowered: p.decisions[4].state === 'too_little_data' && r5 ? underpowered(r5.lb, r5.ub, r5.eff, FLOOR_RATIO - 1, coinDays, true, S.rec.months.last) : null },
   };
   const fit_points = Object.fromEntries(p.points.map((x, i) => [`A${i + 1}`, x]));
-  return { line: resultLine('REGIME_DIAG_FIT', p.decisions.map((d) => d.state)), result: { primaries, fit_points, keys, variants, secondary, descriptives: describe(S, r5) } };
+  return { line: resultLine(line, p.decisions.map((d) => d.state)), result: { primaries, fit_points, keys, variants, secondary, descriptives: describe(S, r5) } };
 }
 
 interface HoldRead { states: HoldState[]; rows: Array<RowRead | null>; a5: { eff: number; reading: A5Reading | null }; points: Array<number | null> }
@@ -618,7 +662,7 @@ function holdRead(S: Session, fitPoints: ReadonlyArray<number | null>, cell: A3C
   return { states: [a1[0], a2[0], a3 ? a3[0] : 'NOT_IDENTIFIABLE', a4r[0], s5], rows, a5: { eff, reading }, points: [...rows.map(pointOf), reading ? reading.point : null] };
 }
 
-function holdStep(S: Session, fit: FitFile, cell: A3Cell | undefined, seal: Record<string, unknown>): { line: string; result: Record<string, unknown> } {
+function holdStep(S: Session, line: Read['line'], fit: FitFile, cell: A3Cell | undefined, seal: Record<string, unknown>): { line: string; result: Record<string, unknown> } {
   const coinDays = S.ctx().nCl;
   const base = [1, 2, 3, 4, 5].map((i) => fit.fit_points[`A${i}`] ?? null);
   /** A variant is compared with the fit estimate read under the same variant; A3 and the common panel with the fit's own. */
@@ -634,15 +678,17 @@ function holdStep(S: Session, fit: FitFile, cell: A3Cell | undefined, seal: Reco
   const row = (i: number): Record<string, unknown> => {
     const r = p.rows[i];
     return { state: p.states[i], pre: r ? r.pre : null, reading: r && r.reading ? slim(r.reading) : null, point: p.points[i], fit_point: base[i], shrinkage: shrink(i), flags: flags[i],
-      underpowered: p.states[i] === 'NOT_CONFIRMED' && r && r.reading ? underpowered(r.reading.lb[0], r.reading.ub[0], r.reading.eff, FLOOR_PP, coinDays, false) : null };
+      underpowered: p.states[i] === 'NOT_CONFIRMED' && r && r.reading ? underpowered(r.reading.lb[0], r.reading.ub[0], r.reading.eff, FLOOR_PP, coinDays, false, S.rec.months.last) : null };
   };
   const r5 = p.a5.reading;
   const primaries = {
     A1: row(0), A2: row(1), A3: { ...row(2), cell: cell ? a3CellId(cell) : null }, A4: row(3),
     A5: { state: p.states[4], pre: { eff: p.a5.eff, ok: p.a5.eff >= S.F }, reading: r5, point: p.points[4], fit_point: base[4], shrinkage: shrink(4), flags: flags[4],
-      underpowered: p.states[4] === 'NOT_CONFIRMED' && r5 ? underpowered(r5.lb, r5.ub, r5.eff, FLOOR_RATIO - 1, coinDays, false) : null },
+      underpowered: p.states[4] === 'NOT_CONFIRMED' && r5 ? underpowered(r5.lb, r5.ub, r5.eff, FLOOR_RATIO - 1, coinDays, false, S.rec.months.last) : null },
   };
-  return { line: resultLine('REGIME_DIAG_VERDICT', p.states), result: { seal, primaries, variants, common_positions: fit.positions, descriptives: describe(S, r5) } };
+  // a successor's result carries each primary's fit-window state, from the fit result it carries
+  const carried = S.rec.carry ? { fit_states: Object.fromEntries([1, 2, 3, 4, 5].map((i) => [`A${i}`, fit.primaries[`A${i}`]?.state ?? null])) } : {};
+  return { line: resultLine(line, p.states), result: { seal, ...carried, primaries, variants, common_positions: fit.positions, descriptives: describe(S, r5) } };
 }
 
 // ── the CLI ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -655,28 +701,34 @@ function finish(verdict: 'PASS' | 'REFUSED' | 'INDETERMINATE', reason = ''): voi
 function main(): void {
   const argv = process.argv.slice(2);
   const modes = ['--init-store', '--skeleton', '--fit', '--holdout'].filter((m) => argv.includes(m));
-  const val = (name: string): string | null => { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--') ? path.resolve(argv[i + 1]) : null; };
+  const raw = (name: string): string | null => { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--') ? argv[i + 1] : null; };
+  const val = (name: string): string | null => { const v = raw(name); return v === null ? null : path.resolve(v); };
   const censusFile = val('--census'), cache = val('--cache'), overlay = val('--overlay'), store = val('--store'), out = val('--out'), fitResult = val('--fit-result');
   const mode = modes[0];
-  const usage = 'usage: run.ts --init-store|--skeleton|--fit|--holdout --census F --cache C --overlay O [--store S] [--out DIR] [--fit-result FILE]';
+  // A run names its study: none is the default, and an unknown one is refused before anything is read.
+  const rec = studyOf(raw('--study'));
+  if (!rec) return finish('REFUSED', `a run names its study: --study ${STUDIES.map((x) => x.id).join(' | ')}`);
+  const usage = 'usage: run.ts --study ID --init-store|--skeleton|--fit|--holdout --census F --cache C --overlay O [--store S] [--out DIR] [--fit-result FILE]';
   if (modes.length !== 1 || !censusFile || !cache || !overlay || (mode !== '--skeleton' && !store) || ((mode === '--fit' || mode === '--holdout') && !out) || (mode === '--holdout' && !fitResult)) return finish('INDETERMINATE', usage);
   if (!fs.existsSync(censusFile)) return finish('INDETERMINATE', 'the census file is absent');
   const archives: ArchiveStore = { cache, overlay };
   const log = (l: string): void => { process.stderr.write(`regime-diag: ${l}\n`); };
   if (mode === '--init-store') {
     if (within(store as string, REPO)) return finish('REFUSED', 'the store must sit outside the repository');
-    const made = initStore(store as string, archives, parseCensus(fs.readFileSync(censusFile, 'utf8')).panel);
+    const made = initStore(store as string, archives, parseCensus(fs.readFileSync(censusFile, 'utf8')).panel, rec);
     if (made.archiveFiles === 0) return finish('INDETERMINATE', 'the panel resolves to no archive');
     process.stdout.write(`| \`${ARCHIVES_PIN}\` | \`${made.archivesSha256}\` |\n| \`store:manifest-${VENUE}.json\` | \`${made.guardStoreSha256}\` |\narchive_files=${made.archiveFiles}\n`);
     return finish('PASS');
   }
   if (mode === '--skeleton') {
+    // A recorded skeleton belongs to the study's one read: a look at it beforehand is an interim look.
+    if (rec.skeleton !== 'registered') return finish('REFUSED', `the ${rec.id} study records its skeleton in its one read: it has no skeleton look`);
     const census = parseCensus(fs.readFileSync(censusFile, 'utf8'));
-    const sk = skeletonCheck(fs.readFileSync(path.join(REPO, REGISTRATION), 'utf8'), census, { ...registeredStudy(archives, census.panel), log });
+    const sk = skeletonCheck(fs.readFileSync(path.join(REPO, rec.registration), 'utf8'), census, { ...registeredStudy(archives, census.panel, rec), log }, rec);
     for (const d of sk.differences.slice(0, 40)) process.stdout.write(`${d}\n`);
     return finish(sk.verdict, sk.reason);
   }
-  const r = outcomeRun({ mode: mode === '--fit' ? 'fit' : 'holdout', repo: REPO, registration: REGISTRATION, store: store as string, censusFile, archives, out: out as string, fitResult: fitResult ?? undefined });
+  const r = outcomeRun({ studyId: rec.id, mode: mode === '--fit' ? 'fit' : 'holdout', repo: REPO, registration: rec.registration, store: store as string, censusFile, archives, out: out as string, fitResult: fitResult ?? undefined });
   if (r.line) process.stdout.write(`${r.line}\n`);
   if (r.file) process.stdout.write(`result=${r.file}\n`);
   finish(r.verdict, r.reason);

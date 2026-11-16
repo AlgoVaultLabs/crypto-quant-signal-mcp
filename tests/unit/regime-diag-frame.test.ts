@@ -13,8 +13,8 @@ import { sigma1hFromVolatilityRatio } from '../../src/lib/pre-trade-calc.js';
 const census = parseCensus(SYNTH_CENSUS_TEXT);
 let fit: Frame, hold: Frame, bare: Frame;
 beforeAll(() => {
-  [fit, hold] = buildFrames(SYNTH_SPAN, [SYNTH_FIT, SYNTH_HOLDOUT], census, synthLoad, { outcomes: true });
-  [bare] = buildFrames(SYNTH_SPAN, [SYNTH_HOLDOUT], census, synthLoad, { outcomes: false });
+  [fit, hold] = buildFrames(SYNTH_SPAN, [SYNTH_FIT, SYNTH_HOLDOUT], census, synthLoad, { outcomes: true, seed: spec.SEED });
+  [bare] = buildFrames(SYNTH_SPAN, [SYNTH_HOLDOUT], census, synthLoad, { outcomes: false, seed: spec.SEED });
 }, 240_000);
 
 describe('regime-diag: the census', () => {

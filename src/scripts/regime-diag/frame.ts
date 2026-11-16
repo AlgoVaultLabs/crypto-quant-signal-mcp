@@ -57,7 +57,7 @@ export interface Frame {
 }
 
 export interface Loaded { g: Grid | null; noArchive: number }
-export interface FrameOpts { outcomes: boolean; log?: (line: string) => void }
+export interface FrameOpts { outcomes: boolean; /** The study's seed label (§4.2): the entry draw derives from it. */ seed: string; log?: (line: string) => void }
 
 interface Chunk { n: number; eM: Int32Array; cells: CellTable | null; rows: Omit<Frame, 'win' | 'span' | 'census' | 'outcomes' | 'nE' | 'ePos' | 'eM' | 'cells' | 'drops' | 'coins'> }
 const newRows = (n: number): Chunk['rows'] => {
@@ -93,7 +93,7 @@ export function buildFrames(span: Span, wins: readonly Win[], census: Census, lo
     wins.forEach((win, wi) => {
       const P = parts[wi];
       const keyA = TFS.map((tf, t) => buildKeyA(bars[t], tf, win));
-      const { eligible, picks } = drawEntries(g, win, posName(pos));
+      const { eligible, picks } = drawEntries(g, win, posName(pos), opts.seed);
       for (let m = win.lo; m < win.hi && m < span.n; m++) {
         if (!g.has[m] || (m + PATH_MIN <= win.hi && noGap(g, m - HISTORY_MIN, m + PATH_MIN))) continue;
         inc(P.drops, m + PATH_MIN > win.hi ? 'path_beyond_window' : m - HISTORY_MIN < Math.max(0, g.first) ? 'short_history' : 'gap');
