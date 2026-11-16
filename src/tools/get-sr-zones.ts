@@ -24,12 +24,13 @@
  * (unbilled, not remembered as a failure) while the read finishes in the background, single-flight, and caches its
  * window (or has its failure remembered) for the next call. See boundedWait.
  *
- * Served edges (SR-ZONES-W2 §0.1–§0.2). Every zone's low and high are rounded outward to one step per call, from the
- * response's price and the venue's price tick (src/lib/sr-zones/rounding.ts), once, where the response is built; the
- * summary prints those served ranges. Selection, order, side, state, broke_at, flags, touches, distance_pct, overlaps
- * and the summary's "inside" stay on the computed zone exactly as T1. The tick is Binance's PRICE_FILTER from one
- * exchangeInfo read shared by every coin for 24 h (batch class); a failed, unknown or slower-than-2-s tick read serves
- * the call with the significant-figure step.
+ * Served edges (SR-ZONES-W2 §0.1–§0.2 as R7 #3 amends it). Every zone's low and high are rounded outward to one step
+ * per call, from the response's price and the venue's price tick (src/lib/sr-zones/rounding.ts), once, where the
+ * response is built (src/lib/sr-zones/served.ts). The served zone is the zone: distance_pct, the price_inside_zone flag
+ * and the summary's range, "inside" and distance read the served edges. Selection, order, side, state, broke_at,
+ * touches, no_zone_above / no_zone_below and overlaps stay on the computed zone exactly as T1. The tick is Binance's
+ * PRICE_FILTER from one exchangeInfo read shared by every coin for 24 h (batch class); a failed, unknown or
+ * slower-than-2-s tick read serves the call with the significant-figure step.
  */
 import type { Candle, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
@@ -47,7 +48,8 @@ import { PKG_VERSION } from '../lib/pkg-version.js';
 import { SR_ZONES_PARAMS } from '../lib/sr-zones/params.js';
 import { computeSrZones, attachSrZoneOverlaps, type SrZone, type SrZoneFlag, type SrZonesFrame } from '../lib/sr-zones/zones.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
-import { priceLevelStep, roundFrameOutward } from '../lib/sr-zones/rounding.js';
+import { priceLevelStep } from '../lib/sr-zones/rounding.js';
+import { serveSrZonesFrame } from '../lib/sr-zones/served.js';
 
 const GET_SR_ZONES_TOOL = 'get_sr_zones' as const;
 const VENUE = 'BINANCE' as const;
@@ -440,17 +442,18 @@ export async function runGetSrZones(
     };
   }
 
-  // 4. Overlaps on the computed edges (§0.2), then the served edges: rounded outward once, one step for the call,
-  //    from the response's price and the venue tick (§0.1). The summary prints the served ranges. Bill and answer.
+  // 4. Overlaps on the computed edges (§0.2), then the served frame: edges rounded outward once, one step for the call,
+  //    from the response's price and the venue tick (§0.1); the distance, the inside flag and the summary read those
+  //    served edges (R7 #3). Bill and answer.
   attachSrZoneOverlaps(frames);
   const step = priceLevelStep(price, await tickWithin(tickRead));
   const results: SrZonesTimeframeResult[] = frames.map((f) => {
-    const served = roundFrameOutward(f, step);
+    const served = serveSrZonesFrame(f, price, step);
     return {
       timeframe: f.timeframe,
-      summary: buildSrZonesSummary(coin, f.timeframe, price, f, served),
-      volume_vs_20: f.volume_vs_20,
-      flags: f.flags,
+      summary: buildSrZonesSummary(coin, f.timeframe, price, served),
+      volume_vs_20: served.volume_vs_20,
+      flags: served.flags,
       support: served.support,
       resistance: served.resistance,
     };

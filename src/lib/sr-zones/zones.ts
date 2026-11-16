@@ -203,15 +203,19 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const roundPrice = (x: number): number => Number(x.toPrecision(7));
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
-/** distance_pct: price to the zone's near edge, in percent of price, 2 decimals; 0 when price is at or past that edge. */
-function nearDistancePct(zone: { low: number; high: number }, side: SrSide, price: number): number {
+/**
+ * distance_pct: price to the zone's near edge, in percent of price, 2 decimals; 0 when price is at or past that edge.
+ * A response reads it on the served edges (served.ts, R7 #3).
+ */
+export function nearDistancePct(zone: { low: number; high: number }, side: SrSide, price: number): number {
   const gap = side === 'support' ? price - zone.high : zone.low - price;
   return gap > 0 ? round2((gap / price) * 100) : 0;
 }
 
 /**
- * Price is inside a zone when low <= price <= high, on the zone's emitted edges. The ONE predicate behind both the
- * price_inside_zone flag and the summary's "price inside" (R6 #3): neither re-derives it from a rounded distance.
+ * Price is inside a zone when low <= price <= high, on the edges given (in a response, the served edges: served.ts,
+ * R7 #3). The ONE predicate behind both the price_inside_zone flag and the summary's "price inside" (R6 #3): neither
+ * re-derives it from a rounded distance.
  */
 export function isPriceInsideZone(zone: { low: number; high: number }, price: number): boolean {
   return zone.low <= price && price <= zone.high;

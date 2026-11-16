@@ -9,13 +9,15 @@
  *
  * Every frame from the 21st closed candle on is computed at that candle's close.
  *
- * SR-ZONES-W2 §0.2: the summary prints the served (rounded) range, but "inside" stays the predicate on the computed
- * zone, so #3 holds on the served summary unchanged (BTCUSDT tick 0.1).
+ * SR-ZONES-W2 §0.2 as R7 #3 amends it: a response serves the zone with its edges rounded outward, and distance_pct,
+ * "inside" and the flag read those served edges (BTCUSDT tick 0.1). #3 is judged on the served frame. #2's strict
+ * order is the computed ladder's; served distances can only tie, never invert (#2 served).
  */
 import { describe, it, expect } from 'vitest';
 import { computeSrZones, type SrZone, type SrZonesFrame } from '../../src/lib/sr-zones/zones.js';
 import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
-import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
+import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
+import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
 import { SR_ZONES_PARAMS } from '../../src/lib/sr-zones/params.js';
 import { loadBtcFixture, isoDay } from './sr-zones-helpers.js';
 
@@ -66,18 +68,39 @@ describe('SR-ZONES-W1 R6 — fixture-wide properties', () => {
     expect(violations).toEqual([]);
   });
 
-  it('#3 the summary says "price inside" exactly when zone 1 contains price, and the flag exactly when any zone does', () => {
+  it('#3 the summary says "price inside" exactly when served zone 1 contains price, and the flag exactly when any served zone does', () => {
     const violations: string[] = [];
+    let inside = 0;
     for (const { day, price, frame } of frames) {
-      const text = buildSrZonesSummary('BTC', '1d', price, frame, roundFrameOutward(frame, priceLevelStep(price, 0.1)));
+      const served = serveSrZonesFrame(frame, price, priceLevelStep(price, 0.1));
+      const text = buildSrZonesSummary('BTC', '1d', price, served);
       for (const side of SIDES) {
-        const z1 = frame[side][0];
+        const z1 = served[side][0];
         const says = text.includes(`price inside ${side} zone 1`);
         if (says !== (z1 !== undefined && contains(z1, price))) violations.push(`${day} ${side}: summary inside=${says}`);
+        if (says) inside++;
       }
-      const flagged = frame.flags.includes('price_inside_zone');
-      if (flagged !== SIDES.some((s) => frame[s].some((z) => contains(z, price)))) violations.push(`${day}: flag=${flagged}`);
+      const flagged = served.flags.includes('price_inside_zone');
+      if (flagged !== SIDES.some((s) => served[s].some((z) => contains(z, price)))) violations.push(`${day}: flag=${flagged}`);
     }
     expect(violations).toEqual([]);
+    expect(inside).toBeGreaterThan(0); // not vacuous: the fixture has candles whose price sits inside zone 1
+  });
+
+  it('#2 served: per side, the served distance_pct never decreases with rank (outward rounding can tie, never invert)', () => {
+    const violations: string[] = [];
+    let pairs = 0;
+    for (const { day, price, frame } of frames) {
+      const served = serveSrZonesFrame(frame, price, priceLevelStep(price, 0.1));
+      for (const side of SIDES) {
+        const zs = served[side];
+        for (let i = 1; i < zs.length; i++) {
+          pairs++;
+          if (zs[i].distance_pct < zs[i - 1].distance_pct) violations.push(`${day} ${side} r${i}=${zs[i - 1].distance_pct} r${i + 1}=${zs[i].distance_pct}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+    expect(pairs).toBeGreaterThan(500);
   });
 });

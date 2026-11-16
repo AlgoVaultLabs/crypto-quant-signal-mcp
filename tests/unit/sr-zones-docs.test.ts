@@ -4,10 +4,12 @@
  * production response (BTC, 1d), labelled Example. No other claim, number or venue count, and no inline palette
  * (Design.md §13). The facts lint over the page's text lives with the lint (sr-zones-facts-lint.test.ts).
  *
- * The example response is the production response of 2026-11-16 09:02 UTC (internal key, as the smoke), its edges and
- * summary range projected through the CH1 helper at BTCUSDT's tick 0.1 — what this build serves for those candles —
- * with the call-metadata block `_algovault` left out. These tests hold it to that: every edge on the step, the summary
- * printing those edges, and the field tables naming exactly the keys it carries.
+ * The example response is the production response of 2026-11-16 09:02 UTC (internal key, as the smoke), projected
+ * through this build's served frame at BTCUSDT's tick 0.1 (src/lib/sr-zones/served.ts: the edges rounded outward, and
+ * distance_pct, the inside flag and the summary read from them, R7 #3) — what this build serves for those candles —
+ * with the call-metadata block `_algovault` left out. These tests hold it to that: every edge on the step, each
+ * distance and the flag reading the served edges, the summary printing them, and the field tables naming exactly the
+ * keys it carries.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -123,11 +125,27 @@ describe('SR-ZONES-W2 AC2.3 — the example: one request, one served BTC 1d resp
     }
   });
 
+  it('each zone\'s distance_pct and the inside flag read its served edges (R7 #3)', () => {
+    const r = example();
+    const f = r.results[0];
+    let zones = 0;
+    for (const side of ['support', 'resistance'] as const) {
+      for (const z of f[side]) {
+        const gap = side === 'support' ? r.price - z.high : z.low - r.price;
+        expect(z.distance_pct, `${side} ${z.rank}`).toBe(gap > 0 ? Math.round((gap / r.price) * 100 * 100) / 100 : 0);
+        zones++;
+      }
+    }
+    expect(zones).toBe(6);
+    const inside = [...f.support, ...f.resistance].some((z) => z.low <= r.price && r.price <= z.high);
+    expect(f.flags.includes('price_inside_zone')).toBe(inside);
+  });
+
   it('the summary prints the served edges of zone 1 on each side', () => {
     const r = example();
     const f = r.results[0];
     const frame = { support: f.support, resistance: f.resistance, flags: f.flags as never, volume_vs_20: f.volume_vs_20 };
-    expect(f.summary).toBe(buildSrZonesSummary(r.coin, '1d', r.price, frame, frame));
+    expect(f.summary).toBe(buildSrZonesSummary(r.coin, '1d', r.price, frame));
     expect(f.summary).toContain(`${f.support[0].low}–${f.support[0].high}`);
   });
 

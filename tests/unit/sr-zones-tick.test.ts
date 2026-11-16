@@ -184,11 +184,17 @@ describe('SR-ZONES-W2 AC1.4 — the handler: a failed tick read serves the call 
     if (o.kind !== 'ok') throw new Error(JSON.stringify(o.payload));
     return o.response;
   };
-  /** The response with the edges and summary range of a different step masked. */
+  /** The response with what a different step moves masked: the edges and what reads them (R7 #3), and the summary's. */
   const masked = (r: GetSrZonesResponse): string =>
-    JSON.stringify(r, (k, v) => (k === 'low' || k === 'high' ? 0 : k === 'summary' ? String(v).replace(/zone 1 at [0-9.]+–[0-9.]+/g, '') : v));
+    JSON.stringify(r, (k, v) =>
+      k === 'low' || k === 'high' || k === 'distance_pct'
+        ? 0
+        : k === 'summary'
+          ? String(v).replace(/zone 1 at [0-9.]+–[0-9.]+(, [0-9.]+% (?:below|above))?/g, '')
+          : v,
+    );
 
-  it('tick 0.3 → step 10.2; a rejected, null or throwing read → sig 10; nothing else moves', async () => {
+  it('tick 0.3 → step 10.2; a rejected, null or throwing read → sig 10; nothing but the edges and what reads them moves', async () => {
     const withTick = await serve(async () => 0.3);
     expect(withTick.results[0].support[0]).toMatchObject({ low: 62_475, high: 63_240 });
     for (const failing of [

@@ -455,14 +455,14 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
             flags: [],
             support: [
               {
-                rank: 1, low: 62220, high: 63240, distance_pct: 1.72,
+                rank: 1, low: 62220, high: 63240, distance_pct: 1.71,
                 formed_from: '2026-08-01T00:00:00.000Z', formed_to: '2026-08-14T00:00:00.000Z', members: 7,
                 touch_bars_90: 1, tests_30: 1, last_touch: '2026-11-15T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
               },
             ],
             resistance: [
               {
-                rank: 1, low: 75830, high: 76530, distance_pct: 17.87,
+                rank: 1, low: 75830, high: 76530, distance_pct: 17.86,
                 formed_from: '2026-11-08T00:00:00.000Z', formed_to: '2026-11-08T00:00:00.000Z', members: 1,
                 touch_bars_90: 20, tests_30: 3, last_touch: '2026-11-08T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
               },

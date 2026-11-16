@@ -24,7 +24,8 @@ import { intervalMsFor } from '../../src/lib/candle-guard.js';
 import { StaleUpstreamWindowError, UpstreamRateLimitError } from '../../src/lib/errors.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER } from '../../src/lib/sr-zones/summary.js';
 import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
-import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
+import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
+import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
 import { currentCaller, currentWeightClass, runAsCaller, WeightBudgetSkipError } from '../../src/lib/upstream-weight-budget.js';
 import { processScopedTag } from '../../src/lib/caller-tags.js';
@@ -365,13 +366,14 @@ describe('SR-ZONES-W1 R6 #4 — only closed candles reach the formula', () => {
     const d = deps({ getCandles: async (_coin, _tf, startTime) => series.filter((c) => c.time >= startTime).slice(0, 200) });
     const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, keyed(), d));
     const expected = computedFrame(series, forming.close);
-    // SR-ZONES-W2: the served edges are the computed ones rounded outward to the call's step (no tick here).
-    const served = roundFrameOutward(expected, priceLevelStep(forming.close, null));
+    // SR-ZONES-W2: the served frame is the computed one with its edges rounded outward to the call's step (no tick
+    // here), and the distance and the inside flag read from those edges (R7 #3).
+    const served = serveSrZonesFrame(expected, forming.close, priceLevelStep(forming.close, null));
     expect(r.price).toBe(forming.close);
     const [res] = r.results;
     expect(res.support).toEqual(served.support);
     expect(res.resistance).toEqual(served.resistance);
-    expect(res.flags).toEqual(expected.flags);
+    expect(res.flags).toEqual(served.flags);
     expect(res.volume_vs_20).toBe(expected.volume_vs_20);
   });
 });

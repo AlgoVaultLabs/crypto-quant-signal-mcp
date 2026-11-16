@@ -9,8 +9,9 @@
  * round-trip digits), never a float division: 1.15 / 0.05 is 22.999999999999996 in floats, and a float floor there
  * drops a whole step. So an emitted number carries no float noise and has no more decimals than its step.
  *
- * Only the edges move. Everything a level's other fields say (rank, side, state, distance, flags, overlaps) stays
- * computed on the unrounded level (§0.2); callers round at the point they emit, once.
+ * These helpers move only the edges; callers round at the point they emit, once. What a response then reads from the
+ * served edges (the distance and "inside", R7 #3) is served.ts's: rank, side, state, overlaps and the rest stay
+ * computed on the unrounded level (§0.2).
  */
 
 /** A decimal value: int × 10^exp. */

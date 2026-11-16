@@ -18,9 +18,9 @@ import {
 } from '../../src/lib/sr-zones/zones.js';
 import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
 
-/** The summary of a computed frame served unrounded (SR-ZONES-W2 rounds in the handler; these tests pin the wording). */
+/** The summary of a frame as given (SR-ZONES-W2 serves the frame in the handler; these tests pin the wording). */
 const summaryOf = (coin: string, timeframe: string, price: number, f: SrZonesFrame): string =>
-  buildSrZonesSummary(coin, timeframe, price, f, f);
+  buildSrZonesSummary(coin, timeframe, price, f);
 import { SeriesBuilder } from './sr-zones-helpers.js';
 
 function frameOf(candles: SeriesBuilder['candles'], price: number): SrZonesFrame {

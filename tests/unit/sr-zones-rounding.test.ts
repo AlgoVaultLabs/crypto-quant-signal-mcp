@@ -1,9 +1,11 @@
 /**
- * SR-ZONES-W2 CH1 — served zone edges rounded outward (§0.1) and nothing else moved (§0.2).
+ * SR-ZONES-W2 CH1 — served zone edges rounded outward (§0.1), and what reads them (§0.2 as R7 #3 amends it).
  *
  *   AC1.3  the step table, with and without a venue tick; no emitted value carries float noise
  *   AC1.1  BTC fixture at 67,585.6, tick 0.1: the whole served ladder, locked, through the handler
- *   AC1.5  that response is byte-identical to T1's apart from low, high and the summary range
+ *   AC1.5  that response is byte-identical to T1's apart from low, high, what reads them (distance_pct, the
+ *          price_inside_zone flag) and the summary's range and distance (R7 #3)
+ *   R7 #3  distance_pct and "inside" read the served edges
  *   AC1.2  on each of the last 365 fixture candles every served zone contains its raw zone, each served edge is a
  *          multiple of the step, and |served − raw| < step
  *
@@ -23,12 +25,12 @@ import { _resetCallTrackersForTest, resetLicenseCache } from '../../src/lib/lice
 import { PKG_VERSION } from '../../src/lib/pkg-version.js';
 import { computeSrZones, type SrZone } from '../../src/lib/sr-zones/zones.js';
 import { buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
+import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
 import {
   priceLevelStep,
   roundLevelDown,
   roundLevelUp,
   roundZoneOutward,
-  roundFrameOutward,
   formatLevel,
 } from '../../src/lib/sr-zones/rounding.js';
 import { loadBtcFixture, btcFixtureWithForming } from './sr-zones-helpers.js';
@@ -44,8 +46,8 @@ const decimals = (x: number): number => (String(x).split('.')[1] ?? '').length;
 /** x is a whole multiple of step, judged in floats with a tolerance far below one step. */
 const isMultiple = (x: number, step: number): boolean => Math.abs(x / step - Math.round(x / step)) < 1e-6;
 
-function fixtureDeps(tick: () => Promise<number | null>): SrZonesDeps {
-  const series = btcFixtureWithForming(PRICE);
+function fixtureDeps(tick: () => Promise<number | null>, price: number = PRICE): SrZonesDeps {
+  const series = btcFixtureWithForming(price);
   return {
     nowMs: () => NOW,
     cache: new Map(),
@@ -55,30 +57,40 @@ function fixtureDeps(tick: () => Promise<number | null>): SrZonesDeps {
   };
 }
 
-async function run(tick: () => Promise<number | null> = async () => 0.1): Promise<GetSrZonesResponse> {
-  const o = await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, { tier: 'free', key: 'av_srz_golden' }, fixtureDeps(tick));
+async function run(tick: () => Promise<number | null> = async () => 0.1, price: number = PRICE): Promise<GetSrZonesResponse> {
+  const o = await runGetSrZones({ coin: 'BTC', timeframes: ['1d'] }, { tier: 'free', key: 'av_srz_golden' }, fixtureDeps(tick, price));
   if (o.kind !== 'ok') throw new Error(JSON.stringify(o.payload));
   return o.response;
 }
 
-/** Each "zone 1 at A–B" range in a summary, replaced: the one part of the summary §0.1 rounds. */
+/** Each "zone 1 at A–B" range in a summary. */
 const RANGE = /zone 1 at [0-9.]+–[0-9.]+/g;
-const withoutRanges = (s: string): string => s.replace(RANGE, 'zone 1 at <range>');
+/** Each "zone 1 at A–B[, X% below|above]" in a summary, replaced: the parts that read the served edges (R7 #3). */
+const RANGE_AND_DISTANCE = /zone 1 at [0-9.]+–[0-9.]+(, [0-9.]+% (?:below|above))?/g;
+const withoutRanges = (s: string): string => s.replace(RANGE_AND_DISTANCE, 'zone 1 at <range>');
 
-/** The served response with T1's edges put back and its summary ranges masked: what must equal T1's bytes. */
+/** The served response with T1's edges, distances and flags put back and its summary ranges masked: T1's bytes. */
 function backToT1(served: GetSrZonesResponse, golden: GetSrZonesResponse): GetSrZonesResponse {
   const back = structuredClone(served);
   back.results.forEach((r, ri) => {
     r.summary = withoutRanges(r.summary);
+    r.flags = golden.results[ri].flags;
     for (const side of SIDES) {
       r[side].forEach((z, i) => {
         z.low = golden.results[ri][side][i].low;
         z.high = golden.results[ri][side][i].high;
+        z.distance_pct = golden.results[ri][side][i].distance_pct;
       });
     }
   });
   return back;
 }
+
+/** distance_pct as a float re-derivation from a zone's edges, never the helper's own code. */
+const floatDistance = (z: { low: number; high: number }, side: (typeof SIDES)[number], price: number): number => {
+  const gap = side === 'support' ? price - z.high : z.low - price;
+  return gap > 0 ? Math.round((gap / price) * 100 * 100) / 100 : 0;
+};
 
 function t1Masked(): GetSrZonesResponse {
   const g = structuredClone(GOLDEN);
@@ -203,14 +215,14 @@ describe('SR-ZONES-W2 AC1.1 — the BTC ladder at 67,585.6, tick 0.1, through th
 
   it('the summary prints the served range of zone 1 on each side', async () => {
     expect((await run()).results[0].summary).toBe(
-      'BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480–63240, 6.44% below; ' +
-        'resistance zone 1 at 75830–76450, 12.21% above; last closed candle volume 2.04× its 20-candle average.',
+      'BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480–63240, 6.43% below; ' +
+        'resistance zone 1 at 75830–76450, 12.2% above; last closed candle volume 2.04× its 20-candle average.',
     );
   });
 });
 
-describe('SR-ZONES-W2 AC1.5 — apart from low, high and the summary range, byte-identical to T1', () => {
-  it('the fixture response, with T1\'s edges put back and the ranges masked, is T1\'s bytes', async () => {
+describe('SR-ZONES-W2 AC1.5 — apart from the served edges and what reads them, byte-identical to T1', () => {
+  it('the fixture response, with T1\'s edges, distances and flags put back and the ranges masked, is T1\'s bytes', async () => {
     const served = await run();
     expect(JSON.stringify(backToT1(served, GOLDEN))).toBe(JSON.stringify(t1Masked()));
   });
@@ -223,7 +235,7 @@ describe('SR-ZONES-W2 AC1.5 — apart from low, high and the summary range, byte
     expect(GOLDEN.price).toBe(PRICE);
   });
 
-  it('a different tick moves only the edges and the range (tick 0.3 → step 10.2)', async () => {
+  it('a different tick moves only the edges and what reads them (tick 0.3 → step 10.2)', async () => {
     const at01 = await run(async () => 0.1);
     _resetCallTrackersForTest();
     resetLicenseCache();
@@ -234,19 +246,67 @@ describe('SR-ZONES-W2 AC1.5 — apart from low, high and the summary range, byte
   });
 });
 
-describe('SR-ZONES-W2 §0.2 — "inside" and the distance stay on the computed zone', () => {
-  it('a served range that reaches past price still reads "below" when the computed zone ends under price', () => {
+describe('SR-ZONES-W2 §0.2 as R7 #3 amends it — "inside" and the distance read the SERVED edges', () => {
+  it('a served range that reaches past price reads "price inside" though the computed zone ends just under price', () => {
     const z: SrZone = {
       rank: 1, low: 62_800, high: 63_454.6, distance_pct: 0, formed_from: '2026-08-13T00:00:00.000Z', formed_to: '2026-08-13T00:00:00.000Z',
       members: 1, touch_bars_90: 1, tests_30: 0, last_touch: null, state: 'intact', broke_at: null, overlaps: [],
     };
     const frame = { support: [z], resistance: [], flags: [], volume_vs_20: null };
     const price = 63_456.7;
-    const served = roundFrameOutward(frame, priceLevelStep(price, 0.1));
-    expect(served.support[0]).toMatchObject({ low: 62_800, high: 63_460 });
-    const text = buildSrZonesSummary('BTC', '1d', price, frame, served);
-    expect(text).toContain('support zone 1 at 62800–63460, 0% below');
-    expect(text).not.toContain('price inside');
+    const served = serveSrZonesFrame(frame, price, priceLevelStep(price, 0.1));
+    expect(served.support[0]).toMatchObject({ low: 62_800, high: 63_460, distance_pct: 0 });
+    expect(served.flags).toEqual(['price_inside_zone']);
+    const text = buildSrZonesSummary('BTC', '1d', price, served);
+    expect(text).toContain('price inside support zone 1 at 62800–63460');
+    expect(text).not.toContain('below');
+  });
+
+  it('the distance is price to the SERVED near edge: support 6.44% computed → 6.43% served, resistance 12.21% → 12.2%', async () => {
+    const r = (await run()).results[0];
+    expect([GOLDEN.results[0].support[0].distance_pct, r.support[0].distance_pct]).toEqual([6.44, 6.43]);
+    expect([GOLDEN.results[0].resistance[0].distance_pct, r.resistance[0].distance_pct]).toEqual([12.21, 12.2]);
+    let zones = 0;
+    for (const side of SIDES) {
+      for (const z of r[side]) {
+        expect(z.distance_pct, `${side} ${z.rank}`).toBe(floatDistance(z, side, PRICE));
+        zones++;
+      }
+    }
+    expect(zones).toBe(6);
+    expect(r.flags).toEqual([]);
+  });
+
+  it('through the handler: at 63,235.1 the computed S1 ends under price (62,484.2–63,234.8), the served S1 holds it', async () => {
+    const at = 63_235.1;
+    const closed = loadBtcFixture();
+    const computed = computeSrZones(closed, closed.length - 1, at);
+    if (!computed.ok) throw new Error(computed.reason);
+    expect(computed.frame.support[0]).toMatchObject({ low: 62_484.2, high: 63_234.8 });
+    expect(computed.frame.flags).not.toContain('price_inside_zone');
+    const r = (await run(async () => 0.1, at)).results[0];
+    expect(r.support[0]).toMatchObject({ low: 62_480, high: 63_240, distance_pct: 0 });
+    expect(r.flags).toEqual(['price_inside_zone']);
+    expect(r.summary).toContain('price inside support zone 1 at 62480–63240');
+  });
+
+  it('served flags: no_zone_above / no_zone_below stay as computed, price_inside_zone is re-read and kept last', () => {
+    const z = (low: number, high: number): SrZone => ({
+      rank: 1, low, high, distance_pct: 0.01, formed_from: '', formed_to: '', members: 1, touch_bars_90: 0,
+      tests_30: 0, last_touch: null, state: 'intact', broke_at: null, overlaps: [],
+    });
+    const step = priceLevelStep(100.05, null);
+    expect(step!.value).toBe(0.1);
+    // Computed [99.93, 100.04] ends under 100.05; served [99.9, 100.1] reaches past it.
+    const inside = serveSrZonesFrame({ support: [z(99.93, 100.04)], resistance: [], flags: ['no_zone_above'], volume_vs_20: 1.5 }, 100.05, step);
+    expect(inside.flags).toEqual(['no_zone_above', 'price_inside_zone']);
+    expect(inside.support[0]).toMatchObject({ low: 99.9, high: 100.1, distance_pct: 0 });
+    expect(inside.volume_vs_20).toBe(1.5);
+    // A computed flag the served edges no longer support is not kept: none can exist (served ⊇ computed), so the
+    // re-read is the only source of the flag either way.
+    const outside = serveSrZonesFrame({ support: [], resistance: [z(100.2, 100.3)], flags: ['no_zone_below', 'price_inside_zone'], volume_vs_20: null }, 100.05, step);
+    expect(outside.flags).toEqual(['no_zone_below']);
+    expect(outside.resistance[0].distance_pct).toBe(0.15);
   });
 });
 

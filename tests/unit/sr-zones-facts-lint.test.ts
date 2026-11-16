@@ -18,7 +18,8 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSrZones } from '../../src/lib/sr-zones/zones.js';
 import { SR_ZONES_NOTE, SR_ZONES_ORDER, buildSrZonesSummary } from '../../src/lib/sr-zones/summary.js';
-import { priceLevelStep, roundFrameOutward } from '../../src/lib/sr-zones/rounding.js';
+import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
+import { serveSrZonesFrame } from '../../src/lib/sr-zones/served.js';
 import {
   GET_SR_ZONES_DESCRIPTION,
   PARAM_DESC_SR_ZONES_COIN,
@@ -73,7 +74,7 @@ const summaries: string[] = [];
 for (let t = candles.length - 365; t < candles.length; t++) {
   const price = candles[t].close;
   const r = computeSrZones(candles, t, price);
-  if (r.ok) summaries.push(buildSrZonesSummary('BTC', '1d', price, r.frame, roundFrameOutward(r.frame, priceLevelStep(price, 0.1))));
+  if (r.ok) summaries.push(buildSrZonesSummary('BTC', '1d', price, serveSrZonesFrame(r.frame, price, priceLevelStep(price, 0.1))));
 }
 
 describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
@@ -104,7 +105,7 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
 
 describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
   it('read the lib and the fixture (non-vacuity)', () => {
-    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['params.ts', 'rounding.ts', 'summary.ts', 'zones.ts']);
+    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['params.ts', 'rounding.ts', 'served.ts', 'summary.ts', 'zones.ts']);
     expect(libLiterals.length).toBeGreaterThanOrEqual(20);
     expect(summaries).toHaveLength(365);
   });
