@@ -12,7 +12,8 @@ import { buildFrames, parseCensus, skeletonOf, type Skeleton } from '../../src/s
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { PARITY_FIXTURE } from '../../src/scripts/regime-diag/parity.js';
 import * as run from '../../src/scripts/regime-diag/run.js';
-import { SPAN, type Win } from '../../src/scripts/regime-diag/diag-spec.js';
+import { pinsOf, storePin } from '../../src/scripts/sr-backtest/guard.js';
+import { REGISTRATION, SPAN, STATISTICS, VENUE, type Win } from '../../src/scripts/regime-diag/diag-spec.js';
 import { synthCsv } from '../../src/scripts/regime-diag/synth.js';
 import { SYNTH_CENSUS_TEXT, SYNTH_SPAN, synthLoad, zipSingle } from '../fixtures/regime-diag/synth-study.js';
 
@@ -482,5 +483,40 @@ describe('regime-diag: the outcome guard, the seal and the run, in a sandbox rep
     expect(r.code).toBe(3);
     expect(r.stdout).toMatch(/^REGIME_DIAG_RUN_VERDICT=INDETERMINATE — skeleton: the study holds no entry$/m);
     expect(r.stdout).not.toMatch(/REGIME_DIAG_RUN_VERDICT=(PASS|REFUSED)/);
+  });
+});
+
+describe('regime-diag: what was registered is what is run', () => {
+  const found = (): string[] => fs.readdirSync(path.join(REPO, 'audits')).filter((f) => /^regime-diagnostic-preregistration-\d{4}-\d{2}-\d{2}\.md$/.test(f));
+  const bytes = (): Buffer => fs.readFileSync(path.join(REPO, REGISTRATION));
+  /** The registration as it landed (commit 3935d83c): its length in bytes and its sha256. */
+  const LANDED = { bytes: 80_855, sha256: '4cec7d3088b4c4e95793453140e9bad0c16978862b8a9f0807d97a1bd2688325' };
+
+  it('there is exactly one registration, and it is the one the harness names', () => {
+    expect(found().map((f) => `audits/${f}`)).toEqual([REGISTRATION]);
+  });
+
+  it('the landed body is never edited: its bytes open the file, and everything after them is appended', () => {
+    const b = bytes();
+    expect(b.length).toBeGreaterThan(LANDED.bytes);
+    expect(sha256(b.subarray(0, LANDED.bytes))).toBe(LANDED.sha256);
+    expect(b.subarray(LANDED.bytes).toString('utf8')).toMatch(/^\n## Amendment \d{4}-\d{2}-\d{2} — /);
+  });
+
+  it('it pins every harness file, the archive-store manifest, the guard\'s store manifest and the census', () => {
+    const p = pinsOf(bytes().toString('utf8'));
+    for (const rel of [...guard.HARNESS_FILES, guard.ARCHIVES_PIN, storePin(VENUE), guard.CENSUS_PIN]) expect(p.get(rel), rel).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('the pinned harness files are the files in this checkout', () => {
+    const p = pinsOf(bytes().toString('utf8'));
+    for (const rel of guard.HARNESS_FILES) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
+  });
+
+  it('the statistic registry it states is the registry the harness holds, id for id and count for count', () => {
+    const appended = bytes().subarray(LANDED.bytes).toString('utf8');
+    const stated = new Map<string, number[]>();
+    for (const m of appended.matchAll(/^\|\s*`([A-Za-z0-9.@]+)`\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/gm)) stated.set(m[1], [m[2], m[3], m[4]].map((x) => Number(x.replace(/,/g, ''))));
+    expect([...stated.entries()]).toEqual(STATISTICS.map((s) => [s.id, [s.boot, s.shuffle, s.perm]]));
   });
 });

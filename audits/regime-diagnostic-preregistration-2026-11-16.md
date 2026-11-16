@@ -516,3 +516,213 @@ Lines 6–46 of `Prompt/EDGE-REGIME-DIAG-W1.md` (planning vault) as they stood w
   - One line, `REGIME_DIAG_VERDICT=A1:<state>;A2:<state>;A3:<state>;A4:<state>;A5:<state>`.
 - **Who sees what:** answers 1–3 stay internal; 4–5 can be published only through T7 and Mr.1's OK. Figures vault-only (counterfactual-quarantine pattern).
 ```
+
+## Amendment 2026-11-16 — the harness pins, the statistic registry, one correction and the harness's readings (pre-read; recorded per §1 and §8 / PROCEDURE §8 with its reason)
+
+**Write-time clock (live `date -u`):** 2026-11-16T10:44:04Z.
+
+**Ordering.** Pre-read. No outcome statistic has been computed on real archives. On real archives the harness has run `--init-store` (the two manifests pinned below), `--skeleton` (labels and cardinalities only; it reproduced Tables 2a–2e of §2 with no difference, again with the files pinned here) and two `--fit` attempts, each refused by the guard at leg (ii) because this section had not landed. The study store's guard log holds exactly those two entries, both refusals. Every harness test runs on synthetic series. The body above is unchanged: its 80,855 bytes (sha256 `4cec7d3088b4c4e95793453140e9bad0c16978862b8a9f0807d97a1bd2688325`, as landed at commit `3935d83c5bb18edd852bed5ec712a3f2187308ec`) open this file, and `tests/unit/regime-diag-guard.test.ts` holds that.
+
+**Reason.** §1 and §10 announce this section: the harness files, the statistic registry, the core-parity fixture, the archive-store manifest and the guard's store manifest are pinned before any read. Writing the harness test-first on synthetic fixtures also found one registered value at which a check cannot be evaluated (A2), and reached places where the body is silent or admits more than one reading (A4). Each is fixed here while no outcome exists, so that none can be chosen by a result. PROCEDURE §7 does not apply: there is no result to respecify after.
+
+### A1. Pins
+
+sha256 of the file bytes as committed with the harness, immediately before this section. The guard re-hashes each file on disk before every read. If a pinned file changes before the read, a later appended pin section re-pins it: `pinsOf` keeps the last row for a name.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-diag/archive.ts` | `99b2c1407f000c4bd75d4bdaeba3b28f555461dc59f8aadc6a350e3b57061710` | the 1 m archive reader: the row rules of §3, the minute grid, the bars of §4.1, the archive-store manifest |
+| `src/scripts/regime-diag/bars.ts` | `9aa62d3d082e76516b399dfd3d92c9e87c29f708185be84e124dc1dc52ff7687` | the bar-level statistics: A5, lag, flip-flops |
+| `src/scripts/regime-diag/decide.ts` | `fcc5c410282c8515b9ec8b267b8a7aa5901d9e0ba054e5f30693a874fb919f94` | the decision rule: the states of §6, A3's selection, the secondary families, the ladder, the result lines |
+| `src/scripts/regime-diag/diag-spec.ts` | `e7c400a4f4a64f676203a8c8c0d7bad5afb073d160480ac948f90eb0fb573dc5` | the registered constants and the statistic registry (A3 below) |
+| `src/scripts/regime-diag/engine.ts` | `5c16b35bcd48e6b2a12d7058d621585c761b2337e938595587fe9d35dc1b78b7` | clusters, the cluster bootstrap, the block shuffle, the paired comparators |
+| `src/scripts/regime-diag/frame.ts` | `641442922a0570ff03f519667333e9c410531cfa77851445be00a00c4db48bc8` | the frame of a window, Tables 2a–2e and their comparison with §2, the census reader |
+| `src/scripts/regime-diag/guard.ts` | `a12e63d8609bd9940695cc2c3c3211fbd0a2a64ca03afaa16d913766c912dce6` | the outcome guard and the hold-out seal (§1) |
+| `src/scripts/regime-diag/keys.ts` | `d5a77768ff2f9bfc03f545b84579ff38d9f8edfec0e17e996e7f1e828efcd9c5` | key A and key B (§4.9, §4.10) |
+| `src/scripts/regime-diag/labeler.ts` | `e1caa44ababfe3a6edc1016be93468b7ef3f3ed645775418a11c2b06a3d3f3ce` | the entry draw, the 1 m path label, baselines (a) and (b) (§4.2, §4.4, §4.7) |
+| `src/scripts/regime-diag/mutate.ts` | `dbeeccbefc8904e570c1488052c6bfb3f203201fdc979a0159ed15beebffb004` | the test-only mutation lever; the guard refuses when it is set |
+| `src/scripts/regime-diag/parity.ts` | `b67ba354d06e7938b4e236e75ed2b0a3edcff751147acf64773501bbcf9fc223` | the core-parity check (§1, leg v) |
+| `src/scripts/regime-diag/prims.ts` | `c48851bc54be05e2677aa0ea8185f7ac53279146f4d6b2d12616542f20f34d01` | the bridge to `scripts/regime-diag/prims.py` |
+| `src/scripts/regime-diag/replay.ts` | `21f18c3a5c15704d67828d09d80419f2ef2415c294a7d57bff0c8e12a8ab40a5` | the replay: the served label at an instant, by calling the pinned core |
+| `src/scripts/regime-diag/rng.ts` | `0600473fab31d7e5ac65c7067a16a6250a6378a97cd99e09edfb732809dbe01e` | the seeded streams (§4.2, §4.6) |
+| `src/scripts/regime-diag/run.ts` | `45faeea71b2b67ec836997f2572129134b305fe44f3972ae153ed6865ec8541c` | the run CLI and the order of the read (§1) |
+| `src/scripts/regime-diag/stats.ts` | `0526b8e7f5ce9d0844da6fed2b8d78db51c91d4d36aee2e021963f44dd047fb1` | the five statistics, their key readings and the component-map slices (§4.8–§4.11) |
+| `src/scripts/regime-diag/synth.ts` | `c53c571f1962e9b9f665fd9d8456c190d458d46e63f3daefd3e78b38a4b5afa1` | the synthetic series the core-parity fixture replays; the tests build on it |
+| `scripts/regime-diag/prims.py` | `3cff7107bfe6352be605b8109ef21f0763acf5f8f6fe744f9dfcecc243686037` | calls the pinned primitives of `cluster-perm-stats.py` and `population_comparison.py`; no statistic of its own |
+| `tests/fixtures/regime-diag/core-parity.json` | `75026a14853b8043fed4755a1550a84cfe1e702c5f715984aa65fdf491e4b9a7` | the core-parity fixture: 70 calls on one synthetic series (40 at 1h, 20 at 4h, 10 at 1d) |
+| `store:regime-diag-archives.json` | `b177bd0d4cba9ff46f4a8bc8e2f44b57c0f996457e8a2f3f0b21308b33e6ae1a` | the archive-store manifest: every 1 m archive the panel resolves to, with its sha256 (429 files: 421 from the cache, 8 from the overlay of §2 D7) |
+| `store:manifest-BINANCE.json` | `57c995bbfb65cf07fb210b64b94c6e9e99d866543b5842d52da59cca8d755e53` | the store manifest `checkOutcomeGuard` checks, over an empty plan: this study reads no candle store (§8, correction 7) |
+
+The archive-store manifest and the guard's store manifest live in the study store, outside this repository (§8: the manifest's file names carry the panel). `run.ts --init-store` writes both and prints the two sha256 above. The harness's own legs enforce the first row of the two; `checkOutcomeGuard` enforces the second.
+
+### A2. Correction — A3's shuffle count (a deviation, with its reason)
+
+§4.7 (c) fixes `B_c = 1,000` shuffles, and §4.8 reads A3's shuffle at `p ≤ 0.025 / 36`. With 1,000 shuffles the smallest value `p = (1 + #{T* ≥ S}) / (1 + B_c)` can take is `1 / 1,001`, which is above `0.025 / 36`: the criterion could not be met by any data. A check evaluated at a value the statistic cannot take is undefined, not failed (PROCEDURE §4). A3's selected-cell reading therefore uses `B_c = 20,000` shuffles (smallest `p` = `1 / 20,001`), for `A3.S`, `A3.B`, `A3.A` and A3's sensitivity variants, in both windows. Every other statistic keeps `B_c = 1,000`, and A5's reference (§4.8) keeps its 1,000 shuffles. Found while writing the decision rule's tests on synthetic fixtures. Nothing else in §4.6–§4.8 changes.
+
+### A3. The statistic registry (§4.6)
+
+The ids below are the `<statistic id>` of every seed `arm_seed('20261116', '<window>|<statistic id>|<purpose>')`; `<window>` is `fit` or `holdout`, `<purpose>` is `bootstrap`, `shuffle` or `perm`. A count of 0 means the stream does not exist for that id. The table is `STATISTICS` of `src/scripts/regime-diag/diag-spec.ts`; a test holds the two together.
+
+| statistic id | bootstrap | shuffle | perm | what it is |
+|---|---|---|---|---|
+| `A1.S` | 10,000 | 1,000 | 0 | Δ1 on served TRENDING rows at confidence ≥ 60 |
+| `A2.S` | 10,000 | 1,000 | 0 | S2 on served VOLATILE rows at confidence ≥ 70 |
+| `A3.cells` | 20,000 | 0 | 0 | E(shape, group) in the 36 cells, served labels |
+| `A3.S` | 20,000 | 20,000 | 0 | S3 = E in the fit-selected cell, served labels |
+| `A4.S` | 10,000 | 1,000 | 0 | S4 = A − A_0 on served TRENDING rows with a dated phase |
+| `A5.S` | 10,000 | 1,000 | 0 | R5 on the TRENDING runs of the served per-closed-bar series |
+| `A1.B` | 10,000 | 1,000 | 0 | Δ1 under key B (NO_LAG) |
+| `A1.A` | 10,000 | 1,000 | 0 | Δ1 under key A (CEILING) |
+| `A2.B` | 10,000 | 1,000 | 0 | S2 under key B (NO_LAG) |
+| `A2.A` | 10,000 | 1,000 | 0 | S2 under key A (CEILING: the forward volatility leg) |
+| `A3.B` | 20,000 | 20,000 | 0 | S3 in the fit-selected cell under key B |
+| `A3.A` | 20,000 | 20,000 | 0 | S3 in the fit-selected cell under key A |
+| `A4.B` | 10,000 | 1,000 | 0 | S4 under key B (NO_LAG) |
+| `A5.B` | 10,000 | 1,000 | 0 | R5 on the runs of key B's series |
+| `A4.mono` | 0 | 0 | 1,000 | confidence monotonicity of the agreement g |
+| `A1.all` | 10,000 | 0 | 0 | secondary: Δ1 on all TRENDING rows |
+| `A2.all` | 10,000 | 0 | 0 | secondary: S2 on all VOLATILE rows |
+| `A2.tf.1h` | 10,000 | 0 | 0 | descriptive: S2 on the 1h rows of A2's primary |
+| `A2.tf.4h` | 10,000 | 0 | 0 | descriptive: S2 on the 4h rows of A2's primary |
+| `A2.tf.1d` | 10,000 | 0 | 0 | descriptive: S2 on the 1d rows of A2's primary |
+| `M01` | 10,000 | 0 | 0 | young labels |
+| `M02` | 10,000 | 0 | 0 | ADX (18, 25] |
+| `M03` | 10,000 | 0 | 0 | ADX (25, 30] |
+| `M04` | 10,000 | 0 | 0 | ADX (30, 40] |
+| `M05` | 10,000 | 0 | 0 | ADX above 40 |
+| `M06` | 10,000 | 0 | 0 | slope RISING minus FALLING |
+| `M07` | 10,000 | 0 | 0 | exhaustion |
+| `M08` | 10,000 | 0 | 0 | structure against ±DI |
+| `M09` | 10,000 | 0 | 0 | volatility line |
+| `M10` | 10,000 | 0 | 0 | TRENDING confidence |
+| `M11` | 10,000 | 0 | 0 | VOLATILE confidence |
+| `M12` | 10,000 | 0 | 0 | label timeframe |
+| `A1.S@day` | 10,000 | 1,000 | 0 | Δ1 on served TRENDING rows at confidence ≥ 60 — sensitivity variant day |
+| `A1.S@week` | 10,000 | 1,000 | 0 | Δ1 on served TRENDING rows at confidence ≥ 60 — sensitivity variant week |
+| `A1.S@unit` | 10,000 | 1,000 | 0 | Δ1 on served TRENDING rows at confidence ≥ 60 — sensitivity variant unit |
+| `A1.S@panel13` | 10,000 | 1,000 | 0 | Δ1 on served TRENDING rows at confidence ≥ 60 — sensitivity variant panel13 |
+| `A2.S@day` | 10,000 | 1,000 | 0 | S2 on served VOLATILE rows at confidence ≥ 70 — sensitivity variant day |
+| `A2.S@week` | 10,000 | 1,000 | 0 | S2 on served VOLATILE rows at confidence ≥ 70 — sensitivity variant week |
+| `A2.S@unit` | 10,000 | 1,000 | 0 | S2 on served VOLATILE rows at confidence ≥ 70 — sensitivity variant unit |
+| `A2.S@panel13` | 10,000 | 1,000 | 0 | S2 on served VOLATILE rows at confidence ≥ 70 — sensitivity variant panel13 |
+| `A3.cells@day` | 20,000 | 0 | 0 | E(shape, group) in the 36 cells, served labels — sensitivity variant day |
+| `A3.cells@week` | 20,000 | 0 | 0 | E(shape, group) in the 36 cells, served labels — sensitivity variant week |
+| `A3.cells@unit` | 20,000 | 0 | 0 | E(shape, group) in the 36 cells, served labels — sensitivity variant unit |
+| `A3.cells@panel13` | 20,000 | 0 | 0 | E(shape, group) in the 36 cells, served labels — sensitivity variant panel13 |
+| `A3.S@day` | 20,000 | 20,000 | 0 | S3 = E in the fit-selected cell, served labels — sensitivity variant day |
+| `A3.S@week` | 20,000 | 20,000 | 0 | S3 = E in the fit-selected cell, served labels — sensitivity variant week |
+| `A3.S@unit` | 20,000 | 20,000 | 0 | S3 = E in the fit-selected cell, served labels — sensitivity variant unit |
+| `A3.S@panel13` | 20,000 | 20,000 | 0 | S3 = E in the fit-selected cell, served labels — sensitivity variant panel13 |
+| `A4.S@day` | 10,000 | 1,000 | 0 | S4 = A − A_0 on served TRENDING rows with a dated phase — sensitivity variant day |
+| `A4.S@week` | 10,000 | 1,000 | 0 | S4 = A − A_0 on served TRENDING rows with a dated phase — sensitivity variant week |
+| `A4.S@unit` | 10,000 | 1,000 | 0 | S4 = A − A_0 on served TRENDING rows with a dated phase — sensitivity variant unit |
+| `A4.S@panel13` | 10,000 | 1,000 | 0 | S4 = A − A_0 on served TRENDING rows with a dated phase — sensitivity variant panel13 |
+| `A5.S@day` | 10,000 | 1,000 | 0 | R5 on the TRENDING runs of the served per-closed-bar series — sensitivity variant day |
+| `A5.S@week` | 10,000 | 1,000 | 0 | R5 on the TRENDING runs of the served per-closed-bar series — sensitivity variant week |
+| `A5.S@unit` | 10,000 | 1,000 | 0 | R5 on the TRENDING runs of the served per-closed-bar series — sensitivity variant unit |
+| `A5.S@panel13` | 10,000 | 1,000 | 0 | R5 on the TRENDING runs of the served per-closed-bar series — sensitivity variant panel13 |
+
+A sensitivity variant (`@day`, `@week`, `@unit`, `@panel13`) has its own streams and the counts of its primary. `A3.cells` is the 36-cell family of §4.8: selection, the every-cell rule and the BH family read its resamples.
+
+### A4. Readings — where the body is silent or admits more than one reading
+
+Each line is what the pinned harness does. None was chosen with an outcome in hand.
+
+**Archives, replay, entries (§3, §4.1, §4.2).**
+
+1. Every kline field passes a strict decimal pattern before it becomes a number; a row that fails is not kept.
+2. A seed value — the first four bytes of the sha256 of §4.2 for an entry draw, the value of `arm_seed` for every other stream — seeds mulberry32.
+3. Minute-level drops carry one name each. A window minute that holds a 1 m row and is not eligible counts `path_beyond_window` when `m + 4,320` passes the window's end; otherwise `short_history` when `m − 10,080` falls before the later of the grid origin and the coin's first row; otherwise `gap`.
+4. The per-closed-bar series is computed over the whole span, not per window. A label's age (map row 1) is the number of consecutive closes, ending at the latest bar boundary at or before the entry, that carry the entry's label; it is 0 when the series' label at that boundary differs from the entry's.
+5. The outcome frame is the skeleton-checked, label-free frame with outcomes added. The replay is not run a second time.
+6. Entries per complete position, used when the skeleton is compared with §2: `round(24 · (hi − 4,320 − max(lo, 10,080) + 1) / 1,440)` for a window `[lo, hi)` in grid minutes. The comparison reads Tables 2a–2e from this file's own text.
+
+**Path labels and baselines (§4.4, §4.7).**
+
+7. The entry bar is part of the path. A hold of `H` hours is `round(H · 60)` 1 m bars. A long's target is touched at `high ≥ level` and its stop at `low ≤ level`, mirrored for a short. A bracket is `both_touch` when the first bar to touch the target is also the first bar to touch the stop.
+8. `null_odds` is checked before `both_touch`, so a bracket is dropped under one name. Null odds are counted per side.
+9. A2's "45 cells and both sides" is the plain mean over the 90 cell-sides. In A3, a side-blind group averages a shape's 10 hold-sides and a TRENDING group its 5 holds.
+10. A1's (d) is read as the body states it: `LB(Δ1) > 0`, `LB(U) > 0`, `LB(D) > 0`. The paired excesses over the always-long, always-short and random-side versions of the same delta are `2D`, `2U` and `Δ1`.
+11. A1 to A4 are computed in percentage points and compared with `F = 3.0`.
+
+**Clusters, bootstrap, shuffle (§4.6, §4.7).**
+
+12. The bootstrap resamples the statistic's own clusters — those carrying at least one selected row — inside each coin.
+13. If any bootstrap replicate of an output is undefined, that output's bounds are undefined and its state is too little data; the count of undefined replicates is reported. An undefined shuffle draw counts against the statistic in both tails.
+14. The block shuffle: the blocks are the maximal runs of equal label in the sequence, and a draw is a uniform (Fisher–Yates) permutation of the blocks. A block travels whole. Two blocks of the same label may come to abut, so run lengths are kept block by block.
+15. A coin × timeframe sequence with fewer than two blocks cannot be shuffled; it stays in place and is named by position and timeframe in the result, for row sequences and for bar sequences.
+16. A key reading's shuffle permutes that key's own label sequence. Rows with no label under the key are outside the sequence.
+17. `A4.mono` is `perm_test`, unweighted, on `A4.S`'s rows: the level is the confidence bin, the win is `g`, the cluster is coin × UTC day.
+
+**Key A and key B (§4.9, §4.10).**
+
+18. Key A's series is the window's full closed bars in time order, with holes closed up, as in R0. A bar is dated when it lies at or after the first turn and before the last. An entry takes the phase of the last bar closed at or before it.
+19. Key A's volatility leg is the mean true range of the 14 bars that open at or after the call (each true range uses the previous bar's close), divided by the entry price. A row without 14 such bars has no leg: it is outside every reading that uses the leg and is counted `undated_volatility_leg`, apart from `undated`.
+20. Key B for bar-level statistics: a close needs its own call (its close and its volatility ratio), the call 14 bars later, and that later instant inside the window.
+21. Key B at leads 7 and 28 is reported as the point values of `Δ1`, `S2` and `S4` under those leads. A slice below the cluster floor is named too little data and not reported.
+22. A key reading (`*.B`, `*.A`) whose rows have fewer than 50 effective clusters is named too little data and not computed. Key readings carry no §4c bound: the identifiability table lists primaries and secondaries.
+
+**A3 (§4.8).**
+
+23. A cell below 50 effective clusters, or NOT_IDENTIFIABLE (a TRENDING group reads the direction mix of all TRENDING rows), is left out of the selection and enters the BH family with `p = 1`.
+24. A3 works is read on `A3.S`, the selected cell's own resamples at the adjusted level, and also needs the shuffle's mean to lie outside the adjusted interval, on the side (c) expects. A3 broken is the every-cell rule on `A3.cells`.
+25. `A3.B` and `A3.A` are read in the fit-selected cell by the general rule at the family level. The served rung of A3's ladder is A3's own state. With no selected cell the ladder is not read.
+26. `A3.S` uses the registry's counts in both windows. The hold-out reads the fit-selected cell at a plain 95% interval.
+
+**A5 and the bar-level tables (§4.8).**
+
+27. `C_j` is the close of the bar that closes at boundary `j`. `σ_bar(j0)` comes from the served series' volatility ratio at `j0` under every key.
+28. The shuffled sequence of a coin × timeframe × window is its eligible boundaries in time order; a block ends at a hole. A run's reference in a draw needs a whole window of the run's length at the place the run lands, with positive σ there; otherwise that draw gives the run no reference.
+29. `c` of a run is the mean of its references over the draws that give it one. A draw's null ratio is `Σ ω·(that draw's reference) / Σ ω·c` over the runs with a reference in the draw. A run with no reference in any draw is left out of the ratio and counted (`unreferenced`).
+30. A run whose `σ_bar(j0)` is not positive, or whose move is not finite, is excluded and counted with `censored_run`.
+31. A5's shuffle reports both tails, an undefined draw counting in both, so that a hold-out can confirm a ratio below 1.
+32. The run-length median is the ω-weighted lower median: the smallest length at which the cumulative weight reaches half.
+33. Lag. For a turn at bar `k`, the closes after `k` are searched up to the next turn's bar, inside the window; the lag is the number of closed bars from the turning bar to the first bar at whose close the series is TRENDING the new way. A turn with no such bar is censored, and the window's last turn is censored at the window's end. The median is the plain median over the pooled uncensored turns of every coin, per timeframe (the mean of the two middle values when their number is even).
+34. Flip-flops. Over consecutive labelled closes inside the window, a label change counts once when the previous label is back within 3 closes. The rate is per 1,000 labelled closes.
+35. Lag and flip-flops are descriptive and carry no shuffle null.
+
+**The decision rule, the secondary families, the ladder (§4.11, §6, PROCEDURE §4d).**
+
+36. A statistic whose bounds would satisfy works and broken together is too little data. So is a statistic with no shuffle run or with bounds not computed.
+37. "The statistic's interval excludes the mean of `T*`" is read on the side (c) expects: the shuffle mean lies below `LB`.
+38. A primary, in either window, whose label-free rows have fewer than 50 effective clusters, or whose §4c bound is below the floor, is not computed: too little data with that cause in the fit window, NOT_IDENTIFIABLE in the hold-out.
+39. Secondary families. A cell that is too little data by the cluster floor, by identifiability or by an undefined resample is not judged on its p-values and enters its BH family with `p = 1` on both sides. The family size stays 14 (36 for A3).
+40. Map row 8's "±DI points the other way" is strict: an exact DI tie is not counted. Table 2e's disagree column counts a tie under its own definition, and the skeleton comparison keeps the table's.
+41. Map row 9's percentile line. `q` is the share, by count, of fit-window non-trending rows at a timeframe (pooled over coins) that the fixed line marks. For each coin × timeframe the line marks the `round(q · n)` rows of largest volatility ratio; a tie goes to the earlier entry.
+42. A map row carries the ladder diagnosis of its answer (rows 9 and 11 and `A2.all` belong to A2, the rest to A1) and nominates no dial under `NO_ROOM`.
+43. The ladder is read from the top. The first key that is too little data stops it. The first broken key gives the diagnosis, unless a key below it works, which is `INCONSISTENT` at the broken key.
+44. A2 is also reported per timeframe (`A2.tf.1h`, `A2.tf.4h`, `A2.tf.1d`; descriptive, bootstrap only). A descriptive slice — these, `Δ1` by timeframe × hold, the key B leads, `A4.mono` — below 50 effective clusters is named too little data and not reported. `Δ1` by timeframe × hold uses map row 12's rows and averages the shapes inside each hold.
+
+**Sensitivity variants (§4.11).**
+
+45. A variant reruns its primary's whole rule under the changed clusters, weights or panel. `@day` pools UTC days across coins into one stratum; `@week` uses coin × 7 consecutive UTC days counted from the grid origin; `@unit` sets every row weight to 1; `@panel13` is the reading on the kept positions alone, with the full panel's weights.
+46. In the fit window A3's variants rerun the cells, the selection and the selected cell. In the hold-out A3's variants read the default fit-selected cell.
+47. A hold-out variant is compared with the fit point read under the same variant (`@day`, `@week`, `@unit`); `@panel13` and A3 use the default fit points.
+
+**The hold-out (§5, §6).**
+
+48. The hold-out's sign test compares `sign(estimate − reference)` in the two windows, the reference being 0 for A1 to A4 and 1 for A5. A fit estimate equal to the reference, or undefined, is NOT_CONFIRMED.
+49. A5 in the hold-out: its interval excludes 1 on the fit-window side. The shuffle reference is its only baseline.
+50. Hold-out effective clusters, for the pre-outcome floor check, are counted on the label-free rows of each primary (for A5: all runs, including ones later left unreferenced).
+51. The underpowered report (§5) is attached where the half-width is above the floor, to a computed primary that is too little data in the fit window or NOT_CONFIRMED in the hold-out. `h = (UB − LB) / 2`; the multiple is `(h / F)²`, with `F = 0.10` for A5. The fit window needs `(multiple − 1)` times its coin-days carrying entries; the hold-out cannot be extended, so a successor needs `multiple` times the hold-out's. The month is the last month of the span advanced by `ceil(needed / 450)`.
+
+**The order of a run, the guard, the result (§1).**
+
+52. Before any outcome in a window, every label-free check of that window is made on the label-free frame: the Table 2d row sets (effective clusters and direction mix under the design weights), each primary's floor and §4c bound, A3's cells or the fit-selected cell, A5's effective clusters, and every variant.
+53. `outcome_read_at` is taken immediately before the outcome frame is built; the path labeler is the first outcome computation. In the hold-out the seal is claimed before that.
+54. The hold-out refuses, before the seal is claimed, a fit result that is absent, is not a fit result, belongs to another study, or was read under another registration commit. Everything else that can be validated without an outcome is validated before the claim too. A hold-out run that fails after the claim leaves the hold-out spent: the seal records the claim.
+55. The descriptive tables of a window are produced in that window's step; the hold-out's only after the seal.
+56. Additions to the guard. Each refusal is logged, with one exception. (a) The registered study is read only by `src/scripts/regime-diag/run.ts` of the repository the guard reads, run from source; a compiled or copied harness is refused before the guard is asked (leg `source`). (b) The guard refuses while the test-only lever `REGIME_DIAG_MUTATE` is set (leg `mutation`). (c) A skeleton that differs from §2, and an unusable fit result, are refusals (legs `skeleton`, `fit-result`). (d) An output directory inside this repository is refused (leg `out`). (e) A study store inside this repository is refused before anything is written, its guard log included: this is the one refusal that leaves no log line. No figure can be written into the repository.
+57. The run commands, from the repository root, with `S` (the study store) and `DIR` (the output directory) outside the repository:
+
+```
+npx tsx src/scripts/regime-diag/run.ts --skeleton --census F --cache C --overlay O
+npx tsx src/scripts/regime-diag/run.ts --fit      --store S --census F --cache C --overlay O --out DIR
+npx tsx src/scripts/regime-diag/run.ts --holdout  --store S --census F --cache C --overlay O --out DIR --fit-result DIR/regime-diag-fit.json
+```
+
+Each prints one line, `REGIME_DIAG_RUN_VERDICT=PASS`, `REGIME_DIAG_RUN_VERDICT=REFUSED — <reason>` or `REGIME_DIAG_RUN_VERDICT=INDETERMINATE — <reason>`, and exits 0, 1 or 3. A caller gates on the token. The result files (`regime-diag-fit.json`, `regime-diag-holdout.json`) are written to `DIR` and carry the `REGIME_DIAG_FIT` and `REGIME_DIAG_VERDICT` lines of §6.
+
+**The aggregation check (§4.1).**
+
+58. "The harness repeats the check on a fixture" is a harness test, not a step of a run: `tests/unit/regime-diag-replay.test.ts` writes venue-format 1h, 4h and 1d klines from a synthetic 1 m series, compares them with the aggregate bar for bar, and proves that one changed kline is seen. Its helper lives with the tests (`tests/fixtures/regime-diag/synth-study.ts`), outside the pinned files; no guard leg depends on it. The aggregation a run uses is the pinned `archive.ts`.
