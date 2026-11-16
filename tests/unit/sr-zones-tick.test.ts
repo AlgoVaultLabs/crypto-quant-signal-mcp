@@ -131,6 +131,41 @@ describe('SR-ZONES-W2 AC1.4 — Binance getPriceTick: one exchangeInfo read, eve
     expect(await a.getPriceTick('BTC')).toBe(0.1);
     expect(f.reads()).toBe(2);
   });
+
+  // R7 #4: a failed read is visible in the log — once per 60 s memo window, quiet while the memo answers.
+  it.each([
+    ['not the exchangeInfo shape', { code: -1, msg: 'not the exchangeInfo shape' }],
+    ['no usable tick on any symbol', { symbols: [EXCHANGE_INFO.symbols[4]] }],
+  ])('a failed read (%s) logs once per 60 s memo window and stays quiet while the memo answers', async (_label, failed) => {
+    let body: unknown = failed;
+    const f = stubExchangeInfo(() => body);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = new BinanceAdapter();
+    expect(await Promise.all(['BTC', 'ETH', 'PEPE'].map((c) => a.getPriceTick(c)))).toEqual([null, null, null]);
+    expect(f.reads()).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/exchangeInfo/);
+    vi.setSystemTime(new Date(NOW + 59_999));
+    expect(await a.getPriceTick('BTC')).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date(NOW + 60_000));
+    expect(await a.getPriceTick('BTC')).toBeNull();
+    expect(f.reads()).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(2);
+    body = EXCHANGE_INFO;
+    vi.setSystemTime(new Date(NOW + 120_000));
+    expect(await a.getPriceTick('BTC')).toBe(0.1);
+    expect(f.reads()).toBe(3);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a good read logs nothing', async () => {
+    stubExchangeInfo(() => EXCHANGE_INFO);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = new BinanceAdapter();
+    expect(await a.getPriceTick('BTC')).toBe(0.1);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('SR-ZONES-W2 AC1.4 — the handler: a failed tick read serves the call with sig, otherwise unchanged', () => {

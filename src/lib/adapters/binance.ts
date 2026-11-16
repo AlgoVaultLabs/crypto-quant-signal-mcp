@@ -113,7 +113,8 @@ const fundingInfoCache = coalescedCache<Map<string, number>>({
 // One /fapi/v1/exchangeInfo read answers every coin for 24 h (all symbols, ~1.2 MB; weight 1, measured 2026-11-16 —
 // weightForBinance's default 5 over-counts it, never under). A failed read, or one where no symbol carries a usable
 // tick, answers "no tick" (an empty map) for exactly 60 s and is then read again; get_sr_zones then rounds to the
-// significant-figure step (AC1.4). A failed read is never answered from an older one.
+// significant-figure step (AC1.4). A failed read is never answered from an older one. Each failed read logs one line
+// (R7 #4); the 60 s memo suppresses the next read, so that is one line per window and none while the memo answers.
 const PRICE_TICK_TTL_MS = 24 * 3_600_000;
 const PRICE_TICK_FAILURE_TTL_MS = 60_000;
 
@@ -123,16 +124,24 @@ interface BinanceExchangeInfo {
 
 const priceTickCache = coalescedCache<ReadonlyMap<string, number>>({
   load: async () => {
-    const info = await binGet<BinanceExchangeInfo>('/fapi/v1/exchangeInfo');
-    if (!Array.isArray(info?.symbols)) throw new Error('Binance /fapi/v1/exchangeInfo: no symbols array');
-    const bySymbol = new Map<string, number>();
-    for (const s of info.symbols as Array<{ symbol?: unknown; filters?: unknown }>) {
-      const filters = Array.isArray(s?.filters) ? (s.filters as Array<{ filterType?: unknown; tickSize?: unknown }>) : [];
-      const tick = safeUpstreamNum(filters.find((f) => f?.filterType === 'PRICE_FILTER')?.tickSize);
-      if (typeof s?.symbol === 'string' && tick !== null && tick > 0) bySymbol.set(s.symbol, tick);
+    try {
+      const info = await binGet<BinanceExchangeInfo>('/fapi/v1/exchangeInfo');
+      if (!Array.isArray(info?.symbols)) throw new Error('Binance /fapi/v1/exchangeInfo: no symbols array');
+      const bySymbol = new Map<string, number>();
+      for (const s of info.symbols as Array<{ symbol?: unknown; filters?: unknown }>) {
+        const filters = Array.isArray(s?.filters) ? (s.filters as Array<{ filterType?: unknown; tickSize?: unknown }>) : [];
+        const tick = safeUpstreamNum(filters.find((f) => f?.filterType === 'PRICE_FILTER')?.tickSize);
+        if (typeof s?.symbol === 'string' && tick !== null && tick > 0) bySymbol.set(s.symbol, tick);
+      }
+      if (bySymbol.size === 0) throw new Error('Binance /fapi/v1/exchangeInfo: no symbol carries a PRICE_FILTER tick');
+      return bySymbol;
+    } catch (err) {
+      console.warn(
+        `[Binance] price-tick read failed (${err instanceof Error ? err.message : String(err)}); ` +
+          'get_sr_zones rounds to the significant-figure step until the read is retried in 60 s',
+      );
+      throw err;
     }
-    if (bySymbol.size === 0) throw new Error('Binance /fapi/v1/exchangeInfo: no symbol carries a PRICE_FILTER tick');
-    return bySymbol;
   },
   ttlMs: PRICE_TICK_TTL_MS,
   negativeTtlMs: PRICE_TICK_FAILURE_TTL_MS,
