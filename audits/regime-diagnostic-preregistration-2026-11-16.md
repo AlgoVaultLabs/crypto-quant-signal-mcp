@@ -726,3 +726,83 @@ Each prints one line, `REGIME_DIAG_RUN_VERDICT=PASS`, `REGIME_DIAG_RUN_VERDICT=R
 **The aggregation check (§4.1).**
 
 58. "The harness repeats the check on a fixture" is a harness test, not a step of a run: `tests/unit/regime-diag-replay.test.ts` writes venue-format 1h, 4h and 1d klines from a synthetic 1 m series, compares them with the aggregate bar for bar, and proves that one changed kline is seen. Its helper lives with the tests (`tests/fixtures/regime-diag/synth-study.ts`), outside the pinned files; no guard leg depends on it. The aggregation a run uses is the pinned `archive.ts`.
+
+## Amendment 2026-11-16 — audit fixes (amendment 2): the key readings' shuffle sequence, map row 9's fixed arm, the hold-out seal's place, and the re-pins (pre-read; recorded per §1 and §8 / PROCEDURE §8 with its reason)
+
+**Write-time clock (live `date -u`):** 2026-11-16T12:42:53Z.
+
+Below, "amendment 1" is the section above (the harness pins, the statistic registry, one correction and the harness's readings); this section is amendment 2.
+
+**Ordering.** Pre-read. No outcome statistic has been computed on real archives. Since amendment 1 landed (commit `c7b0b2e976bdeeae67989afed4c9ce90d6f1f601`), this wave has run no mode of the harness on real archives: the study store's guard log still holds exactly the two refusals amendment 1 records, and the store holds no seal and no result. The audit's evidence and every test of the changes below are on synthetic series. The body and amendment 1 are unchanged: the first 107,648 bytes of this file (sha256 `5bf1161eb61c6806311a5f0c5695c984cd126ca3e802066ebd03cbb42ac7e79b`, as landed at that commit) open it, and this section is appended after them.
+
+**Reason.** An independent audit of the harness against this registration, made before any read (wave spec, chapter 3), returned three findings. In two the pinned harness did not do what the registration says (B1, B3): the code is brought to the registered text and re-pinned (B4), and the registered text stands. In one the registration contradicts itself (B2): the text is settled here, and no code changes. Each is fixed while no outcome exists, so none can be chosen by a result. PROCEDURE §7 does not apply: there is no result to respecify after.
+
+### B1. The key readings' shuffle sequence (the code is brought to reading 16)
+
+Reading 16 of amendment 1 stands as written: a key reading's shuffle permutes that key's own label sequence, and rows with no label under the key are outside the sequence.
+
+The harness pinned in amendment 1 did not do this. It drew each key reading's shuffle over every row a coin × timeframe holds, and the rows with no label under the key formed runs of their own, so labelled runs and unlabelled rows changed places. That is a different null from the registered one. It applied to baseline (c) of every key reading: `A1.A`, `A1.B`, `A2.A`, `A2.B`, `A3.A`, `A3.B`, `A4.B`.
+
+The harness now builds a key reading's sequence, per coin × timeframe, from the rows that carry a label under that key, in time order. A row with no label under the key never enters a draw and never moves. Readings 14 and 15 apply to that sequence: its blocks are its maximal runs of equal label, and a sequence with fewer than two blocks stays in place.
+
+Served readings are not changed. Every row of the frame carries a served label, so a served reading's sequence is every row, as before. The harness tests hold this byte for byte for `A1.S`, `A2.S`, `A4.S`, `A3.S` in three cells, the A3 family, the two all-rows cells and the twelve map rows: their draws equal an independent re-statement of the shuffle, and their digest equals the one recorded from the engine pinned in amendment 1.
+
+Reading 15's names are what they were in the harness pinned in amendment 1: the result names the coin × timeframe sequences of the served label, and the bar sequences, that could not be shuffled. A key's own sequence with fewer than two blocks stays in place in every draw and is not separately named in the result. This is recorded as a limit of the result's reporting (PROCEDURE §8); no statistic depends on it.
+
+The test-only mutation lever gains one value, `keyseq`, which widens a key reading's sequence back to every row. The test of this section is red under it and green without it. The guard refuses while the lever is set (reading 56 b).
+
+### B2. Map row 9's fixed arm, and the support row that mis-stated it (text only; no code change)
+
+The registration says two different things about the rows the fixed volatility line marks.
+
+- The component map (row 9) and reading 41 of amendment 1 define the arm by the line: among non-trending rows, the fixed line marks those whose volatility ratio is above `0.03`.
+- The Support stress-test row for map row 9 gives, as the count "the fixed line flags", 2,237 / 23,195 / 69,775 rows at 1h / 4h / 1d. Those are the fit window's served-VOLATILE rows (Table 2d).
+
+The two sets differ. A non-trending row with a ratio above `0.03` can be served RANGING, through the exhaustion rule (map row 7); such a row is in the first set and not in the second.
+
+The harness pinned in amendment 1 follows the component map and reading 41, and that is what is registered:
+
+1. **Population.** The fit-window rows whose served label is not a trending label, at any confidence.
+2. **Fixed arm.** The rows of that population whose volatility ratio is above `0.03`, whatever their served label. The arm isolates the `0.03` line, the dial of map row 9. It does not isolate the served VOLATILE label.
+3. **Percentile arm.** Drawn from the same population, by reading 41: `q` is the share of the population at a timeframe that the fixed arm marks, and each coin × timeframe marks its `round(q · n)` rows of largest ratio, a tie going to the earlier entry.
+4. **Statistic and criteria.** Unchanged: θ is S2 on the fixed arm minus S2 on the percentile arm, read as component-map row 9 states.
+
+**Support.** In the Support stress-test row for map row 9, the clause "of which the fixed line flags 2,237 / 23,195 / 69,775" is withdrawn as mis-stated: it counted served-VOLATILE rows, not the fixed arm. No figure replaces it. The fixed arm's count was not probed before registration and is not probed now. The rest of the row stands, including the population counts (103,001 / 86,202 / 81,354, which are Table 2d's fit rows less its TRENDING rows) and the verdict, `floor`.
+
+Each arm's support is counted at run time, as the support rows of A3, A4 and A5 already say of theirs: the arm's effective coin × UTC-day clusters, from the rows the arm marks. The count is a function of the labels, the volatility ratio and the design weights; no outcome enters it. The harness takes it in the fit window's secondary step, before the row's statistic is read. Below 50 effective clusters on either arm the row is too little data and enters its family with `p = 1` on both sides (§4.11, reading 39). Reading 52's list of the checks made on the label-free frame is unchanged.
+
+The harness was not run on real archives to settle this, and no harness file changes for it.
+
+### B3. The hold-out seal has one place (the code is brought to §1 and §7)
+
+§1 (leg vi) and §7 stand as written: the hold-out is spent by one read, and the seal refuses a second one.
+
+The harness pinned in amendment 1 kept the seal in the study store a run names, `S/holdout.seal`, and `S` is an argument. `--init-store` in a second directory reproduces both pinned manifests from the same archives; that directory holds no seal; a hold-out run naming it would have been a second read. The audit showed this on a synthetic study. No second store was made for the registered study.
+
+The seal now has one place, which no argument of a run and no environment variable moves:
+
+`<home>/.cache/algovault/regime-diag/store/holdout.seal`
+
+`<home>` is the home directory of the account that runs the harness, as the operating system's user database gives it, not the `HOME` variable. Leg (vi) of the guard reads that file, and the claim of reading 53 creates it there, exclusively, whatever `--store` names. A claim and a refused claim are still logged in the guard log of the store the run named. The seal's record is unchanged.
+
+**The study store.** There is one study store, and the read uses it: `/Users/tank/.cache/algovault/regime-diag/store`. It holds the two manifests pinned in amendment 1 and the guard log with its two refusals, and it is the seal's place. Reading 57's commands stand, with `S` that path. Naming another `S` does not reopen the hold-out.
+
+**Scope of the seal.** The seal is a file under one account on one machine. It refuses a second read made from that account, which is the account that holds the study store and the archive cache.
+
+**Synthetic studies.** A study injected by a test names its own seal home, and is refused before the guard is asked when it names none (leg `seal-home`, logged). The run CLI injects no study, so the registered study cannot name another home. No test reads or writes the registered seal's place.
+
+### B4. Re-pins
+
+sha256 of the file bytes as committed with the fixes, in the two commits immediately before this section. By the rule of amendment 1's pin section, the last row for a name is its pin: these four rows replace the rows of the same names, and every other pin of amendment 1 stands.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-diag/engine.ts` | `bd28d8f31cd77848890126431da31acec2d67e1c7b7343239db73154d02a0cf0` | clusters, the cluster bootstrap, the block shuffle and its sequences (B1), the paired comparators |
+| `src/scripts/regime-diag/guard.ts` | `5f27242172c91fc05db5bf6ea769632b8c1d04f1afe583759fefdd8c8105b568` | the outcome guard, and the hold-out seal and its place (§1, B3) |
+| `src/scripts/regime-diag/mutate.ts` | `fe9638b2b871a9b48ce64d822b9b810f763f8f28c8932b553417989660a667a5` | the test-only mutation lever, now with `keyseq` (B1); the guard refuses when it is set |
+| `src/scripts/regime-diag/run.ts` | `c306af4969e36a37147bff14250c8e856ab8975040068ca94e7c8653daf74473` | the run CLI and the order of the read (§1); it passes the seal's place to the guard (B3) |
+
+The two test files that carry the fixes are recorded here with their bytes as committed in the same two commits. They are not pins: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-diag-stats.test.ts, sha256 `6775978262802ee5421bfcc3d2f3a96b7789870169e3bd9767cb857d891635c7`: B1. Every key reading against reading 16, the served readings byte for byte, and the `keyseq` proof.
+- tests/unit/regime-diag-guard.test.ts, sha256 `bc746d53ffe011b9f6fdcce61ef9e1b757f2166d5d8c6a08ed7522b07d408157`: B3. A second store that reproduces both manifests is refused; the seal's place; the `seal` proof.
