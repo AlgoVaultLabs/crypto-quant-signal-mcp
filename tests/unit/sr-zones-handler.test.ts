@@ -795,14 +795,22 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
   });
 });
 
-describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-shape-snapshot-2026-11-15.json declares', () => {
-  const snap = () => JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'get-sr-zones-shape-snapshot-2026-11-15.json'), 'utf8'));
+// SR-ZONES-W2 CH3: the 2026-11-16 successor (listed in Beta, an x402 route, rounded edges) supersedes the W1 snapshot;
+// every key list is unchanged.
+describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-shape-snapshot-2026-11-16.json declares', () => {
+  const audit = (f: string) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', f), 'utf8'));
+  const snap = () => audit('get-sr-zones-shape-snapshot-2026-11-16.json');
 
   it('pins the §0 key lists, and carries every field the knowledge-bundle builder reads', () => {
     const s = snap();
-    expect(s.endpoint).toBe('get_sr_zones (MCP tool)');
-    expect(s.snapshot_date).toBe('2026-11-15');
+    expect(s.endpoint).toBe('get_sr_zones (MCP tool + POST /x402/get_sr_zones)');
+    expect(s.snapshot_date).toBe('2026-11-16');
     expect(s.superseded_by).toBeUndefined();
+    const w1 = audit('get-sr-zones-shape-snapshot-2026-11-15.json');
+    expect(w1.superseded_by).toBe('get-sr-zones-shape-snapshot-2026-11-16.json');
+    for (const k of ['allowed_keys', 'results_row_keys', 'zone_keys', 'unserved_row_keys', 'overlaps_row_keys', 'state_values', 'flag_values', 'forbidden_keys']) {
+      expect(s[k], k).toEqual(w1[k]);
+    }
     expect(s.allowed_keys).toEqual(TOP_KEYS);
     expect(s.results_row_keys).toEqual(RESULT_KEYS);
     expect(s.zone_keys).toEqual(ZONE_KEYS);

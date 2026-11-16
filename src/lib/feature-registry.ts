@@ -263,11 +263,14 @@ const FEATURE_REGISTRY_LITERAL = [
     // SR-ZONES-W2 — public as Beta: `publicListing: true` (nav, /tools, docs, llms, lobehub) and `beta: true` (every
     //     public surface ends ` (Beta)`). This row sits right after pre_trade_check ON PURPOSE — registry order IS
     //     display order for the nav, the docs sidebar, /tools and tools/list.
+    //   • x402 $0.02 FLAT per call (`httpX402: true`, POST /x402/get_sr_zones, Bazaar-declared): one price however
+    //     many timeframes are served; a call that serves none is refused and never settles. bot, webhook, a2mcp and
+    //     acp stay off; the per-verdict quota rail above is unchanged.
     name: 'get_sr_zones',
     aliases: [],
-    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false },
     quota: { unit: 'per-verdict', holdFree: false },
-    x402: null,
+    x402: { basePriceUsd: 0.02 },
     descriptionRef: 'GET_SR_ZONES_DESCRIPTION',
     enabled: true,
     publicListing: true,

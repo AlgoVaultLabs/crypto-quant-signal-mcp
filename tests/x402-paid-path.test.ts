@@ -210,6 +210,12 @@ beforeEach(async () => {
     ...(await importOriginal<typeof import('../src/tools/pre-trade-check.js')>()),
     runPreTradeCheck: async () => ({ kind: 'ok', response: { coin: 'BTC', decision: 'GO', best_venue: null } }),
   }));
+  // SR-ZONES-W2 CH3: get_sr_zones is a payable route. Its core fn returns the same outcome union, so the mock
+  // returns the served arm (real module spread). `residency:'any'`, so admission does not need the Postgres seam.
+  vi.doMock('../src/tools/get-sr-zones.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../src/tools/get-sr-zones.js')>()),
+    runGetSrZones: async () => ({ kind: 'ok', response: { coin: 'BTC', venue: 'BINANCE', results: [{ timeframe: '1d' }], unserved: [] } }),
+  }));
   vi.doMock('../src/lib/performance-db.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../src/lib/performance-db.js')>()),
     isPgBackend: () => true,
@@ -447,6 +453,7 @@ describe('R2 — every payable route × {clean, duplicated} content-type', () =>
     { path: 'get_equity_call', tool: 'get_equity_call', body: { symbol: 'AAPL' } },
     { path: 'get_equity_regime', tool: 'get_equity_regime', body: { symbol: 'SPY' } },
     { path: 'pre_trade_check', tool: 'pre_trade_check', body: { coin: 'BTC', side: 'long', sizeUsd: 10000 } }, // DECISION-CALL-V1-W3
+    { path: 'get_sr_zones', tool: 'get_sr_zones', body: { coin: 'BTC', timeframes: ['1d'] } }, // SR-ZONES-W2
   ];
 
   /** Repeated header keys are combined by fetch — exactly what a client adding its own

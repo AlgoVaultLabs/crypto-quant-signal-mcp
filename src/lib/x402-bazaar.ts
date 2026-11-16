@@ -15,8 +15,8 @@
  *
  * Scope: ONLY the 402-GATED tools are declared here — the `HTTP_TOOLS` allow-list
  * (`get_trade_signal` / `scan_funding_arb` / `get_market_regime` / `scan_trade_calls` /
- * `get_equity_call` / `get_equity_regime` / `pre_trade_check`; OPS-X402-PRICING-EXPANSION-W1 grew
- * this 3→6, DECISION-CALL-V1-W3 to 7).
+ * `get_equity_call` / `get_equity_regime` / `pre_trade_check` / `get_sr_zones`; OPS-X402-PRICING-EXPANSION-W1
+ * grew this 3→6, DECISION-CALL-V1-W3 to 7, SR-ZONES-W2 to 8).
  * `get_trade_call` is intentionally FREE (North Star: free-tier generosity) and is
  * therefore NOT discoverable — confirmed by Cowork (A2, 2026-05-29).
  * NOTE (FEATURE-REGISTRY-SOT-W1 CH3): `TOOL_PRICING` now ALSO carries a canonical
@@ -31,7 +31,8 @@
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
-import { PUBLIC_VENUE_IDS, PRE_TRADE_CHECK_PARAM_DECL } from './tool-param-schema.js';
+import { PUBLIC_VENUE_IDS, PRE_TRADE_CHECK_PARAM_DECL, SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES } from './tool-param-schema.js';
+import { servedDescription } from './feature-registry.js';
 import {
   PARAM_DESC_PRE_TRADE_COIN,
   PARAM_DESC_PRE_TRADE_SIDE,
@@ -46,6 +47,9 @@ import {
   PARAM_DESC_PRE_TRADE_ORDER_TYPE,
   PARAM_DESC_PRE_TRADE_RULES,
   PRE_TRADE_RULE_PARAM_DESC,
+  PARAM_DESC_SR_ZONES_COIN,
+  PARAM_DESC_SR_ZONES_TIMEFRAMES,
+  PARAM_DESC_SR_ZONES_VENUE,
 } from '../tool-descriptions.js';
 
 /**
@@ -409,6 +413,64 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         best_venue: { exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 11661490.66 },
         regime: { label: 'TRENDING_UP', confidence: 46, timeframe: '4h', source_exchange: 'BINANCE' },
         rule_version: 2,
+      },
+    },
+  },
+
+  // SR-ZONES-W2 CH3: support and resistance zones, flat $0.02 per served call. The description is the SERVED one
+  // (the §0 copy plus the registry's Beta mark), so graduating the tool is still a one-flag edit. The input schema is
+  // the served tools/list schema built from the constants its zod schema reads (tests/unit/sr-zones-x402.test.ts holds
+  // the two equal); it is also this route's validator, so a body tools/list refuses is refused here before any claim.
+  // The output example is a subset of the documented production response (BTC 1d, 2026-11-16, served edges).
+  get_sr_zones: {
+    toolName: 'get_sr_zones',
+    description: servedDescription('get_sr_zones')!,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        coin: { type: 'string', minLength: 1, maxLength: 20, description: PARAM_DESC_SR_ZONES_COIN },
+        timeframes: {
+          type: 'array',
+          items: { type: 'string', enum: [...SR_ZONES_TIMEFRAMES] },
+          minItems: 1,
+          maxItems: 3,
+          description: PARAM_DESC_SR_ZONES_TIMEFRAMES,
+        },
+        venue: { type: 'string', enum: [...SR_ZONES_VENUES], description: PARAM_DESC_SR_ZONES_VENUE },
+      },
+      required: ['coin', 'timeframes'],
+      additionalProperties: false,
+    },
+    example: { coin: 'BTC', timeframes: ['1d'] },
+    output: {
+      example: {
+        coin: 'BTC',
+        venue: 'BINANCE',
+        price: 64340.8,
+        note: 'Zones mark where price has clustered before. Price can move through any zone.',
+        results: [
+          {
+            timeframe: '1d',
+            volume_vs_20: 1.59,
+            flags: [],
+            support: [
+              {
+                rank: 1, low: 62220, high: 63240, distance_pct: 1.72,
+                formed_from: '2026-08-01T00:00:00.000Z', formed_to: '2026-08-14T00:00:00.000Z', members: 7,
+                touch_bars_90: 1, tests_30: 1, last_touch: '2026-11-15T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
+              },
+            ],
+            resistance: [
+              {
+                rank: 1, low: 75830, high: 76530, distance_pct: 17.87,
+                formed_from: '2026-11-08T00:00:00.000Z', formed_to: '2026-11-08T00:00:00.000Z', members: 1,
+                touch_bars_90: 20, tests_30: 3, last_touch: '2026-11-08T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
+              },
+            ],
+          },
+        ],
+        unserved: [],
+        timestamp: 1794819743,
       },
     },
   },
