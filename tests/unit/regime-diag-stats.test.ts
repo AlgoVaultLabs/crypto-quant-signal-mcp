@@ -1,7 +1,8 @@
 // EDGE-REGIME-DIAG-W1 CH2 — the estimation engine and the registered statistics, against independent arithmetic
 // on a hand-built frame. Nothing here reads an archive.
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as engine from '../../src/scripts/regime-diag/engine.js';
 import { accumulate, blocksOf, bootstrap, compute, context, contrast, cwOfRows, effOfCw, joint, sequences, shuffleBlocks, shuffles, tail, type Ctx, type Stat } from '../../src/scripts/regime-diag/engine.js';
 import { phaseLab, type Frame, type Lab } from '../../src/scripts/regime-diag/frame.js';
 import { attainableOf, bhOf, boundsOf, floorClusters, kishOf, prims, seedsFor } from '../../src/scripts/regime-diag/prims.js';
@@ -259,6 +260,122 @@ describe('regime-diag: clusters, weights and the cluster bootstrap', () => {
     expect(pj.rows).toBe(rowsOf((r) => spec.LABELS[f.S.lab[r]]?.startsWith('TRENDING') ?? false).length);
     const rj = bootstrap(ctx, j, pj, 3, mulberry32(8)), rc = bootstrap(ctx, c, pc, 3, mulberry32(8));
     for (let b2 = 0; b2 < 3; b2++) expect([rc[b2 * 3], rc[b2 * 3 + 1], rc[b2 * 3 + 2]]).toEqual([rj[b2 * 10] - rj[b2 * 10 + 5], rj[b2 * 10], rj[b2 * 10 + 5]]);
+  });
+});
+
+// ── CH3 audit F1: a key reading's shuffle permutes that key's own label sequence (amendment 1, reading 16) ─────────
+async function mutated<T>(lever: string, fn: (m: typeof engine) => T): Promise<T> {
+  process.env.REGIME_DIAG_MUTATE = lever;
+  vi.resetModules();
+  try {
+    return fn(await import('../../src/scripts/regime-diag/engine.js'));
+  } finally {
+    delete process.env.REGIME_DIAG_MUTATE;
+    vi.resetModules();
+  }
+}
+const num = (a: number, b: number): number => a - b;
+const bytes = (a: Float64Array): string => createHash('sha256').update(Buffer.from(a.buffer, a.byteOffset, a.byteLength)).digest('hex');
+/** The rows of each coin × timeframe in time order, built here from the frame: every row, or only those `keep` admits. */
+const seqsOf = (keep: (r: number) => boolean = () => true): number[][] =>
+  f.coins.flatMap((c) => [0, 1, 2].map((t) => Array.from({ length: c.e1 - c.e0 }, (_, i) => (c.e0 + i) * N_TF + t).filter((r) => f.has[r] === 1 && ctx.clOf[Math.floor(r / N_TF)] >= 0 && keep(r))))
+    .filter((rows) => rows.length > 0);
+/** The block shuffle written out again: `B` draws over `seqs`, each cut into the maximal runs of the statistic's label. */
+function reference(st: Stat, seqs: number[][], B: number, seed: number): Float64Array {
+  const rnd = mulberry32(seed), nOut = st.names.length, reps = new Float64Array(B * nOut).fill(NaN), tot = new Float64Array(st.m);
+  const bl = seqs.map((rows) => blocksOf(rows.length, (i) => st.seq[rows[i]]));
+  for (let b = 0; b < B; b++) {
+    tot.fill(0);
+    seqs.forEach((rows, q) => {
+      const order = new Int32Array(rows.length), src = new Int32Array(rows.length);
+      shuffleBlocks(bl[q], rnd, order, src);
+      for (let i = 0; i < rows.length; i++) st.add(rows[src[i]], rows[i], ctx.w[rows[i]], tot, 0);
+    });
+    st.evaluate(tot, 0, reps, b * nOut);
+  }
+  return reps;
+}
+/**
+ * What reading 16 asks of one key reading: a draw places each row labelled under the key once and takes each once,
+ * a row with no label under the key is never touched, and the null is the reference's on the key's own sequences.
+ */
+function ownSequence(shuffle: typeof shuffles, id: string, cell?: A3Cell): { unlabelled: number; labelled: number } {
+  const st = registered(f, id, cell)!.stat;
+  const all = seqsOf(), own = seqsOf((r) => st.seq[r] !== NO_LABEL), want = own.flat().sort(num);
+  const B = 3, pairs: Array<[number, number]> = [];
+  const spy: Stat = { ...st, add: (src, place, w, acc, off) => { pairs.push([src, place]); return st.add(src, place, w, acc, off); } };
+  shuffle(f, ctx, spy, B, mulberry32(5));
+  expect(pairs.filter(([src, place]) => st.seq[src] === NO_LABEL || st.seq[place] === NO_LABEL)).toEqual([]);
+  expect(pairs.length).toBe(B * want.length);
+  for (let b = 0; b < B; b++) {
+    const draw = pairs.slice(b * want.length, (b + 1) * want.length);
+    expect(draw.map(([, place]) => place).sort(num)).toEqual(want);
+    expect(draw.map(([src]) => src).sort(num)).toEqual(want);
+  }
+  expect(bytes(shuffle(f, ctx, st, 40, mulberry32(9)))).toBe(bytes(reference(st, own, 40, 9)));
+  return { unlabelled: all.flat().length - want.length, labelled: want.length };
+}
+
+describe('regime-diag: a key reading shuffles the key\'s own label sequence (CH3 audit F1; amendment 1, reading 16)', () => {
+  const cellOf = (shape: number, group: number): A3Cell => A3_CELLS.find((c) => c.shape === shape && c.group === group)!;
+  const KEYED: Array<[string, A3Cell?]> = [['A1.A'], ['A1.B'], ['A2.A'], ['A2.B'], ['A4.B'],
+    ['A3.B', cellOf(0, 0)], ['A3.A', cellOf(0, 0)], ['A3.B', cellOf(1, 1)], ['A3.A', cellOf(1, 1)], ['A3.B', cellOf(2, 2)], ['A3.B', cellOf(0, 3)], ['A3.A', cellOf(0, 3)]];
+  const SERVED: Array<[string, A3Cell?]> = [['A1.S'], ['A2.S'], ['A4.S'], ['A3.S', cellOf(0, 0)], ['A3.S', cellOf(2, 2)], ['A3.S', cellOf(0, 3)], ['A1.all'], ['A2.all'], ['A3.cells'],
+    ...['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'].map((id): [string] => [id])];
+
+  it('sequences: every row of a coin × timeframe in time order, or only the rows that carry a label under the key', () => {
+    expect(sequences(f, ctx).map((r) => Array.from(r))).toEqual(seqsOf());
+    for (const lab of [f.B.lab, f.B28.lab, phaseLab(f).lab, volLab(f).lab]) {
+      const own = seqsOf((r) => lab[r] !== NO_LABEL);
+      expect(own.flat().length).toBeLessThan(seqsOf().flat().length);
+      expect(sequences(f, ctx, lab).map((r) => Array.from(r))).toEqual(own);
+    }
+    // the served label is on every row the frame has: its own sequences are the full ones
+    expect(sequences(f, ctx, f.S.lab).map((r) => Array.from(r))).toEqual(seqsOf());
+    // a coin × timeframe with no labelled row has no sequence
+    const none = new Uint8Array(f.has.length).fill(NO_LABEL);
+    seqsOf()[4].forEach((r) => { none[r] = L_UP; });
+    expect(sequences(f, ctx, none).map((r) => Array.from(r))).toEqual([seqsOf()[4]]);
+  });
+
+  for (const [id, cell] of KEYED) {
+    it(`${id}${cell ? ` in ${a3CellId(cell)}` : ''}: no row without a label under the key enters a draw, and the null is the key's own`, () => {
+      const got = ownSequence(shuffles, id, cell);
+      // the fixture has rows the key does not label, and rows it does: the check is not vacuous
+      expect(got.unlabelled).toBeGreaterThan(0);
+      expect(got.labelled).toBeGreaterThan(0);
+    });
+  }
+
+  it('a key sequence with fewer than two runs stays in place: nothing is drawn for it', () => {
+    const st = registered(f, 'A1.B')!.stat, own = seqsOf((r) => st.seq[r] !== NO_LABEL);
+    // one label on the whole first sequence: one block
+    const flat = Uint8Array.from(st.seq);
+    own[0].forEach((r) => { flat[r] = L_UP; });
+    const one: Stat = { ...st, seq: flat }, pairs: Array<[number, number]> = [];
+    const spy: Stat = { ...one, add: (src, place, w, acc, off) => { pairs.push([src, place]); return one.add(src, place, w, acc, off); } };
+    shuffles(f, ctx, spy, 2, mulberry32(3));
+    for (const [src, place] of pairs) if (own[0].includes(place)) expect(src).toBe(place);
+    expect(bytes(shuffles(f, ctx, one, 20, mulberry32(3)))).toBe(bytes(reference(one, own, 20, 3)));
+  });
+
+  it('a served reading is untouched: byte for byte the draws over every row, as before the key sequences were cut', () => {
+    const all = seqsOf(), digest = createHash('sha256');
+    for (const [id, cell] of SERVED) {
+      const st = registered(f, id, cell)!.stat;
+      expect(all.flat().filter((r) => st.seq[r] === NO_LABEL)).toEqual([]);
+      const got = shuffles(f, ctx, st, 25, mulberry32(21));
+      expect(bytes(got)).toBe(bytes(reference(st, all, 25, 21)));
+      digest.update(id).update(Buffer.from(got.buffer, got.byteOffset, got.byteLength));
+    }
+    // the digest of these draws as the engine stood at c7b0b2e9, before this fix
+    expect(digest.digest('hex')).toBe('32271e5a06cdcb5035169d93073a74fdba2731c7185d3eabf6e5247d8078fd95');
+  });
+
+  it('the proof: with the sequence widened back to every row (REGIME_DIAG_MUTATE=keyseq) the check is red; restored, green', async () => {
+    await expect(mutated('keyseq', (m) => ownSequence(m.shuffles, 'A1.B'))).rejects.toThrow(/to deeply equal/);
+    await expect(mutated('keyseq', (m) => ownSequence(m.shuffles, 'A2.A'))).rejects.toThrow(/to deeply equal/);
+    expect(ownSequence(shuffles, 'A1.B').unlabelled).toBeGreaterThan(0);
   });
 });
 

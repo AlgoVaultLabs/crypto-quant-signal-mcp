@@ -7,7 +7,8 @@
 import { N_TF, dayOf, type Frame } from './frame.js';
 import { boundsOf, kishOf } from './prims.js';
 import { mulberry32, type Rnd } from './rng.js';
-import { type Variant } from './diag-spec.js';
+import { MUTATE } from './mutate.js';
+import { NO_LABEL, type Variant } from './diag-spec.js';
 
 /** Clusters, strata and row weights of one reading. Variants of §4.11 change exactly these. */
 export interface Ctx {
@@ -143,22 +144,32 @@ export function shuffleBlocks(bl: Blocks, rnd: Rnd, order: Int32Array, src: Int3
   }
 }
 
-/** The rows of each coin × timeframe that a reading holds, in time order. */
-export function sequences(f: Frame, ctx: Ctx): Int32Array[] {
+/**
+ * The rows of each coin × timeframe that a reading holds, in time order. With `lab`, only the rows that carry a
+ * label under it: a row with no label under a key is outside that key's sequence.
+ */
+export function sequences(f: Frame, ctx: Ctx, lab?: Uint8Array): Int32Array[] {
   const out: Int32Array[] = [];
   for (const c of f.coins) {
     for (let t = 0; t < N_TF; t++) {
       const rows: number[] = [];
-      for (let e = c.e0; e < c.e1; e++) if (f.has[e * N_TF + t] && ctx.clOf[e] >= 0) rows.push(e * N_TF + t);
+      for (let e = c.e0; e < c.e1; e++) {
+        const r = e * N_TF + t;
+        if (f.has[r] && ctx.clOf[e] >= 0 && (!lab || lab[r] !== NO_LABEL)) rows.push(r);
+      }
       if (rows.length) out.push(Int32Array.from(rows));
     }
   }
   return out;
 }
 
-/** `B` block shuffles of the statistic's label sequence. Row-major: shuffle × output. */
+/**
+ * `B` block shuffles of the statistic's own label sequence. Row-major: shuffle × output. The sequence is the rows
+ * labelled under the statistic's key: an unlabelled row never enters a draw and never moves. Every row the frame
+ * has carries a served label, so a served reading's sequence is every row.
+ */
 export function shuffles(f: Frame, ctx: Ctx, s: Stat, B: number, rnd: Rnd): Float64Array {
-  const seqs = sequences(f, ctx);
+  const seqs = sequences(f, ctx, MUTATE === 'keyseq' ? undefined : s.seq);
   const blocks = seqs.map((rows) => blocksOf(rows.length, (i) => s.seq[rows[i]]));
   const maxN = seqs.reduce((n, r) => Math.max(n, r.length), 0);
   const order = new Int32Array(maxN), src = new Int32Array(maxN);
