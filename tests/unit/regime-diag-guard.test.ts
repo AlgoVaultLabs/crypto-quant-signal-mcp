@@ -566,9 +566,11 @@ describe('regime-diag: what was registered is what is run', () => {
     for (const rel of [...guard.HARNESS_FILES, guard.ARCHIVES_PIN, storePin(VENUE), guard.CENSUS_PIN]) expect(p.get(rel), rel).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the pinned harness files are the files in this checkout', () => {
+  it('T3 is closed: only the two bridge files differ from their T3 pins (EDGE-REGIME-DIAG-BRIDGE-W1); every other pinned harness file is the file in this checkout; T9 re-pins', () => {
     const p = pinsOf(bytes().toString('utf8'));
-    for (const rel of guard.HARNESS_FILES) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
+    const drifted = guard.HARNESS_FILES.filter((rel) => p.get(rel) !== sha256(fs.readFileSync(path.join(REPO, rel)))).sort();
+    expect(drifted).toEqual(['scripts/regime-diag/prims.py', 'src/scripts/regime-diag/prims.ts']);
+    for (const rel of guard.HARNESS_FILES.filter((f) => !drifted.includes(f))) expect(p.get(rel), rel).toBe(sha256(fs.readFileSync(path.join(REPO, rel))));
   });
 
   it('the statistic registry it states is the registry the harness holds, id for id and count for count', () => {
