@@ -88,6 +88,22 @@ function waitFor(pred: () => boolean, ms: number): boolean {
   return pred();
 }
 
+// A DETACHED sweep's reclaim.jsonl record is complete, not merely begun. The writer's `>>"$JSONL"`
+// creates the file before jq has written a byte, so existence is a false completion signal: under
+// full-suite load a reader parsed the empty file and threw "Unexpected end of JSON input"
+// (OPS-WORKTREE-RECLAIM-LOG-RACE-W1). True only when the file holds >= 1 line and EVERY line
+// parses, exactly as `lines` reads it; a missing file, an empty file or a partial trailing line
+// reads false and the wait goes on. A test of any detached writer waits on this, never on existsSync.
+function waitForRecord(s: Pick<Scratch, 'artifacts'>, ms: number): boolean {
+  const f = join(s.artifacts, 'reclaim.jsonl');
+  return waitFor(() => {
+    try {
+      for (const l of readFileSync(f, 'utf8').trim().split('\n')) JSON.parse(l);
+      return true;
+    } catch { return false; }
+  }, ms);
+}
+
 interface Scratch {
   T: string; home: string; install: string; artifacts: string; locks: string; env: NodeJS.ProcessEnv;
 }
@@ -519,6 +535,23 @@ describe('scripts/worktree-reclaim.sh — the one entry point', () => {
     } finally { rmSync(s.T, { recursive: true, force: true }); }
   }, 120_000);
 
+  it('waitForRecord waits for a COMPLETE record, never mere existence: missing, empty, partial -> false; one full line -> true', () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'wt-reclaim-record-')));
+    const f = join(dir, 'reclaim.jsonl');
+    const rec = '{"ts":"t","trigger":"session-start","WORKTREE_RECLAIM_VERDICT":"PASS"}\n';
+    try {
+      expect(waitForRecord({ artifacts: dir }, 250), 'missing file').toBe(false);
+      writeFileSync(f, '');
+      expect(waitForRecord({ artifacts: dir }, 250), 'empty file: >> created it, jq has not written yet').toBe(false);
+      writeFileSync(f, '{"ts":');
+      expect(waitForRecord({ artifacts: dir }, 250), 'partial record').toBe(false);
+      writeFileSync(f, rec);
+      expect(waitForRecord({ artifacts: dir }, 250), 'one complete JSON line').toBe(true);
+      writeFileSync(f, `${rec}{"ts":`);
+      expect(waitForRecord({ artifacts: dir }, 250), 'a complete line, then a partial trailing line').toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }, 30_000);
+
   it('the SessionStart form prints NOTHING and returns in < 1 s while the sweep runs on, detached', () => {
     const { s } = fleet('detach');
     try {
@@ -530,7 +563,7 @@ describe('scripts/worktree-reclaim.sh — the one entry point', () => {
       expect(r.status).toBe(0);
       expect(r.ms).toBeLessThan(1000);
       expect(waitFor(() => existsSync(marker), 20_000), 'the detached sweep ran to completion').toBe(true);
-      expect(waitFor(() => existsSync(join(s.artifacts, 'reclaim.jsonl')), 10_000)).toBe(true);
+      expect(waitForRecord(s, 10_000), 'a complete record, not just the file >> created').toBe(true);
       expect(lines(s).pop().trigger).toBe('session-start');
     } finally { rmSync(s.T, { recursive: true, force: true }); }
   }, 120_000);
@@ -636,8 +669,8 @@ describe('scripts/worktree-create-hook.sh — the reclaim trigger keeps the cont
       expect(rel(b)).toBe(rel(a));
       expect(b.r.status).toBe(a.r.status);
       expect(b.r.status).toBe(0);
-      // and the real trigger did fire: a verdict line appears once the detached sweep ends
-      expect(waitFor(() => existsSync(join(b.s.artifacts, 'reclaim.jsonl')), 30_000)).toBe(true);
+      // and the real trigger did fire: a complete, parseable verdict line appears once the detached sweep ends
+      expect(waitForRecord(b.s, 30_000)).toBe(true);
     } finally {
       rmSync(a.s.T, { recursive: true, force: true });
       rmSync(b.s.T, { recursive: true, force: true });
