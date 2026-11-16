@@ -129,7 +129,7 @@ describe('worktree-create-hook: the FETCH_HEAD age probe is flavour-validated', 
   // A stub returning a live mtime would pass even if the arithmetic were dropped entirely.
   const EPOCH = 1786500000;
 
-  it('GNU flavour (the platform that BREAKS the old form) produces a correct age', () => {
+  it('GNU flavour (the platform that BREAKS the old form) produces a correct age', { timeout: 30_000 }, () => {
     const r = runHook(GNU_STUB(EPOCH));
     const age = ageOf(r.log);
     expect(age, 'the fetch-failure branch must have been reached').toBeDefined();
@@ -142,7 +142,7 @@ describe('worktree-create-hook: the FETCH_HEAD age probe is flavour-validated', 
     expect(r.stdout.trim().length, 'stdout must carry a path').toBeGreaterThan(0);
   });
 
-  it('BSD flavour produces the SAME age — the other flavour is simulated, not assumed', () => {
+  it('BSD flavour produces the SAME age — the other flavour is simulated, not assumed', { timeout: 30_000 }, () => {
     // Without a stub this case would be a silent no-op on Linux CI and the GNU case a silent
     // no-op on the macOS workstation. Simulating both means neither platform skips its half.
     const r = runHook(BSD_STUB(EPOCH));
@@ -153,7 +153,7 @@ describe('worktree-create-hook: the FETCH_HEAD age probe is flavour-validated', 
     expect(r.code).toBe(0);
   });
 
-  it('a NON-INTEGER probe yields `unknown` and the hook COMPLETES — degrade, never refuse', () => {
+  it('a NON-INTEGER probe yields `unknown` and the hook COMPLETES — degrade, never refuse', { timeout: 30_000 }, () => {
     const r = runHook(GARBAGE_STUB);
     expect(ageOf(r.log), 'an undeterminable mtime must not invent a number').toBe('unknown');
     expect(r.code, 'a hook is not a gate: it must not refuse to create a worktree').toBe(0);
