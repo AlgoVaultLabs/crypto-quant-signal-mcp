@@ -741,11 +741,11 @@ function createServer(): McpServer {
     mcpHandler('get_track_record'),
   );
 
-  // ── Tool: get_sr_zones (SR-ZONES-W1) — support/resistance zones, facts only, Binance perpetuals ──
+  // ── Tool: get_support_resistance_zones (SR-ZONES-W1; renamed from get_sr_zones in SR-ZONES-W2 R8, no alias) — support/resistance zones, facts only, Binance perpetuals ──
   // Thin handler: quota, the candle cache (history per bar, newest page re-read after 60 s) and the response live in src/tools/get-sr-zones.ts
   // (runGetSrZones, dispatched by the tool-call pipeline); the formula is src/lib/sr-zones/.
   register(
-    'get_sr_zones',
+    'get_support_resistance_zones',
     GET_SR_ZONES_DESCRIPTION,
     {
       coin: z.string().min(1).max(20).describe(PARAM_DESC_SR_ZONES_COIN),
@@ -753,7 +753,7 @@ function createServer(): McpServer {
       venue: z.enum(SR_ZONES_VENUES).optional().describe(PARAM_DESC_SR_ZONES_VENUE),
     },
     { title: 'Support and Resistance Zones', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    mcpHandler('get_sr_zones'),
+    mcpHandler('get_support_resistance_zones'),
   );
 
   // FEATURE-REGISTRY-SOT-W1 CH2: registry-driven registration — register exactly the

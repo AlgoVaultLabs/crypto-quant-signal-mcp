@@ -50,7 +50,7 @@ describe('x402 pricing expansion — gated/discoverable set (+3 named; get_trade
     expect((HTTP_TOOLS as readonly string[]).includes('get_trade_signal')).toBe(true);
   });
 
-  it('HTTP_TOOLS == BAZAAR_ROUTES keys (route ↔ discovery parity, now 8 — DECISION-CALL-V1-W3 adds pre_trade_check, SR-ZONES-W2 get_sr_zones)', () => {
+  it('HTTP_TOOLS == BAZAAR_ROUTES keys (route ↔ discovery parity, now 8 — DECISION-CALL-V1-W3 adds pre_trade_check, SR-ZONES-W2 get_support_resistance_zones)', () => {
     expect([...HTTP_TOOLS].sort()).toEqual(Object.keys(BAZAAR_ROUTES).sort());
     expect(HTTP_TOOLS.length).toBe(8);
   });

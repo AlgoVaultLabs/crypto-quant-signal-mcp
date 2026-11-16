@@ -416,7 +416,7 @@ const TOOL_ENVELOPE_SITES: Array<[tool: string, file: string, sites: number]> = 
   // DECISION-CALL-V1-W2 R8: four in-band refusals + the served envelope.
   ['pre_trade_check', 'src/tools/pre-trade-check.ts', 5],
   // SR-ZONES-W1 CH2: the quota wall, the no-timeframe-served refusal + the served envelope.
-  ['get_sr_zones', 'src/tools/get-sr-zones.ts', 3],
+  ['get_support_resistance_zones', 'src/tools/get-sr-zones.ts', 3],
   ['chat_knowledge', 'src/lib/chat-knowledge-formatter.ts', 1],
   ['search_knowledge', 'src/lib/search-knowledge-formatter.ts', 1],
 ];
@@ -507,7 +507,7 @@ describe('(12) every live tool states its own auth state', () => {
     // (pre_trade_check joined in DECISION-CALL-V1-W2 R8 — nine in all.)
     // (get_sr_zones joined in SR-ZONES-W1 CH2 — ten in all.)
     const registered = readFileSync(resolve(ROOT, 'src/index.ts'), 'utf8')
-      .match(/^\s*'(get_trade_call|get_trade_signal|get_market_regime|scan_funding_arb|scan_trade_calls|scan_market_regimes|pre_trade_check|get_sr_zones|chat_knowledge|search_knowledge)',$/gm) ?? [];
+      .match(/^\s*'(get_trade_call|get_trade_signal|get_market_regime|scan_funding_arb|scan_trade_calls|scan_market_regimes|pre_trade_check|get_support_resistance_zones|chat_knowledge|search_knowledge)',$/gm) ?? [];
     expect(new Set(registered.map((s) => s.trim())).size).toBe(10);
   });
 });

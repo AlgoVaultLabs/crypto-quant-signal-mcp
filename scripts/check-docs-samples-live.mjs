@@ -284,7 +284,7 @@ export const PROBES = [
     // the page's field tables document, at every level, and that the 1d the sample sends is the timeframe answered.
     // A side with no zone is a fact about the chart, so zone keys are read only where a zone exists. R7: the page no
     // longer documents `order` or a zone's `formed_from` / `formed_to`, so P10 no longer asks for them.
-    id: 'P10', method: 'POST', path: '/mcp', source: 'get-sr-zones.html',
+    id: 'P10', method: 'POST', path: '/mcp', source: 'get-support-resistance-zones.html',
     what: 'the support and resistance zones sample answers its 1d with every documented key',
     accept: ACCEPT_BOTH,
     assert(res) {
@@ -332,7 +332,7 @@ export const PROBES = [
 ];
 
 /**
- * R7 #2: get_sr_zones's unserved-reason table and its transient predicate, from the handler itself
+ * R7 #2: get_support_resistance_zones's unserved-reason table and its transient predicate, from the handler itself
  * (src/tools/get-sr-zones.ts: SR_UNSERVED_REASONS, isTransientSrUnservedReason) as `npm run build` compiles it —
  * deploy.yml builds before the post-deploy step runs this gate. Never a hand list here. Null when unreadable.
  */
@@ -956,7 +956,7 @@ export async function selfTest() {
   check('P9 flags the sent rule served as a default', P.P9.assert(ptc({ rules: [{ id: 'maxLeverage', source: 'default' }] })).length, 1);
   const refused = { status: 200, json: { result: { isError: true, content: [{ text: JSON.stringify({ code: 'TIER_LIMIT_REACHED', message: 'm' }) }] } } };
   check('P9 flags a REFUSED sample, naming the code', /TIER_LIMIT_REACHED/.test(P.P9.assert(refused).join()), true);
-  // SR-ZONES-W2 R6 #5: P10 runs the get_sr_zones sample (BTC, timeframes ["1d"]) and asserts the keys its page documents.
+  // SR-ZONES-W2 R6 #5: P10 runs the get_support_resistance_zones sample (BTC, timeframes ["1d"]) and asserts the keys its page documents.
   const p10 = P.P10 ?? { assert: () => ['P10 is not declared'] };
   // R7: the served shape has no `order` and no zone `formed_from` / `formed_to` (Mr.1 2026-11-16).
   const zone = {
@@ -1070,11 +1070,11 @@ export async function selfTest() {
     check('without the source key P9 binds to ANOTHER partial (the bug it prevents)',
       unkeyed.find((r) => r.probe.id === 'P9')?.match?.source !== 'pre-trade-check.html', true);
     const p10r = resolved.find((r) => r.probe.id === 'P10');
-    check('bypassed artifact: P10 binds to its OWN partial', p10r?.match?.source, 'get-sr-zones.html');
-    check('bypassed artifact: P10 executes the get_sr_zones sample', /"name":"get_sr_zones"/.test(p10r?.match?.body ?? ''), true);
+    check('bypassed artifact: P10 binds to its OWN partial', p10r?.match?.source, 'get-support-resistance-zones.html');
+    check('bypassed artifact: P10 executes the get_support_resistance_zones sample', /"name":"get_support_resistance_zones"/.test(p10r?.match?.body ?? ''), true);
     check('bypassed artifact: P10 sample sends the 1d P10 asserts', /"timeframes":\["1d"\]/.test(p10r?.match?.body ?? ''), true);
     check('without the source key P10 binds to ANOTHER partial (the bug it prevents)',
-      !!unkeyed.find((r) => r.probe.id === 'P10')?.match && unkeyed.find((r) => r.probe.id === 'P10').match.source !== 'get-sr-zones.html', true);
+      !!unkeyed.find((r) => r.probe.id === 'P10')?.match && unkeyed.find((r) => r.probe.id === 'P10').match.source !== 'get-support-resistance-zones.html', true);
   }
 
   // ── P7 — proven fallible on every direction it claims to check ─────────────

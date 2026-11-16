@@ -116,7 +116,7 @@ describe('x402 HTTP routes — two-flag firewall mount (R5)', () => {
       '/x402/get_equity_call',
       '/x402/get_equity_regime',
       '/x402/get_market_regime',
-      '/x402/get_sr_zones', // SR-ZONES-W2 CH3
+      '/x402/get_support_resistance_zones', // SR-ZONES-W2 CH3
       '/x402/get_trade_call',
       '/x402/get_trade_signal',
       '/x402/pre_trade_check', // DECISION-CALL-V1-W3

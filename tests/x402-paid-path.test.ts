@@ -453,7 +453,7 @@ describe('R2 — every payable route × {clean, duplicated} content-type', () =>
     { path: 'get_equity_call', tool: 'get_equity_call', body: { symbol: 'AAPL' } },
     { path: 'get_equity_regime', tool: 'get_equity_regime', body: { symbol: 'SPY' } },
     { path: 'pre_trade_check', tool: 'pre_trade_check', body: { coin: 'BTC', side: 'long', sizeUsd: 10000 } }, // DECISION-CALL-V1-W3
-    { path: 'get_sr_zones', tool: 'get_sr_zones', body: { coin: 'BTC', timeframes: ['1d'] } }, // SR-ZONES-W2
+    { path: 'get_support_resistance_zones', tool: 'get_support_resistance_zones', body: { coin: 'BTC', timeframes: ['1d'] } }, // SR-ZONES-W2
   ];
 
   /** Repeated header keys are combined by fetch — exactly what a client adding its own

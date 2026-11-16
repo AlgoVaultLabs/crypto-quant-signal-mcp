@@ -24,7 +24,7 @@ const LIVE_TOOLS = [
   // DECISION-CALL-V1-W2 R8: pre_trade_check (11 → 12 declared, 9 → 10 live).
   'pre_trade_check',
   // SR-ZONES-W1: get_sr_zones (12 → 13 declared, 10 → 11 live).
-  'get_sr_zones',
+  'get_support_resistance_zones',
 ].sort();
 
 // Price-key tolerant of CH3's re-keying (alias-keyed today → canonical after CH3).
@@ -101,11 +101,11 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     // SR-ZONES-W1: 11 → 12 (get_sr_zones, one unit per served timeframe; MCP only, unpriced, unlisted).
     // SR-ZONES-W2: listed publicly, in Beta (CH2); x402 at a flat $0.02 per call (CH3).
     expect(FEATURE_REGISTRY).toHaveLength(12);
-    expect(getFeature('get_sr_zones')!.quota).toEqual({ unit: 'per-verdict', holdFree: false });
-    expect(getFeature('get_sr_zones')!.x402).toEqual({ basePriceUsd: 0.02 });
-    expect(getFeature('get_sr_zones')!.publicListing).toBe(true);
-    expect(getFeature('get_sr_zones')!.beta).toBe(true);
-    expect(getFeature('get_sr_zones')!.residency).toBe('any');
+    expect(getFeature('get_support_resistance_zones')!.quota).toEqual({ unit: 'per-verdict', holdFree: false });
+    expect(getFeature('get_support_resistance_zones')!.x402).toEqual({ basePriceUsd: 0.02 });
+    expect(getFeature('get_support_resistance_zones')!.publicListing).toBe(true);
+    expect(getFeature('get_support_resistance_zones')!.beta).toBe(true);
+    expect(getFeature('get_support_resistance_zones')!.residency).toBe('any');
     expect(getFeature('pre_trade_check')!.quota.unit).toBe('per-call');
     expect(getFeature('scan_market_regimes')!.quota.unit).toBe('per-verdict');
     expect(getFeature('chat_knowledge')!.quota.unit).toBe('rate-limited');

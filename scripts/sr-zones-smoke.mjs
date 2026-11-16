@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * sr-zones-smoke.mjs — SR-ZONES-W1 AC2.4. A live smoke of get_sr_zones over MCP (streamable HTTP), reused at release.
+ * sr-zones-smoke.mjs — SR-ZONES-W1 AC2.4. A live smoke of get_support_resistance_zones over MCP (streamable HTTP), reused at release.
  *
  *   node scripts/sr-zones-smoke.mjs --prod                 # https://api.algovault.com/mcp, the only target
  *   node scripts/sr-zones-smoke.mjs --prod --young CT      # the young listing to probe (default CT, 1d)
  *   node scripts/sr-zones-smoke.mjs --self-test            # the checks below over built-in bodies; no key, no network
  *
  * Checks, in order:
- *   1. tools/list lists get_sr_zones, and (SR-ZONES-W2) its description ends " (Beta)";
+ *   1. tools/list lists get_support_resistance_zones, and (SR-ZONES-W2) its description ends " (Beta)";
  *   2. BTC ["1d","4h"] returns 2 results, at most 3 zones a side, every §0 field, and (SR-ZONES-W2) every zone edge a
  *      multiple of 10, BTC's rounding step;
  *   3. ETH 1h is served;
  *   4. the young listing is served (a result carrying its flags), not refused;
  *   5. (SR-ZONES-W2) https://algovault.com/tools lists "Support and Resistance Zones (Beta)";
- *   6. (SR-ZONES-W2) an unpaid POST https://api.algovault.com/x402/get_sr_zones answers 402, every rail quoting $0.02;
+ *   6. (SR-ZONES-W2) an unpaid POST https://api.algovault.com/x402/get_support_resistance_zones answers 402, every rail quoting $0.02;
  *   7. the facts lint passes on every string of every response.
  *
  * Right after a deploy the cache is cold. A timeframe can then come back unserved with the server's load-timeout reason
@@ -68,7 +68,7 @@ const BTC_EDGE_STEP = 10;
 const X402_AMOUNT = '20000';
 /** The two keyless reads (AC5.1). keylessFetch() goes to these and nowhere else, and never carries the key. */
 const SITE_TOOLS_URL = 'https://algovault.com/tools';
-const X402_URL = 'https://api.algovault.com/x402/get_sr_zones';
+const X402_URL = 'https://api.algovault.com/x402/get_support_resistance_zones';
 const KEYLESS_URLS = [SITE_TOOLS_URL, X402_URL];
 
 /** The terminal token. process.exitCode, never process.exit(): a queued pipe write would lose the token. */
@@ -170,7 +170,7 @@ async function keylessFetch(url, init) {
 /** GET https://algovault.com/tools, keyless. */
 const fetchToolsPage = () => keylessFetch(SITE_TOOLS_URL, { method: 'GET', headers: { Accept: 'text/html' } });
 
-/** An unpaid POST /x402/get_sr_zones (no payment header, no key) for the docs example's request. */
+/** An unpaid POST /x402/get_support_resistance_zones (no payment header, no key) for the docs example's request. */
 const postX402Unpaid = () => keylessFetch(X402_URL, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -228,7 +228,7 @@ function youngProblems(body) {
   return r && Array.isArray(r.flags) ? [] : ['no result carrying flags'];
 }
 
-/** tools/list serves get_sr_zones's description with the Beta mark at its end. */
+/** tools/list serves get_support_resistance_zones's description with the Beta mark at its end. */
 function betaDescriptionProblems(tool) {
   return typeof tool?.description === 'string' && tool.description.endsWith(BETA_SUFFIX) ? [] : ['the served description does not end " (Beta)"'];
 }
@@ -252,7 +252,7 @@ function toolsPageProblems(page) {
   return page.status === 200 && page.text.includes(BETA_LABEL) ? [] : [`/tools answered ${page.status} without "${BETA_LABEL}"`];
 }
 
-/** The unpaid POST /x402/get_sr_zones: 402, declaring at least one rail, every rail quoting $0.02. */
+/** The unpaid POST /x402/get_support_resistance_zones: 402, declaring at least one rail, every rail quoting $0.02. */
 function x402Problems(res) {
   if (res.status !== 402) return [`answered ${res.status}, not 402`];
   let body;
@@ -267,7 +267,7 @@ function x402Problems(res) {
 }
 
 /**
- * One get_sr_zones check (R9 #3). `call(args)` performs tools/call and `sleep(ms)` waits; the self-test stubs both.
+ * One get_support_resistance_zones check (R9 #3). `call(args)` performs tools/call and `sleep(ms)` waits; the self-test stubs both.
  * A load-timeout answer is called once more after RETRY_WAIT_MS. Timeframes still loading after that are not
  * verified (`indeterminate`); every timeframe that was served is checked by `verify(body, servedTimeframes)`, and a
  * refusal for any other reason is a problem. → { outcome: 'pass' | 'fail' | 'indeterminate', detail, body, bodies }
@@ -302,7 +302,7 @@ function finalVerdict(failures, unverified) {
 }
 
 /**
- * Checks 1-5 through `rpcCall(payload)` (JSON-RPC) and `toolCall(args)` (get_sr_zones), waiting with `sleep(ms)`. It
+ * Checks 1-5 through `rpcCall(payload)` (JSON-RPC) and `toolCall(args)` (get_support_resistance_zones), waiting with `sleep(ms)`. It
  * neither exits nor rethrows: an unreachable host (Unreachable) is recorded as not verified and stops the remaining
  * checks (R10 #2), so a check that already failed keeps the run FAIL; any other error is a failed check. The facts lint
  * judges only what was collected. → { failures, unverified, verdict }, where `verdict` (finalVerdict, derived once
@@ -331,9 +331,9 @@ async function runChecks({ rpcCall, toolCall, sleep, young, fetchToolsPage: tool
     await rpcCall({ jsonrpc: '2.0', method: 'notifications/initialized' });
 
     const list = await rpcCall({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    const tool = (list?.tools ?? []).find((t) => t.name === 'get_sr_zones');
-    check(!!tool, `tools/list lists get_sr_zones (${(list?.tools ?? []).length} tools)`);
-    if (tool) lintTargets.push(['tools/list get_sr_zones', { description: tool.description, inputSchema: tool.inputSchema }, null]);
+    const tool = (list?.tools ?? []).find((t) => t.name === 'get_support_resistance_zones');
+    check(!!tool, `tools/list lists get_support_resistance_zones (${(list?.tools ?? []).length} tools)`);
+    if (tool) lintTargets.push(['tools/list get_support_resistance_zones', { description: tool.description, inputSchema: tool.inputSchema }, null]);
     if (tool) {
       const beta = betaDescriptionProblems(tool);
       check(beta.length === 0, `tools/list description ends " (Beta)"${beta.length ? ` — ${beta.join('; ')}` : ''}`);
@@ -359,7 +359,7 @@ async function runChecks({ rpcCall, toolCall, sleep, young, fetchToolsPage: tool
     const page = toolsPageProblems(await toolsPage());
     check(page.length === 0, `/tools lists "${BETA_LABEL}"${page.length ? ` — ${page.join('; ')}` : ''}`);
     const pay = x402Problems(await x402Unpaid());
-    check(pay.length === 0, `unpaid POST /x402/get_sr_zones → 402 at $0.02 on every rail${pay.length ? ` — ${pay.join('; ')}` : ''}`);
+    check(pay.length === 0, `unpaid POST /x402/get_support_resistance_zones → 402 at $0.02 on every rail${pay.length ? ` — ${pay.join('; ')}` : ''}`);
   } catch (e) {
     if (e instanceof Unreachable) report('indeterminate', e.message);
     else check(false, e instanceof Error ? e.message : String(e));
@@ -386,7 +386,7 @@ function sampleBody(coin, timeframes) {
       summary: `${coin} ${timeframe} at 100: 1 support and 1 resistance zones; support zone 1 at 80–90, 10% below; resistance zone 1 at 110–120, 10% above; last closed candle volume 1× its 20-candle average.`,
       volume_vs_20: 1, flags: [], support: [zone(1, 80, 90)], resistance: [zone(1, 110, 120)],
     })),
-    unserved: [], timestamp: 1763193600, _algovault: { tool: 'get_sr_zones' },
+    unserved: [], timestamp: 1763193600, _algovault: { tool: 'get_support_resistance_zones' },
   };
 }
 
@@ -410,7 +410,7 @@ async function postIsPinned() {
 }
 
 /**
- * The two keyless reads against a stubbed fetch (no network): GET /tools and an unpaid POST /x402/get_sr_zones, in that
+ * The two keyless reads against a stubbed fetch (no network): GET /tools and an unpaid POST /x402/get_support_resistance_zones, in that
  * order, redirects refused, and no internal-key header on either; any other URL is refused before fetch is called.
  */
 async function keylessIsPinned() {
@@ -430,7 +430,7 @@ async function keylessIsPinned() {
   }
   return refused && seen.length === 2 &&
     JSON.stringify(seen.map((x) => [x.method, x.url, x.redirect])) ===
-      JSON.stringify([['GET', 'https://algovault.com/tools', 'error'], ['POST', 'https://api.algovault.com/x402/get_sr_zones', 'error']]) &&
+      JSON.stringify([['GET', 'https://algovault.com/tools', 'error'], ['POST', 'https://api.algovault.com/x402/get_support_resistance_zones', 'error']]) &&
     seen.every((x) => !x.headers.includes('x-algovault-internal-key'));
 }
 
@@ -446,7 +446,7 @@ async function selfTest() {
   const loadingBody = (served, loading) => ({ ...sampleBody('BTC', served), unserved: loading.map((timeframe) => ({ timeframe, reason: LOADING })) });
   const refusalBody = (loading) => ({
     error: 'no_timeframe_served', code: 'no_timeframe_served', coin: 'BTC', venue: 'BINANCE', message: 'none served',
-    unserved: loading.map((timeframe) => ({ timeframe, reason: LOADING })), suggested_action: 'retry', _algovault: { tool: 'get_sr_zones' },
+    unserved: loading.map((timeframe) => ({ timeframe, reason: LOADING })), suggested_action: 'retry', _algovault: { tool: 'get_support_resistance_zones' },
   });
   const scripted = async (answers, args = BTC2, verify = shapeProblems) => {
     const waits = [];
@@ -455,7 +455,7 @@ async function selfTest() {
     return { ...r, calls, waits: JSON.stringify(waits) };
   };
   // R9 #3 end to end: runChecks (what main() runs) over scripted answers per coin, a silent log, an instant sleep.
-  const TOOLS = { tools: [{ name: 'get_sr_zones', description: 'Returns support and resistance zones for one coin. (Beta)', inputSchema: {} }] };
+  const TOOLS = { tools: [{ name: 'get_support_resistance_zones', description: 'Returns support and resistance zones for one coin. (Beta)', inputSchema: {} }] };
   // SR-ZONES-W2 AC5.1: the two keyless reads, as production answers them after the deploy.
   const PAGE_OK = { status: 200, text: '<h3 class="tools-card-title">Support and Resistance Zones (Beta)</h3>' };
   const quote = (...amounts) => ({ status: 402, text: JSON.stringify({ x402Version: 2, accepts: amounts.map((amount) => ({ scheme: 'exact', amount })) }) });
@@ -566,13 +566,13 @@ async function selfTest() {
       (await endToEnd({ BTC: [answer(edit(btc, (b) => { b.results[0].support[0].low = 62475; }))], ETH: ethOk, CT: ctOk })) === '["FAIL",1]'],
     ['end to end: /tools without the Beta label is the run\'s FAIL', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, undefined, { page: () => ({ status: 200, text: 'Support and Resistance Zones' }) })) === '["FAIL",1]'],
-    ['end to end: /x402/get_sr_zones not found is the run\'s FAIL', async () =>
+    ['end to end: /x402/get_support_resistance_zones not found is the run\'s FAIL', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, undefined, { x402: () => ({ status: 404, text: '{}' }) })) === '["FAIL",1]'],
     ['end to end: an unreachable keyless read is the run\'s INDETERMINATE', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, undefined, { x402: () => Promise.reject(new Unreachable('POST failed')) })) === '["INDETERMINATE",3]'],
     ['end to end: everything clean is the run\'s PASS', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk })) === '["PASS",0]'],
-    ['the keyless reads carry no key: GET /tools and POST /x402/get_sr_zones only, redirects refused', () => keylessIsPinned()],
+    ['the keyless reads carry no key: GET /tools and POST /x402/get_support_resistance_zones only, redirects refused', () => keylessIsPinned()],
   ];
   let failed = 0;
   for (const [name, fn] of cases) {
@@ -602,7 +602,7 @@ async function main() {
   let nextId = 3;
   const found = await runChecks({
     rpcCall: (payload) => rpc(key, payload),
-    toolCall: (a) => callTool(key, nextId++, 'get_sr_zones', a),
+    toolCall: (a) => callTool(key, nextId++, 'get_support_resistance_zones', a),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     young: args.young,
     fetchToolsPage,

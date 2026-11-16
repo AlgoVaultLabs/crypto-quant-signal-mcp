@@ -3,7 +3,7 @@
  *
  * AC2.1 (the iff-test): every §0.3 surface ends ` (Beta)` exactly when the tool's registry row says `beta: true` —
  * tools/list description and title (default and ChatGPT), GET /capabilities, the label on the nav, /tools, the docs
- * heading and llms-full, the llms.txt name, and the lobehub `api[]` description. Planted: the flag off on get_sr_zones
+ * heading and llms-full, the llms.txt name, and the lobehub `api[]` description. Planted: the flag off on get_support_resistance_zones
  * → no surface shows it; the flag on pre_trade_check → its surfaces show it.
  *
  * R3: every UNFLAGGED tool's served description, title and label is byte-identical to BASE (3935d83c). The fixture
@@ -172,26 +172,26 @@ const SURFACES = [
 ];
 
 describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
-  it('the registry flags exactly get_sr_zones', () => {
-    expect(publicToolEntries().filter((e) => e.beta).map((e) => e.name)).toEqual(['get_sr_zones']);
-    expect(getFeature('get_sr_zones')!.beta).toBe(true);
+  it('the registry flags exactly get_support_resistance_zones', () => {
+    expect(publicToolEntries().filter((e) => e.beta).map((e) => e.name)).toEqual(['get_support_resistance_zones']);
+    expect(getFeature('get_support_resistance_zones')!.beta).toBe(true);
   });
 
   it('every §0.3 surface ends " (Beta)" exactly when the row is flagged', async () => {
     const rows = await surfaceRows();
     expect(iffViolations(rows)).toEqual([]);
     // Non-vacuity, at construction: every surface kind produced the flagged tool's row, and the unflagged ones.
-    expect(new Set(rows.filter((r) => r.tool === 'get_sr_zones').map((r) => r.surface))).toEqual(new Set(SURFACES));
+    expect(new Set(rows.filter((r) => r.tool === 'get_support_resistance_zones').map((r) => r.surface))).toEqual(new Set(SURFACES));
     expect(rows.filter((r) => r.tool === 'pre_trade_check').length).toBe(SURFACES.length);
     expect(lobehubOffenders()).toEqual([]);
   });
 
   it('the served strings: the description, the title and the label', async () => {
-    const t = (await listTools(null)).find((x) => x.name === 'get_sr_zones')!;
+    const t = (await listTools(null)).find((x) => x.name === 'get_support_resistance_zones')!;
     expect(t.description).toBe(`${GET_SR_ZONES_DESCRIPTION} (Beta)`);
     expect(t.annotations?.title).toBe('Support and Resistance Zones (Beta)');
-    expect(publicToolEntries().find((e) => e.name === 'get_sr_zones')!.label).toBe('Support and Resistance Zones (Beta)');
-    expect(servedDescription('get_sr_zones')).toBe(`${GET_SR_ZONES_DESCRIPTION} (Beta)`);
+    expect(publicToolEntries().find((e) => e.name === 'get_support_resistance_zones')!.label).toBe('Support and Resistance Zones (Beta)');
+    expect(servedDescription('get_support_resistance_zones')).toBe(`${GET_SR_ZONES_DESCRIPTION} (Beta)`);
   });
 
   it('the committed artifacts carry the mark: lobehub, llms.txt, llms-full, /tools, /docs', () => {
@@ -208,12 +208,12 @@ describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
       expect(heading!.endsWith(BETA_SUFFIX), e.name).toBe(e.beta);
     }
     const docs = readFileSync(join(ROOT, 'landing', 'docs.html'), 'utf8');
-    expect(docs).toContain('Support and Resistance Zones (Beta) <span class="text-gray-500 text-sm font-normal">get_sr_zones</span>');
-    expect(docs).toContain('<a href="#get-sr-zones" class="sidebar-link" style="padding-left:32px">Support and Resistance Zones (Beta)</a>');
+    expect(docs).toContain('Support and Resistance Zones (Beta) <span class="text-gray-500 text-sm font-normal">get_support_resistance_zones</span>');
+    expect(docs).toContain('<a href="#get-support-resistance-zones" class="sidebar-link" style="padding-left:32px">Support and Resistance Zones (Beta)</a>');
     const tools = readFileSync(join(ROOT, 'landing', 'tools.html'), 'utf8');
     expect(tools).toContain('<h3 class="tools-card-title">Support and Resistance Zones (Beta)</h3>');
-    // Every mark on /docs belongs to get_sr_zones: its label, or its name in the TechArticle clause (R6 #3).
-    expect(docs.replace(/Support and Resistance Zones \(Beta\)|get_sr_zones \(Beta\)/g, '')).not.toContain('(Beta)');
+    // Every mark on /docs belongs to get_support_resistance_zones: its label, or its name in the TechArticle clause (R6 #3).
+    expect(docs.replace(/Support and Resistance Zones \(Beta\)|get_support_resistance_zones \(Beta\)/g, '')).not.toContain('(Beta)');
   });
 
   it('R6 #3 — the committed /rest-api FAQ (visible and FAQPage JSON-LD) and /docs TechArticle mark exactly the flagged names', () => {
@@ -241,17 +241,17 @@ describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
     }
   });
 
-  it('planted: the flag OFF on get_sr_zones → no surface shows the mark anywhere', async () => {
-    await withFlag('get_sr_zones', false, async () => {
+  it('planted: the flag OFF on get_support_resistance_zones → no surface shows the mark anywhere', async () => {
+    await withFlag('get_support_resistance_zones', false, async () => {
       const rows = await surfaceRows();
       expect(iffViolations(rows)).toEqual([]);
       expect(rows.filter((r) => r.text.includes('(Beta)'))).toEqual([]);
-      expect(new Set(rows.filter((r) => r.tool === 'get_sr_zones').map((r) => r.surface))).toEqual(new Set(SURFACES));
-      expect(publicToolEntries().find((e) => e.name === 'get_sr_zones')!.label).toBe('Support and Resistance Zones');
+      expect(new Set(rows.filter((r) => r.tool === 'get_support_resistance_zones').map((r) => r.surface))).toEqual(new Set(SURFACES));
+      expect(publicToolEntries().find((e) => e.name === 'get_support_resistance_zones')!.label).toBe('Support and Resistance Zones');
       // The committed lobehub row still says Beta, so the lockstep gate fails until it is regenerated.
-      expect(lobehubOffenders()).toEqual(['get_sr_zones']);
+      expect(lobehubOffenders()).toEqual(['get_support_resistance_zones']);
     });
-    expect(isBetaTool('get_sr_zones')).toBe(true); // restored
+    expect(isBetaTool('get_support_resistance_zones')).toBe(true); // restored
   });
 
   it('planted: the flag ON pre_trade_check → its surfaces show the mark, the others do not change', async () => {
@@ -261,7 +261,7 @@ describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
       const marked = rows.filter((r) => r.tool === 'pre_trade_check' && r.text.endsWith(BETA_SUFFIX)).map((r) => r.surface);
       expect(new Set(marked)).toEqual(new Set(SURFACES));
       expect(publicToolEntries().find((e) => e.name === 'pre_trade_check')!.label).toBe('Pre-Trade Check (Beta)');
-      expect(new Set(rows.filter((r) => r.text.endsWith(BETA_SUFFIX)).map((r) => r.tool))).toEqual(new Set(['pre_trade_check', 'get_sr_zones']));
+      expect(new Set(rows.filter((r) => r.text.endsWith(BETA_SUFFIX)).map((r) => r.tool))).toEqual(new Set(['pre_trade_check', 'get_support_resistance_zones']));
       expect(lobehubOffenders()).toEqual(['pre_trade_check']);
     });
     expect(isBetaTool('pre_trade_check')).toBe(false); // restored
@@ -275,15 +275,19 @@ describe('SR-ZONES-W2 AC2.1 — the Beta iff-test', () => {
     const flagged = publicToolEntries().filter((e) => e.beta);
     expect(flagged.length).toBeGreaterThan(0);
     expect(() => renderToolsSentence(flagged, undefined)).toThrow(/flagged beta/);
-    expect(renderToolsSentence(flagged, BETA_SUFFIX)).toContain('`get_sr_zones` (Beta)');
+    expect(renderToolsSentence(flagged, BETA_SUFFIX)).toContain('`get_support_resistance_zones` (Beta)');
   });
 });
 
 describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BASE', () => {
   const expected = (name: string, base: string): string => (isBetaTool(name) ? `${base}${BETA_SUFFIX}` : base);
+  /** R8: BASE (3935d83c) served the tool as get_sr_zones; it is served as get_support_resistance_zones now, under no other name. */
+  const RENAMED: Record<string, string> = { get_sr_zones: 'get_support_resistance_zones' };
+  const renamed = <T,>(base: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(base).map(([k, v]) => [RENAMED[k] ?? k, v]));
 
   it('tools/list — description and title, default and ChatGPT callers', async () => {
-    for (const [ua, base] of [[null, BASE.tools_list], [CHATGPT_UA, BASE.tools_list_chatgpt]] as const) {
+    for (const [ua, base] of [[null, renamed(BASE.tools_list)], [CHATGPT_UA, renamed(BASE.tools_list_chatgpt)]] as const) {
       const now = await listTools(ua);
       expect(now.map((t) => t.name).sort()).toEqual(Object.keys(base).sort());
       for (const t of now) {
@@ -296,13 +300,14 @@ describe('SR-ZONES-W2 R3 — every unflagged tool is served byte-identical to BA
 
   it('GET /capabilities descriptions', () => {
     const now = projectCapabilities().tools;
-    expect(now.map((t) => t.name).sort()).toEqual(Object.keys(BASE.capabilities).sort());
-    for (const t of now) expect(t.description, t.name).toBe(expected(t.name, BASE.capabilities[t.name]));
+    const base = renamed(BASE.capabilities);
+    expect(now.map((t) => t.name).sort()).toEqual(Object.keys(base).sort());
+    for (const t of now) expect(t.description, t.name).toBe(expected(t.name, base[t.name]));
   });
 
   it('labels — BASE plus the one newly listed tool', () => {
     const now = Object.fromEntries(publicToolEntries().map((e) => [e.name, e.label]));
-    expect(now).toEqual({ ...BASE.labels, get_sr_zones: 'Support and Resistance Zones (Beta)' });
+    expect(now).toEqual({ ...BASE.labels, get_support_resistance_zones: 'Support and Resistance Zones (Beta)' });
   });
 
   it('the frozen copy is untouched: the description constant and NOTE; ORDER is gone (R7)', () => {

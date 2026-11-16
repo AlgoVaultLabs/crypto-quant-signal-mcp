@@ -30,7 +30,7 @@ const CRYPTO_LIVE = [
   // DECISION-CALL-V1-W2 R8: pre_trade_check (unlisted, but live on tools/list) — 9 → 10 live, 11 → 12 declared.
   'pre_trade_check',
   // SR-ZONES-W1: get_sr_zones (unlisted, but live on tools/list) — 10 → 11 live, 12 → 13 declared.
-  'get_sr_zones',
+  'get_support_resistance_zones',
 ].sort();
 const ALL_DECLARED = [...CRYPTO_LIVE, 'get_equity_call', 'get_equity_regime'].sort();
 

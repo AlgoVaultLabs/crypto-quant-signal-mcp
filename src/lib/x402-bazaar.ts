@@ -15,7 +15,7 @@
  *
  * Scope: ONLY the 402-GATED tools are declared here — the `HTTP_TOOLS` allow-list
  * (`get_trade_signal` / `scan_funding_arb` / `get_market_regime` / `scan_trade_calls` /
- * `get_equity_call` / `get_equity_regime` / `pre_trade_check` / `get_sr_zones`; OPS-X402-PRICING-EXPANSION-W1
+ * `get_equity_call` / `get_equity_regime` / `pre_trade_check` / `get_support_resistance_zones`; OPS-X402-PRICING-EXPANSION-W1
  * grew this 3→6, DECISION-CALL-V1-W3 to 7, SR-ZONES-W2 to 8).
  * `get_trade_call` is intentionally FREE (North Star: free-tier generosity) and is
  * therefore NOT discoverable — confirmed by Cowork (A2, 2026-05-29).
@@ -422,9 +422,9 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   // the served tools/list schema built from the constants its zod schema reads (tests/unit/sr-zones-x402.test.ts holds
   // the two equal); it is also this route's validator, so a body tools/list refuses is refused here before any claim.
   // The output example is a subset of the documented production response (BTC 1d, 2026-11-16, served edges).
-  get_sr_zones: {
-    toolName: 'get_sr_zones',
-    description: servedDescription('get_sr_zones')!,
+  get_support_resistance_zones: {
+    toolName: 'get_support_resistance_zones',
+    description: servedDescription('get_support_resistance_zones')!,
     inputSchema: {
       type: 'object',
       properties: {

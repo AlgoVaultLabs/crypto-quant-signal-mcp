@@ -1,10 +1,10 @@
 {
   "wave": "SR-ZONES-W2",
-  "endpoint": "get_sr_zones (MCP tool + POST /x402/get_sr_zones)",
+  "endpoint": "get_support_resistance_zones (MCP tool + POST /x402/get_support_resistance_zones)",
   "snapshot_date": "2026-11-16",
   "captured_at_utc": "2026-11-16",
-  "change_class": "KEYS REMOVED, VALUES AND TRANSPORT. `order` and each zone's `formed_from` / `formed_to` are no longer served (Mr.1, SR-ZONES-W2 R7); no key added, renamed or re-typed. Zone `low` and `high` are rounded outward to one price step per call, and `distance_pct`, the `price_inside_zone` flag and the summary read those served edges; the tool is publicly listed in Beta; an x402 HTTP route serves it at a flat $0.02 per call.",
-  "change_note": "Supersedes get-sr-zones-shape-snapshot-2026-11-15.json (SR-ZONES-W1). `allowed_keys` drops `order` and `zone_keys` drops `formed_from` and `formed_to`; every other key list is unchanged. The served zone is the zone (R7 #3): `low` and `high` are rounded outward, and `distance_pct`, `price_inside_zone` and the summary's range, inside and distance are read from those served edges. Which zones are selected, their order, side, `state`, `broke_at`, touches, `no_zone_above` / `no_zone_below` and `overlaps` are computed on the unrounded zone exactly as before. The served description and tool title end with \" (Beta)\", from the registry flag.",
+  "change_class": "TOOL RENAMED, KEYS REMOVED, VALUES AND TRANSPORT. The tool is served as `get_support_resistance_zones` (was `get_sr_zones`; no alias: the old name is refused as an unknown tool, Mr.1 SR-ZONES-W2 R8). `order` and each zone's `formed_from` / `formed_to` are no longer served (R7); no key added or re-typed. Zone `low` and `high` are rounded outward to one price step per call, and `distance_pct`, the `price_inside_zone` flag and the summary read those served edges; the tool is publicly listed in Beta; an x402 HTTP route serves it at a flat $0.02 per call.",
+  "change_note": "Supersedes get-sr-zones-shape-snapshot-2026-11-15.json (SR-ZONES-W1), which describes the tool under its old name. `allowed_keys` drops `order` and `zone_keys` drops `formed_from` and `formed_to`; every other key list is unchanged. The served zone is the zone (R7 #3): `low` and `high` are rounded outward, and `distance_pct`, `price_inside_zone` and the summary's range, inside and distance are read from those served edges. Which zones are selected, their order, side, `state`, `broke_at`, touches, `no_zone_above` / `no_zone_below` and `overlaps` are computed on the unrounded zone exactly as before. The served description and tool title end with \" (Beta)\", from the registry flag.",
   "source": "src/tools/get-sr-zones.ts (runGetSrZones) + src/lib/sr-zones/zones.ts (computeSrZones, attachSrZoneOverlaps) + src/lib/sr-zones/summary.ts (the summary template and NOTE) + src/lib/sr-zones/rounding.ts (the served edges) + src/lib/sr-zones/served.ts (the served frame: the zone allow-list, the distance and the inside flag) + src/lib/adapters/binance.ts (getPriceTick) + src/lib/tool-call-pipeline.ts (the get_sr_zones row); pre-deploy capture, pinned by tests/unit/sr-zones-handler.test.ts + src/lib/x402-http-routes.ts and src/lib/x402-bazaar.ts (POST /x402/get_sr_zones and its Bazaar declaration)",
   "allowed_keys": [
     "coin",
@@ -78,13 +78,13 @@
     "auth"
   ],
   "algovault_note": "`quota` is the caller's meter after this call is billed (buildScanQuotaState); `claim_url` and `claim_hint` appear only for an anonymous session (withAuthState).",
-  "billing": "MCP quota: per-verdict, one unit per entry in `results`; an unserved timeframe and every refusal are unbilled. x402 (POST /x402/get_sr_zones, or an x402 proof on a /mcp call): $0.02 flat per served call, however many timeframes are served; a refused call is never settled.",
+  "billing": "MCP quota: per-verdict, one unit per entry in `results`; an unserved timeframe and every refusal are unbilled. x402 (POST /x402/get_support_resistance_zones, or an x402 proof on a /mcp call): $0.02 flat per served call, however many timeframes are served; a refused call is never settled.",
   "error_contract": {
-    "transport": "MCP (tools/call): a refusal is a structured JSON text payload with isError: true. x402 HTTP (POST /x402/get_sr_zones): no payment, or a proof below $0.02 → 402 with the payment requirements; a refusal → the same payload with `status` as the HTTP status, never settled.",
+    "transport": "MCP (tools/call): a refusal is a structured JSON text payload with isError: true. x402 HTTP (POST /x402/get_support_resistance_zones): no payment, or a proof below $0.02 → 402 with the payment requirements; a refusal → the same payload with `status` as the HTTP status, never settled.",
     "invalid input": {
       "status": null,
       "billed": false,
-      "note": "The MCP SDK's input-schema check (strictToolInput, src/index.ts) refuses before the handler runs: a timeframe outside 15m 30m 1h 2h 4h 8h 12h 1d, fewer than one or more than three timeframes, a venue other than BINANCE, or an unknown key. On POST /x402/get_sr_zones the same JSON Schema (the Bazaar declaration) refuses it with 400 X402_HTTP_INVALID_INPUT, before the payment is claimed."
+      "note": "The MCP SDK's input-schema check (strictToolInput, src/index.ts) refuses before the handler runs: a timeframe outside 15m 30m 1h 2h 4h 8h 12h 1d, fewer than one or more than three timeframes, a venue other than BINANCE, or an unknown key. On POST /x402/get_support_resistance_zones the same JSON Schema (the Bazaar declaration) refuses it with 400 X402_HTTP_INVALID_INPUT, before the payment is claimed."
     },
     "quota_exhausted": {
       "status": 429,
@@ -144,18 +144,18 @@
     "score",
     "prediction"
   ],
-  "forbidden_keys_note": "get_sr_zones reports where price clustered before, as facts. It never emits a trade call, a direction, a win rate, a probability, a target, a strength score or a prediction (the facts-only lint over every emitted string, tests/unit/sr-zones-facts-lint.test.ts). `signal_hash` and `descriptionRef` are internal identifiers; the outcome_* fields are internal.",
+  "forbidden_keys_note": "get_support_resistance_zones reports where price clustered before, as facts. It never emits a trade call, a direction, a win rate, a probability, a target, a strength score or a prediction (the facts-only lint over every emitted string, tests/unit/sr-zones-facts-lint.test.ts). `signal_hash` and `descriptionRef` are internal identifiers; the outcome_* fields are internal.",
   "consumers": [
-    "MCP tools/list + tools/call (served on /mcp; listed publicly in Beta: /docs#get-sr-zones, /tools, the site nav, llms.txt and llms-full.txt, the LobeHub api[] row)",
-    "POST /x402/get_sr_zones and its CDP x402 Bazaar declaration (the input schema is the route's validator)",
+    "MCP tools/list + tools/call (served on /mcp; listed publicly in Beta: /docs#get-support-resistance-zones, /tools, the site nav, llms.txt and llms-full.txt, the LobeHub api[] row)",
+    "POST /x402/get_support_resistance_zones and its CDP x402 Bazaar declaration (the input schema is the route's validator)",
     "GET /capabilities (projectCapabilities: tool metadata, not this response)",
     "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs",
-    "scripts/sr-zones-smoke.mjs (the post-deploy production smoke; the internal key goes to https://api.algovault.com/mcp only: tools/list and a description ending \" (Beta)\", the §0 shape on BTC 1d+4h with every zone edge a multiple of 10, ETH 1h served, a young listing served with flags, and the facts lint on every returned string; two keyless reads: https://algovault.com/tools lists \"Support and Resistance Zones (Beta)\", and an unpaid POST /x402/get_sr_zones answers 402 at $0.02 on every rail)"
+    "scripts/sr-zones-smoke.mjs (the post-deploy production smoke; the internal key goes to https://api.algovault.com/mcp only: tools/list and a description ending \" (Beta)\", the §0 shape on BTC 1d+4h with every zone edge a multiple of 10, ETH 1h served, a young listing served with flags, and the facts lint on every returned string; two keyless reads: https://algovault.com/tools lists \"Support and Resistance Zones (Beta)\", and an unpaid POST /x402/get_support_resistance_zones answers 402 at $0.02 on every rail)"
   ],
   "cache_contract": {
     "description": "Candle history is cached in process per venue × coin × timeframe until that timeframe's next candle close (at most 256 windows). Inside that candle a read less than 60 s old is served with no venue request; an older one re-reads the newest page (one request: the 100-candle trade_call window), merges it over the cached history and moves `timestamp`; a failed re-read serves the cached window with its older `timestamp`, never as unserved. A window with no candles is never cached. A failed full read is remembered for 20 to 30 s (jittered), during which a repeat call gets the same `unserved` reason with no venue request (at most 1024 remembered). A call waits at most 10 s for a full read: past that, the timeframe is `unserved` for that call (unbilled, not remembered as a failure) while the read finishes in the background, single-flight, and caches its window for the next call. History pages read in Binance's batch weight class; the newest page reads in the interactive class.",
-    "client_cache_refresh": "an open MCP session sees get_sr_zones after it re-fetches tools/list",
+    "client_cache_refresh": "an open MCP session sees get_support_resistance_zones after it re-fetches tools/list",
     "price_tick": "The venue price tick (Binance exchangeInfo PRICE_FILTER.tickSize) is read once for every coin and cached 24 h, in the batch weight class; a failed or tick-less read is remembered for 60 s. A call waits at most 2 s for it and otherwise serves with the four-significant-figure step."
   },
-  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"get_sr_zones\") | .inputSchema | (.properties | has(\"coin\") and has(\"timeframes\") and has(\"venue\")) and .properties.timeframes.maxItems == 3 and .additionalProperties == false' >/dev/null && echo SHAPE_OK"
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"get_support_resistance_zones\") | .inputSchema | (.properties | has(\"coin\") and has(\"timeframes\") and has(\"venue\")) and .properties.timeframes.maxItems == 3 and .additionalProperties == false' >/dev/null && echo SHAPE_OK"
 }

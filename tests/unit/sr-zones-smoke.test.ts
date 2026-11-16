@@ -22,7 +22,7 @@ const run = (...args: string[]) => spawnSync(process.execPath, [SMOKE, ...args],
 /** The call-site patterns, outside every test block: `\x28` matches "(" without an unmatched paren in this source. */
 const ANY_FETCH_CALL = /\bfetch\x28/g;
 const PINNED_FETCH_CALL = /await fetch\x28PROD_URL, \{/g;
-/** SR-ZONES-W2 AC5.1: the one keyless call site (GET /tools, the unpaid POST /x402/get_sr_zones). */
+/** SR-ZONES-W2 AC5.1: the one keyless call site (GET /tools, the unpaid POST /x402/get_support_resistance_zones). */
 const KEYLESS_FETCH_CALL = /await fetch\x28url, \{ \.\.\.init, redirect: 'error', signal: AbortSignal\.timeout\x2860_000\x29 \}\x29/g;
 /** The internal-key header as an object key: it may appear in rpc() only. */
 const KEY_HEADER = /'X-AlgoVault-Internal-Key':/g;
@@ -76,7 +76,7 @@ describe('sr-zones-smoke --self-test', () => {
     expect(r.status).toBe(0);
   });
 
-  // SR-ZONES-W2 AC5.1 adds two keyless reads (GET /tools, an unpaid POST /x402/get_sr_zones). R7 #1's property is kept:
+  // SR-ZONES-W2 AC5.1 adds two keyless reads (GET /tools, an unpaid POST /x402/get_support_resistance_zones). R7 #1's property is kept:
   // the key goes to one place only. rpc() stays the only KEY-BEARING call site, pinned to PROD_URL; the one other site,
   // keylessFetch(), takes no key, refuses any URL but the two declared ones, and refuses redirects (self-test below).
   it('R7 #1: rpc() is the only key-bearing fetch call site; the one other site is keyless and pinned', () => {
@@ -98,10 +98,10 @@ describe('sr-zones-smoke --self-test', () => {
       'end to end: a served description without the mark is the run\'s FAIL',
       'end to end: a BTC edge off the step is the run\'s FAIL',
       'end to end: /tools without the Beta label is the run\'s FAIL',
-      'end to end: /x402/get_sr_zones not found is the run\'s FAIL',
+      'end to end: /x402/get_support_resistance_zones not found is the run\'s FAIL',
       'end to end: an unreachable keyless read is the run\'s INDETERMINATE',
       'end to end: everything clean is the run\'s PASS',
-      'the keyless reads carry no key: GET /tools and POST /x402/get_sr_zones only, redirects refused',
+      'the keyless reads carry no key: GET /tools and POST /x402/get_support_resistance_zones only, redirects refused',
     ]) expect(r.stdout, line).toContain(`PASS  ${line}`);
     expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=PASS');
     expect(r.status).toBe(0);

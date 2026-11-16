@@ -1,9 +1,9 @@
 /**
- * SR-ZONES-W2 CH3 — get_sr_zones on the x402 rails at a flat $0.02 per call (§0.4), and the two gate rows.
+ * SR-ZONES-W2 CH3 — get_support_resistance_zones on the x402 rails at a flat $0.02 per call (§0.4), and the two gate rows.
  *
  *   1. The row and its projections: `channels.httpX402` true and `x402.basePriceUsd` 0.02 (bot, webhook, a2mcp, acp
  *      off); TOOL_PRICING, HTTP_TOOLS and the Bazaar declaration follow. The Bazaar input schema IS the published
- *      validator for `/x402/get_sr_zones`, so it must equal the served tools/list schema; its description is the
+ *      validator for `/x402/get_support_resistance_zones`, so it must equal the served tools/list schema; its description is the
  *      served one (Beta mark included) and its output example is a subset of the documented production response.
  *   2. AC3.1, end to end through the REAL handler, pipeline, route and settle decision (venue and SDK faked, as in
  *      x402-settle-gate): unpaid → 402 at "20000" ($0.02); a proof below the price → 402, nothing served; a paid call
@@ -36,7 +36,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 // ── 1 ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** tools/list's get_sr_zones entry from the REAL server factory. */
+/** tools/list's get_support_resistance_zones entry from the REAL server factory. */
 async function servedTool(): Promise<{ description: string; inputSchema: Record<string, unknown> }> {
   const { createSandboxServer } = await import('../../src/index.js');
   const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
@@ -47,8 +47,8 @@ async function servedTool(): Promise<{ description: string; inputSchema: Record<
   try {
     await server.connect(serverT);
     await client.connect(clientT);
-    const t = (await client.listTools()).tools.find((x) => x.name === 'get_sr_zones');
-    if (!t) throw new Error('get_sr_zones is not on tools/list');
+    const t = (await client.listTools()).tools.find((x) => x.name === 'get_support_resistance_zones');
+    if (!t) throw new Error('get_support_resistance_zones is not on tools/list');
     return t as unknown as { description: string; inputSchema: Record<string, unknown> };
   } finally {
     await client.close();
@@ -58,28 +58,28 @@ async function servedTool(): Promise<{ description: string; inputSchema: Record<
 
 /** The documented production response (the docs partial's example), the one sample this wave measured. */
 function docsExample(): Record<string, unknown> {
-  const partial = fs.readFileSync(path.join(ROOT, 'docs-src', 'partials', 'get-sr-zones.html'), 'utf8');
+  const partial = fs.readFileSync(path.join(ROOT, 'docs-src', 'partials', 'get-support-resistance-zones.html'), 'utf8');
   const blocks = [...partial.matchAll(/<pre><code[^>]*>([\s\S]*?)<\/code><\/pre>/g)].map((m) => m[1]);
   return JSON.parse(blocks[1]) as Record<string, unknown>;
 }
 
-describe('SR-ZONES-W2 CH3 — the registry row prices get_sr_zones at a flat $0.02, x402 only', () => {
+describe('SR-ZONES-W2 CH3 — the registry row prices get_support_resistance_zones at a flat $0.02, x402 only', () => {
   it('httpX402 on, $0.02; bot, webhook, a2mcp and acp stay off; the quota rail is unchanged', () => {
-    const f = getFeature('get_sr_zones')!;
+    const f = getFeature('get_support_resistance_zones')!;
     expect(f.x402).toEqual({ basePriceUsd: 0.02 });
     expect(f.channels).toEqual({ mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false });
     expect(f.quota).toEqual({ unit: 'per-verdict', holdFree: false });
   });
 
   it('TOOL_PRICING, HTTP_TOOLS and the Bazaar declaration follow the row', () => {
-    expect((TOOL_PRICING as Record<string, number>).get_sr_zones).toBe(0.02);
-    expect(HTTP_TOOLS).toContain('get_sr_zones');
-    expect(BAZAAR_ROUTES.get_sr_zones?.toolName).toBe('get_sr_zones');
+    expect((TOOL_PRICING as Record<string, number>).get_support_resistance_zones).toBe(0.02);
+    expect(HTTP_TOOLS).toContain('get_support_resistance_zones');
+    expect(BAZAAR_ROUTES.get_support_resistance_zones?.toolName).toBe('get_support_resistance_zones');
   });
 
   it('the Bazaar description is the served description, Beta mark included, and leaks nothing', () => {
-    const spec = BAZAAR_ROUTES.get_sr_zones!;
-    expect(spec.description).toBe(servedDescription('get_sr_zones'));
+    const spec = BAZAAR_ROUTES.get_support_resistance_zones!;
+    expect(spec.description).toBe(servedDescription('get_support_resistance_zones'));
     expect(spec.description.endsWith(' (Beta)')).toBe(true);
     const all = JSON.stringify(spec).toLowerCase();
     for (const t of FORBIDDEN_BAZAAR_TOKENS) expect(all).not.toContain(t);
@@ -87,13 +87,13 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_sr_zones at a flat $0.
 
   it('the Bazaar input schema (the /x402 validator) equals the served tools/list schema', async () => {
     const { $schema: _s, ...served } = (await servedTool()).inputSchema;
-    expect(BAZAAR_ROUTES.get_sr_zones!.inputSchema).toEqual(served);
+    expect(BAZAAR_ROUTES.get_support_resistance_zones!.inputSchema).toEqual(served);
   });
 
   it('the input example validates strictly; the validator refuses what tools/list refuses', () => {
-    const validate = new Ajv({ strict: true, allErrors: true }).compile(BAZAAR_ROUTES.get_sr_zones!.inputSchema);
-    expect(BAZAAR_ROUTES.get_sr_zones!.example).toEqual({ coin: 'BTC', timeframes: ['1d'] });
-    expect(validate(BAZAAR_ROUTES.get_sr_zones!.example)).toBe(true);
+    const validate = new Ajv({ strict: true, allErrors: true }).compile(BAZAAR_ROUTES.get_support_resistance_zones!.inputSchema);
+    expect(BAZAAR_ROUTES.get_support_resistance_zones!.example).toEqual({ coin: 'BTC', timeframes: ['1d'] });
+    expect(validate(BAZAAR_ROUTES.get_support_resistance_zones!.example)).toBe(true);
     for (const bad of [
       {}, { coin: 'BTC' }, { coin: 'BTC', timeframes: [] }, { coin: 'BTC', timeframes: ['1d', '4h', '1h', '15m'] },
       { coin: 'BTC', timeframes: ['1w'] }, { coin: 'BTC', timeframes: ['1d'], venue: 'BYBIT' }, { coin: '', timeframes: ['1d'] },
@@ -102,7 +102,7 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_sr_zones at a flat $0.
   });
 
   it('the output example is a subset of the documented production response — no invented value', () => {
-    const out = BAZAAR_ROUTES.get_sr_zones!.output!.example as Record<string, unknown> & { results: Array<Record<string, unknown>> };
+    const out = BAZAAR_ROUTES.get_support_resistance_zones!.output!.example as Record<string, unknown> & { results: Array<Record<string, unknown>> };
     const doc = docsExample() as Record<string, unknown> & { results: Array<Record<string, unknown> & { support: unknown[]; resistance: unknown[] }> };
     for (const k of Object.keys(out)) if (k !== 'results') expect(out[k], k).toEqual(doc[k]);
     expect(out.results).toHaveLength(1);
@@ -114,7 +114,7 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_sr_zones at a flat $0.
   });
 
   it('R7: the output example carries no `order`, `formed_from` or `formed_to`', () => {
-    const text = JSON.stringify(BAZAAR_ROUTES.get_sr_zones!.output!.example);
+    const text = JSON.stringify(BAZAAR_ROUTES.get_support_resistance_zones!.output!.example);
     expect(text).toContain('"distance_pct":');
     for (const k of ['order', 'formed_from', 'formed_to']) expect(text, k).not.toContain(`"${k}":`);
   });
@@ -168,7 +168,7 @@ function walkToNow(tf: string, bars: number, seed: number): Candle[] {
   return out;
 }
 
-describe('SR-ZONES-W2 AC3.1 — POST /x402/get_sr_zones, end to end through the real handler', () => {
+describe('SR-ZONES-W2 AC3.1 — POST /x402/get_support_resistance_zones, end to end through the real handler', () => {
   const WALLET = '0x778A05280Fd8dB980E920fE9f31d0A8eAbD17d59';
   const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   const atomic = (usd: number) => Math.round(usd * 1_000_000).toString();
@@ -280,7 +280,7 @@ describe('SR-ZONES-W2 AC3.1 — POST /x402/get_sr_zones, end to end through the 
     await initX402();
     const { mountX402HttpRoutes } = await import('../../src/lib/x402-http-routes.js');
     const app = express();
-    expect(mountX402HttpRoutes(app)).toContain('/x402/get_sr_zones');
+    expect(mountX402HttpRoutes(app)).toContain('/x402/get_support_resistance_zones');
     server = await new Promise<http.Server>((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -297,7 +297,7 @@ describe('SR-ZONES-W2 AC3.1 — POST /x402/get_sr_zones, end to end through the 
 
   /** Settle and mark are fire-and-forget AFTER the response, so give the server a tick. */
   const tick = () => new Promise((r) => setTimeout(r, 80));
-  const post = (body: Record<string, unknown>, paid = true) => fetch(`${baseUrl}/x402/get_sr_zones`, {
+  const post = (body: Record<string, unknown>, paid = true) => fetch(`${baseUrl}/x402/get_support_resistance_zones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(paid ? { 'x-payment': 'present' } : {}) },
     body: JSON.stringify(body),
@@ -307,13 +307,13 @@ describe('SR-ZONES-W2 AC3.1 — POST /x402/get_sr_zones, end to end through the 
     return (await dbQuery<{ settlement_state: string }>('SELECT settlement_state FROM processed_x402_payments WHERE nonce = ?', [n]))[0]?.settlement_state;
   }
 
-  it('unpaid → 402 declaring $0.02 ("20000") for the get_sr_zones resource, with its description', async () => {
+  it('unpaid → 402 declaring $0.02 ("20000") for the get_support_resistance_zones resource, with its description', async () => {
     const res = await post({ coin: 'BTC', timeframes: ['1d'] }, false);
     expect(res.status).toBe(402);
     const body = await res.json() as { accepts: Array<{ amount: string }>; resource: { url: string; description: string } };
     expect(body.accepts.map((a) => a.amount)).toEqual(['20000']);
-    expect(body.resource.url.endsWith('/x402/get_sr_zones')).toBe(true);
-    expect(body.resource.description).toBe(servedDescription('get_sr_zones'));
+    expect(body.resource.url.endsWith('/x402/get_support_resistance_zones')).toBe(true);
+    expect(body.resource.description).toBe(servedDescription('get_support_resistance_zones'));
     await tick();
     expect(settled).toEqual([]);
   });
@@ -363,7 +363,7 @@ describe('SR-ZONES-W2 AC3.1 — POST /x402/get_sr_zones, end to end through the 
 
 // ── 3 ─────────────────────────────────────────────────────────────────────────────────────────
 
-describe('SR-ZONES-W2 AC3.2 — the two gate rows bring get_sr_zones under both gates', () => {
+describe('SR-ZONES-W2 AC3.2 — the two gate rows bring get_support_resistance_zones under both gates', () => {
   const HANDLER = 'src/tools/get-sr-zones.ts';
   const handlerSrc = fs.readFileSync(path.join(ROOT, HANDLER), 'utf8');
   const prepared = (src: string) => stripTypeBlocks(strip(src));

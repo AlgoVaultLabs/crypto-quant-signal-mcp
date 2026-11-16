@@ -631,7 +631,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     mcpText: null,
     refusalJson: 'compact',
   },
-  get_sr_zones: {
+  get_support_resistance_zones: {
     // SR-ZONES-W1 CH2: refuses in-band (structured payload + isError), unbilled — the quota wall, and a call with no
     // requested timeframe served. A served call bills one unit per served timeframe inside the handler. The input
     // takes `timeframes` (plural), so the single-`timeframe` admission row does not apply.

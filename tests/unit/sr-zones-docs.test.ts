@@ -1,5 +1,5 @@
 /**
- * SR-ZONES-W2 CH2 AC2.3 — the docs page (docs-src/partials/get-sr-zones.html) holds only approved text (§0.5): the §0
+ * SR-ZONES-W2 CH2 AC2.3 — the docs page (docs-src/partials/get-support-resistance-zones.html) holds only approved text (§0.5): the §0
  * description, NOTE and the parameter texts, verbatim; field names and JSON types; one example request and one real
  * production response (BTC, 1d), labelled Example. No other claim, number or venue count, and no inline palette
  * (Design.md §13). The facts lint over the page's text lives with the lint (sr-zones-facts-lint.test.ts).
@@ -26,7 +26,7 @@ import { priceLevelStep } from '../../src/lib/sr-zones/rounding.js';
 import type { SrZone } from '../../src/lib/sr-zones/zones.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PARTIAL = readFileSync(join(ROOT, 'docs-src', 'partials', 'get-sr-zones.html'), 'utf8');
+const PARTIAL = readFileSync(join(ROOT, 'docs-src', 'partials', 'get-support-resistance-zones.html'), 'utf8');
 
 const decode = (s: string): string =>
   s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
@@ -97,13 +97,13 @@ describe('SR-ZONES-W2 AC2.3 — the docs page is only the approved text', () => 
 });
 
 describe('SR-ZONES-W2 AC2.3 — the example: one request, one served BTC 1d response', () => {
-  it('the request is a tools/call of get_sr_zones for BTC 1d at the production MCP URL', () => {
+  it('the request is a tools/call of get_support_resistance_zones for BTC 1d at the production MCP URL', () => {
     const curl = codeBlocks()[0];
     expect(codeBlocks()).toHaveLength(2);
     expect(curl.startsWith('curl -s -X POST https://api.algovault.com/mcp ')).toBe(true);
     const body = JSON.parse(curl.match(/-d '(.*)'$/)![1]) as { method: string; params: { name: string; arguments: unknown } };
     expect(body.method).toBe('tools/call');
-    expect(body.params).toEqual({ name: 'get_sr_zones', arguments: { coin: 'BTC', timeframes: ['1d'] } });
+    expect(body.params).toEqual({ name: 'get_support_resistance_zones', arguments: { coin: 'BTC', timeframes: ['1d'] } });
   });
 
   it('the response answers that request: BTC, one 1d result, nothing unserved, NOTE as served', () => {

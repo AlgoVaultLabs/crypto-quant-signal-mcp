@@ -52,7 +52,8 @@ import { SR_ZONES_NOTE, buildSrZonesSummary } from '../lib/sr-zones/summary.js';
 import { priceLevelStep } from '../lib/sr-zones/rounding.js';
 import { serveSrZonesFrame, type SrServedZone } from '../lib/sr-zones/served.js';
 
-const GET_SR_ZONES_TOOL = 'get_sr_zones' as const;
+/** The served tool name (SR-ZONES-W2 R8: renamed from get_sr_zones, no alias); the module names stay. */
+const GET_SR_ZONES_TOOL = 'get_support_resistance_zones' as const;
 const VENUE = 'BINANCE' as const;
 /** Binance klines answer at most 200 candles per request (the adapter's limit). */
 const PAGE_BARS = 200;

@@ -112,7 +112,7 @@ describe('DOCS-MARKET-REGIME-SCREENER-W1 D5 — every card links its how-to', ()
     const ids = [...doc.querySelectorAll('.tools-card')].map((c) => c.id);
     // SR-ZONES-W2: the zones card follows the pre-trade check, by registry order.
     expect(ids.slice(ids.indexOf('scan-market-regimes'), ids.indexOf('scan-market-regimes') + 4))
-      .toEqual(['scan-market-regimes', 'pre-trade-check', 'get-sr-zones', 'chat-knowledge']);
+      .toEqual(['scan-market-regimes', 'pre-trade-check', 'get-support-resistance-zones', 'chat-knowledge']);
     const badges = [...doc.querySelectorAll('#pre-trade-check .tools-badge')].map((b) => b.textContent);
     expect(badges).toEqual(['MCP', 'REST / x402']);
     expect(doc.querySelector('#pre-trade-check a.tools-card-link')?.getAttribute('href')).toBe('https://algovault.com/docs#pre-trade-check');

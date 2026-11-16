@@ -48,7 +48,7 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
       'scan_trade_calls',
       'scan_market_regimes',
       'pre_trade_check',
-      'get_sr_zones', // SR-ZONES-W2: listed, right after the pre-trade check
+      'get_support_resistance_zones', // SR-ZONES-W2: listed, right after the pre-trade check
       'chat_knowledge',
       'search_knowledge',
     ]);

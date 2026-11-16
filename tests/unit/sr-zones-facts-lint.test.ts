@@ -1,5 +1,5 @@
 /**
- * SR-ZONES-W1 AC1.4 — the facts-only lint. get_sr_zones states where zones are; it never says what price will do.
+ * SR-ZONES-W1 AC1.4 — the facts-only lint. get_support_resistance_zones states where zones are; it never says what price will do.
  * Every string literal under src/lib/sr-zones/** and in the handler src/tools/get-sr-zones.ts (unserved reasons, the
  * refusal message and suggested_action — R6 #11), the tool description and its param strings, NOTE and the
  * summary on each of the last 365 fixture candles must match none of FORBIDDEN (ORDER left the response, R7). scripts/sr-zones-smoke.mjs runs the
@@ -167,9 +167,9 @@ describe('SR-ZONES-W2 AC2.3 — facts lint: the docs page', () => {
       .replace(/<[^>]+>/g, ' ')
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
       .replace(/\s+/g, ' ');
-  const partial = pageText(readFileSync(join(REPO, 'docs-src', 'partials', 'get-sr-zones.html'), 'utf8'));
+  const partial = pageText(readFileSync(join(REPO, 'docs-src', 'partials', 'get-support-resistance-zones.html'), 'utf8'));
   const docs = readFileSync(join(REPO, 'landing', 'docs.html'), 'utf8');
-  const start = docs.indexOf('<section id="get-sr-zones"');
+  const start = docs.indexOf('<section id="get-support-resistance-zones"');
   const rendered = pageText(docs.slice(start, docs.indexOf('</section>', start)));
 
   it('read the partial and its rendered section (non-vacuity)', () => {

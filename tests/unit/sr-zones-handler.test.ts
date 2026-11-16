@@ -181,7 +181,7 @@ describe('SR-ZONES-W1 AC2.1 — billing: one unit per served timeframe', () => {
         { timeframe: '4h', reason: 'BINANCE refused the candle request for NOPE (HTTP 400)' },
       ],
     });
-    expect(o.payload._algovault).toMatchObject({ tool: 'get_sr_zones' });
+    expect(o.payload._algovault).toMatchObject({ tool: 'get_support_resistance_zones' });
     expect(used(lic)).toBe(0);
   });
 
@@ -781,7 +781,7 @@ describe('SR-ZONES-W1 — the §0 response shape', () => {
         for (const o of z.overlaps) expect(o.timeframe).not.toBe(res.timeframe);
       }
     }
-    expect(r._algovault).toMatchObject({ tool: 'get_sr_zones', quota: { used: 2 } });
+    expect(r._algovault).toMatchObject({ tool: 'get_support_resistance_zones', quota: { used: 2 } });
     expect(r._algovault).toHaveProperty('auth');
   });
 
@@ -813,7 +813,7 @@ describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-
 
   it('pins the §0 key lists, and carries every field the knowledge-bundle builder reads', () => {
     const s = snap();
-    expect(s.endpoint).toBe('get_sr_zones (MCP tool + POST /x402/get_sr_zones)');
+    expect(s.endpoint).toBe('get_support_resistance_zones (MCP tool + POST /x402/get_support_resistance_zones)');
     expect(s.snapshot_date).toBe('2026-11-16');
     expect(s.superseded_by).toBeUndefined();
     const w1 = audit('get-sr-zones-shape-snapshot-2026-11-15.json');
@@ -833,7 +833,7 @@ describe('SR-ZONES-W1 R7 #3 — the served shape is the one audits/get-sr-zones-
     expect(Array.isArray(s.consumers) && s.consumers.length > 0).toBe(true);
     expect(typeof s.cache_contract).toBe('object');
     expect(typeof s.error_contract).toBe('object');
-    expect(s.drift_check_command).toContain('select(.name == "get_sr_zones")');
+    expect(s.drift_check_command).toContain('select(.name == "get_support_resistance_zones")');
     for (const f of ['outcome_return_pct', 'outcome_price', 'call', 'verdict', 'probability', 'target']) expect(s.forbidden_keys, f).toContain(f);
   });
 
@@ -896,9 +896,9 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
     fakeAdapterCandles.mockImplementation(async (coin: string, tf: string, startTime: number) => binanceLike(coin, tf, startTime));
   });
 
-  it('serves get_sr_zones through callTool with the default deps', async () => {
+  it('serves get_support_resistance_zones through callTool with the default deps', async () => {
     const outcome = await callTool({
-      tool: 'get_sr_zones',
+      tool: 'get_support_resistance_zones',
       input: { coin: 'BTC', timeframes: ['1d'] } as unknown as ValidatedToolInput,
       channel: 'mcp',
       license: keyed(),
@@ -921,7 +921,7 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
       return binanceLike(coin, tf, startTime);
     });
     const outcome = await callTool({
-      tool: 'get_sr_zones',
+      tool: 'get_support_resistance_zones',
       input: { coin: 'BTC', timeframes: ['1d'] } as unknown as ValidatedToolInput,
       channel: 'mcp',
       license: keyed(),
@@ -939,7 +939,7 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
   it('R6 #10: 2 timeframes through the pipeline row → 2 results and exactly 2 units', async () => {
     const lic = keyed();
     const outcome = await callTool({
-      tool: 'get_sr_zones',
+      tool: 'get_support_resistance_zones',
       input: { coin: 'BTC', timeframes: ['1d', '4h'] } as unknown as ValidatedToolInput,
       channel: 'mcp',
       license: lic,
@@ -952,7 +952,7 @@ describe('SR-ZONES-W1 — the pipeline row (MCP)', () => {
 
   it('a call with nothing served is an in-band MCP error', async () => {
     const outcome = await callTool({
-      tool: 'get_sr_zones',
+      tool: 'get_support_resistance_zones',
       input: { coin: 'NOPE', timeframes: ['1d'] } as unknown as ValidatedToolInput,
       channel: 'mcp',
       license: keyed(),

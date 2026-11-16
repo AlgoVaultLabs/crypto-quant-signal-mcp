@@ -98,8 +98,10 @@ const REMOVED_ZONE = ['formed_from', 'formed_to'];
 
 function t1Masked(): GetSrZonesResponse {
   const g = structuredClone(GOLDEN) as GetSrZonesResponse & Record<string, unknown>;
-  // The package version is the one field a release bump moves; the zones are what this test pins.
+  // The package version is the one field a release bump moves; the zones are what this test pins. R8: T1 served the
+  // tool as get_sr_zones; it is get_support_resistance_zones now.
   g._algovault.version = PKG_VERSION;
+  (g._algovault as { tool: string }).tool = 'get_support_resistance_zones';
   for (const k of REMOVED_TOP) delete g[k];
   g.results.forEach((r) => {
     r.summary = withoutRanges(r.summary);

@@ -29,7 +29,8 @@ const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf8')
 // SCAN-MARKET-REGIMES-W1-V2 CH2 repointed 2026-08-28 → 2026-10-19 (scan_market_regimes added; 8 → 9 live).
 // DECISION-CALL-V1-W2 R7 repointed 2026-10-19 → 2026-10-30 (pre_trade_check added; 9 → 10 live).
 // SR-ZONES-W1 CH2 (R5 Q2) repointed 2026-10-30 → 2026-11-15 (get_sr_zones added; 10 → 11 live).
-const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-11-15.json'));
+// SR-ZONES-W2 R8 repointed 2026-11-15 → 2026-11-16 (get_sr_zones renamed get_support_resistance_zones, no alias; 11 live).
+const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-11-16.json'));
 const indexSrc = read('src/index.ts');
 const descSrc = read('src/tool-descriptions.ts');
 

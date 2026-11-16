@@ -108,7 +108,7 @@ const TOOL_LABELS: Record<string, string> = {
   scan_market_regimes: 'Market Regime Screener',
   pre_trade_check: 'Pre-Trade Check',
   // SR-ZONES-W2: the unmarked label; publicToolEntries() adds " (Beta)" from the registry flag.
-  get_sr_zones: 'Support and Resistance Zones',
+  get_support_resistance_zones: 'Support and Resistance Zones',
   scan_funding_arb: 'Funding Arbitrage',
   chat_knowledge: 'Knowledge Chat',
   search_knowledge: 'Knowledge Search',

@@ -51,7 +51,7 @@ const PROD_TOOLS = [
   // DECISION-CALL-V1-W2 R8 — live on tools/list; `publicListing: false` keeps it off nav/docs only.
   'pre_trade_check',
   // SR-ZONES-W1 CH2 — live on tools/list; `publicListing: false` keeps it off nav/docs only.
-  'get_sr_zones',
+  'get_support_resistance_zones',
 ] as const;
 
 describe('GEO-REGISTRY-RANK-TDQS-W1 — MCP annotation-hint SoT', () => {
