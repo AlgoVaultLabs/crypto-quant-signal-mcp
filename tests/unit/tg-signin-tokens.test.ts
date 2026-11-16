@@ -10,7 +10,9 @@
  * outside the work tree. On the Postgres lane DATABASE_URL wins and the same assertions run on Postgres. Two
  * seams, both recorders that delegate: the Stripe key read (`getApiKeyByCustomerId`), so "a Stripe error leaves
  * the token redeemable", "deleted / no key" and "over 5 s" are inputs here, and the database (`dbQuery`,
- * `dbExec`), so "nothing is read before auth" is an observation, not an inference.
+ * `dbExec`), so "nothing is read before auth" is an observation, not an inference, and a failed INSERT an input.
+ * On that lane every worker shares ONE database: the file reads and deletes its own rows only (customer ids
+ * starting `OWN`) and never drops or recreates the table (R-REV3 F2).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -18,7 +20,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const keys = vi.hoisted(() => ({
   // A string is the customer's key, `null` a customer with no key, DELETED a deleted customer, an Error a read
@@ -42,13 +44,17 @@ vi.mock('../../src/lib/stripe.js', async (importOriginal) => ({
   },
 }));
 
-const db = vi.hoisted(() => ({ statements: [] as string[] }));
+const db = vi.hoisted(() => ({ statements: [] as string[], failTokenInsert: false }));
 vi.mock('../../src/lib/performance-db.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../src/lib/performance-db.js')>();
   return {
     ...real,
     dbQuery: (sql: string, params?: unknown[]) => {
       db.statements.push(sql);
+      // The database fault: the token INSERT fails as a driver's would, its message carrying the failing row.
+      if (db.failTokenInsert && /^\s*INSERT\s+INTO\s+tg_signin_tokens\b/i.test(sql)) {
+        return Promise.reject(new Error(`insert failed; failing row contains (${(params ?? []).join(', ')})`));
+      }
       return real.dbQuery(sql, params);
     },
     dbExec: (sql: string) => {
@@ -58,7 +64,7 @@ vi.mock('../../src/lib/performance-db.js', async (importOriginal) => {
   };
 });
 
-import { dbQuery, dbExec, isPgBackend, closeDbAsync } from '../../src/lib/performance-db.js';
+import { dbQuery, closeDbAsync } from '../../src/lib/performance-db.js';
 import {
   REDEEM_PATH,
   SIGNIN_TOKEN_TTL_MS,
@@ -85,6 +91,15 @@ const ORIGINAL = {
   key: process.env.ALGOVAULT_INTERNAL_BYPASS_KEY,
 };
 
+// Every customer id this file writes starts with OWN, and every read and delete below is scoped to it.
+const OWN = 'cus_tgtok_';
+const cus = (name: string) => `${OWN}${name}`;
+const BUYER = cus('buyer');
+const OWN_ROWS = `substr(customer_id, 1, ${OWN.length}) = ?`;
+// Another file's row, the way key-reveal.test.ts writes them (a random `cus_<hex>` id): this file leaves it alone.
+const NEIGHBOUR = `cus_${randomBytes(6).toString('hex')}`;
+let neighbourToken: string;
+
 let server: http.Server;
 let base: string;
 
@@ -98,10 +113,13 @@ beforeAll(async () => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  neighbourToken = (await mintSigninToken({ customerId: NEIGHBOUR, tier: 'pro', email: EMAIL }))!;
+  expect(neighbourToken).toMatch(/^tgl_[0-9a-f]{32}$/);
 });
 
 afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()));
+  await dbQuery(`DELETE FROM tg_signin_tokens WHERE ${OWN_ROWS} OR customer_id = ? RETURNING id`, [OWN, NEIGHBOUR]);
   await closeDbAsync();
   for (const [k, v] of [['PERFORMANCE_DB_PATH', ORIGINAL.dbPath], ['BOT_INTERNAL_BYPASS_ENABLED', ORIGINAL.on], ['ALGOVAULT_INTERNAL_BYPASS_KEY', ORIGINAL.key]] as const) {
     if (v === undefined) delete process.env[k];
@@ -116,9 +134,10 @@ beforeEach(async () => {
   keys.byCustomer.clear();
   keys.calls.length = 0;
   _resetTgSigninTokensForTest();
-  // Creates the table on first use (the lazy ensure under test), then empties it.
+  // Creates the table on first use (the lazy ensure under test), then deletes this file's rows from it.
   await redeemSigninToken('tgl_00000000000000000000000000000000');
-  await dbQuery('DELETE FROM tg_signin_tokens RETURNING id');
+  await dbQuery(`DELETE FROM tg_signin_tokens WHERE ${OWN_ROWS} RETURNING id`, [OWN]);
+  db.failTokenInsert = false;
   db.statements.length = 0;
 });
 
@@ -128,10 +147,9 @@ afterEach(() => {
 });
 
 const grant = (over: Partial<{ customerId: string; tier: 'starter' | 'pro'; email: string }> = {}) => ({
-  customerId: 'cus_tg_1', tier: 'starter' as const, email: EMAIL, ...over,
+  customerId: BUYER, tier: 'starter' as const, email: EMAIL, ...over,
 });
-const rows = () => dbQuery<Record<string, unknown>>('SELECT * FROM tg_signin_tokens ORDER BY id');
-const ddl = async (sql: string) => (isPgBackend() ? void (await dbQuery(sql)) : dbExec(sql));
+const rows = () => dbQuery<Record<string, unknown>>(`SELECT * FROM tg_signin_tokens WHERE ${OWN_ROWS} ORDER BY id`, [OWN]);
 
 /** POST the redeem. `body` is sent as JSON unless it is a string (sent raw, as `type`). */
 const redeem = (body: unknown, auth: string | null = INTERNAL_KEY, type = 'application/json') =>
@@ -189,7 +207,7 @@ describe('mintSigninToken — one row, the hash alone, 24 h (R2.2)', () => {
     expect(more).toEqual([]);
     expect(row).toMatchObject({
       token_hash: createHash('sha256').update(token!).digest('hex'),
-      customer_id: 'cus_tg_1',
+      customer_id: BUYER,
       tier: 'pro',
       email_masked: MASKED,
       redeemed_at: null,
@@ -209,21 +227,23 @@ describe('mintSigninToken — one row, the hash alone, 24 h (R2.2)', () => {
   });
 
   it('a database fault is null, never a throw — logged without the token or the email', async () => {
-    await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
-    await ddl('CREATE TABLE tg_signin_tokens (unrelated INTEGER)');
-    _resetTgSigninTokensForTest();
+    // The fault comes through the dbQuery seam (the INSERT fails); the shared table is never dropped or recreated.
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    db.failTokenInsert = true;
     try {
       expect(await mintSigninToken(grant())).toBeNull();
-      const logged = err.mock.calls.map((c) => c.join(' ')).join('\n');
-      expect(logged).toMatch(/\[tg-signin-tokens\] mint failed/);
-      expect(logged).not.toContain(EMAIL);
-      expect(logged).not.toContain(MASKED);
-      expect(logged).not.toMatch(/tgl_[0-9a-f]{32}/);
     } finally {
-      await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
-      _resetTgSigninTokensForTest();
+      db.failTokenInsert = false;
     }
+    const logged = err.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toMatch(/\[tg-signin-tokens\] mint failed/);
+    expect(logged).not.toContain(EMAIL);
+    expect(logged).not.toContain(MASKED);
+    expect(logged).not.toMatch(/tgl_[0-9a-f]{32}/);
+    expect(await rows()).toEqual([]);
+    // The table is as it was: the next mint stores its row.
+    expect(await mintSigninToken(grant())).toMatch(/^tgl_[0-9a-f]{32}$/);
+    expect(await rows()).toHaveLength(1);
   });
 });
 
@@ -248,7 +268,7 @@ describe('the route refuses without the internal key (R2.4)', () => {
 
   it('an unauthenticated redeem reads no table and asks Stripe nothing — and the token stays redeemable', async () => {
     const token = await mintSigninToken(grant());
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     db.statements.length = 0;
     expect((await redeem({ token }, null)).status).toBe(401);
     expect((await redeem('{not json', null)).status).toBe(401);
@@ -262,23 +282,23 @@ describe('the route refuses without the internal key (R2.4)', () => {
 describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
   it('a token redeems ONCE: the key, the tier and the masked email; the second call is {ok:false} with no Stripe call', async () => {
     const token = await mintSigninToken(grant({ tier: 'pro' }));
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     const first = await redeem({ token });
     expect(first.status).toBe(200);
     expect(first.headers.get('cache-control')).toBe('no-store');
     expect(await first.json()).toEqual({ ok: true, api_key: API_KEY, tier: 'pro', email_masked: MASKED });
-    expect(keys.calls).toEqual(['cus_tg_1']);
+    expect(keys.calls).toEqual([BUYER]);
     const [row] = await rows();
     expect(row.redeemed_at).not.toBeNull();
     const second = await redeem({ token });
     expect(second.status).toBe(200);
     expect(await second.json()).toEqual({ ok: false });
-    expect(keys.calls).toEqual(['cus_tg_1']);
+    expect(keys.calls).toEqual([BUYER]);
   });
 
   it('bad shape, unknown token, a body that is not JSON or is over 1 kB → 200 {ok:false}, no Stripe call', async () => {
     await mintSigninToken(grant());
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     const bodies: Array<[unknown, string?]> = [
       [{}], [{ token: null }], [{ token: 42 }], [{ token: [`tgl_${'a'.repeat(32)}`] }], [{ token: `tgl_${'A'.repeat(32)}` }],
       [{ token: `tgl_${'a'.repeat(31)}` }], [{ token: `auth_${API_KEY}` }], [{ token: `tgl_${'a'.repeat(32)}` }], // unknown
@@ -296,10 +316,10 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
 
   it('an expired token is {ok:false} with no Stripe call; one a second inside its 24 h redeems', async () => {
     const t0 = Date.now();
-    const old = await mintSigninToken(grant({ customerId: 'cus_old' }), new Date(t0 - SIGNIN_TOKEN_TTL_MS - 1000));
-    const fresh = await mintSigninToken(grant({ customerId: 'cus_fresh' }), new Date(t0 - SIGNIN_TOKEN_TTL_MS + 60_000));
-    keys.byCustomer.set('cus_old', API_KEY);
-    keys.byCustomer.set('cus_fresh', API_KEY);
+    const old = await mintSigninToken(grant({ customerId: cus('old') }), new Date(t0 - SIGNIN_TOKEN_TTL_MS - 1000));
+    const fresh = await mintSigninToken(grant({ customerId: cus('fresh') }), new Date(t0 - SIGNIN_TOKEN_TTL_MS + 60_000));
+    keys.byCustomer.set(cus('old'), API_KEY);
+    keys.byCustomer.set(cus('fresh'), API_KEY);
     expect(await (await redeem({ token: old })).json()).toEqual({ ok: false });
     expect(keys.calls).toEqual([]);
     expect(await (await redeem({ token: fresh })).json()).toMatchObject({ ok: true, api_key: API_KEY });
@@ -307,14 +327,14 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
 
   it('a Stripe error is a 503 and the token stays redeemable: the next redeem gets the key', async () => {
     const token = await mintSigninToken(grant());
-    keys.byCustomer.set('cus_tg_1', Object.assign(new Error('Service Unavailable'), { type: 'StripeAPIError', statusCode: 503 }));
+    keys.byCustomer.set(BUYER, Object.assign(new Error('Service Unavailable'), { type: 'StripeAPIError', statusCode: 503 }));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = await redeem({ token });
     expect(r.status).toBe(503);
     expect(await r.json()).toEqual({ ok: false, error: 'stripe_unavailable' });
     expect((await rows())[0].redeemed_at).toBeNull();
     expect(warn.mock.calls.map((c) => c.join(' ')).join('\n')).toMatch(/left unspent/);
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     expect(await (await redeem({ token })).json()).toEqual({ ok: true, api_key: API_KEY, tier: 'starter', email_masked: MASKED });
   });
 
@@ -322,10 +342,18 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
     expect(STRIPE_READ_TIMEOUT_MS).toBe(5_000);
     const token = await mintSigninToken(grant());
     let answer: (v: unknown) => void = () => {};
-    keys.byCustomer.set('cus_tg_1', () => new Promise((resolve) => { answer = resolve; }));
+    let started: () => void = () => {};
+    const readStarted = new Promise<void>((resolve) => { started = resolve; });
+    keys.byCustomer.set(BUYER, () => {
+      started();
+      return new Promise((resolve) => { answer = resolve; });
+    });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const pending = redeemSigninToken(token);
+    // Fake time moves only once the read has begun: the row lookup before it may wait on real I/O (a socket on
+    // Postgres), and the 5 s deadline is armed in the same tick as the read (R-REV3 F1).
+    await readStarted;
     await vi.advanceTimersByTimeAsync(STRIPE_READ_TIMEOUT_MS - 1);
     let settled = false;
     void pending.then(() => { settled = true; });
@@ -337,13 +365,13 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
     await Promise.resolve();
     vi.useRealTimers();
     expect((await rows())[0].redeemed_at).toBeNull();
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     expect(await redeemSigninToken(token)).toEqual({ status: 200, body: { ok: true, api_key: API_KEY, tier: 'starter', email_masked: MASKED } });
   });
 
   it('a deleted or keyless customer spends the token and answers {ok:false}; the next call asks Stripe nothing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const [customerId, answer] of [['cus_gone', keys.DELETED], ['cus_nokey', null]] as const) {
+    for (const [customerId, answer] of [[cus('gone'), keys.DELETED], [cus('nokey'), null]] as const) {
       const token = await mintSigninToken(grant({ customerId }));
       keys.byCustomer.set(customerId, answer);
       expect(await (await redeem({ token })).json()).toEqual({ ok: false });
@@ -359,7 +387,7 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
     // Hold every Stripe read open until all redeems have read the row, so each passes the unredeemed check
     // and only the spend can tell them apart.
     const waiting: Array<() => void> = [];
-    keys.byCustomer.set('cus_tg_1', () => new Promise((resolve) => { waiting.push(() => resolve({ kind: 'key', apiKey: API_KEY })); }));
+    keys.byCustomer.set(BUYER, () => new Promise((resolve) => { waiting.push(() => resolve({ kind: 'key', apiKey: API_KEY })); }));
     const n = 4;
     const outcomes = Array.from({ length: n }, () => redeemSigninToken(token));
     await vi.waitFor(() => expect(waiting).toHaveLength(n));
@@ -376,7 +404,7 @@ describe('POST /api/bot/signin-token/redeem (R2.4)', () => {
     }
     const tokens: string[] = [];
     const paths: Array<[string, unknown]> = [
-      ['cus_ok', API_KEY], ['cus_503', new Error(`upstream said ${API_KEY} ${EMAIL}`)], ['cus_del', keys.DELETED], ['cus_none', null],
+      [cus('ok'), API_KEY], [cus('503'), new Error(`upstream said ${API_KEY} ${EMAIL}`)], [cus('del'), keys.DELETED], [cus('none'), null],
     ];
     for (const [customerId, answer] of paths) {
       const token = (await mintSigninToken(grant({ customerId })))!;
@@ -419,10 +447,10 @@ describe('formatRedeemResponse — the allow-list (lead ruling 11:05)', () => {
 
   it('nothing from the row leaves: the answer never names the customer, the hash or the expiry', async () => {
     const token = await mintSigninToken(grant());
-    keys.byCustomer.set('cus_tg_1', API_KEY);
+    keys.byCustomer.set(BUYER, API_KEY);
     const body = JSON.stringify(await (await redeem({ token })).json());
     const [row] = await rows();
-    for (const v of ['cus_tg_1', row.token_hash, 'expires_at', 'created_at', 'redeemed_at', 'customer_id', 'id"']) {
+    for (const v of [BUYER, row.token_hash, 'expires_at', 'created_at', 'redeemed_at', 'customer_id', 'id"']) {
       expect(body).not.toContain(String(v));
     }
   });
@@ -437,5 +465,14 @@ describe('the server wires it (source)', () => {
     expect(iValidate).toBeGreaterThan(0);
     expect(iRegister).toBeGreaterThan(iValidate);
     expect(src.indexOf('registerSigninTokenRoutes(app);', iRegister + 1)).toBe(-1);
+  });
+});
+
+// LAST in the file: it reads the neighbour row after every test above has run (R-REV3 F2).
+describe('the shared table — this file touches its own rows only', () => {
+  it("another file's row outlives every test above: none deletes it, drops the table or spends it", async () => {
+    const [row, ...more] = await dbQuery<Record<string, unknown>>('SELECT * FROM tg_signin_tokens WHERE customer_id = ?', [NEIGHBOUR]);
+    expect(more).toEqual([]);
+    expect(row).toMatchObject({ token_hash: hashSigninToken(neighbourToken), tier: 'pro', email_masked: MASKED, redeemed_at: null });
   });
 });

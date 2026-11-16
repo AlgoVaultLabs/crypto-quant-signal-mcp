@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeDbAsync, dbExec, dbQuery, isPgBackend } from '../../src/lib/performance-db.js';
+import { closeDbAsync, dbQuery } from '../../src/lib/performance-db.js';
 import { getWelcomePageHtml, getWelcomeRevealHtml } from '../../src/lib/welcome-page.js';
 import { stripComments } from '../../scripts/lib/strip-comments.mjs';
 
@@ -50,6 +50,21 @@ const stripe = vi.hoisted(() => ({
 vi.mock('../../src/lib/stripe.js', () => ({
   getCustomerApiKey: (id: string) => stripe.getCustomerApiKey(id),
 }));
+
+// ONE database seam, and it delegates: every export is the real module's, except that dbQuery fails the sign-in
+// token INSERT while `dbFault.tokenInsert` is set, so no test drops or recreates the shared table (R-REV3 F2).
+// The last suite swaps the whole module for its recorder.
+const dbFault = vi.hoisted(() => ({ tokenInsert: false }));
+vi.mock('../../src/lib/performance-db.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/lib/performance-db.js')>();
+  return {
+    ...real,
+    dbQuery: (sql: string, params?: unknown[]) =>
+      dbFault.tokenInsert && /^\s*INSERT\s+INTO\s+tg_signin_tokens\b/i.test(sql)
+        ? Promise.reject(new Error('connection terminated unexpectedly'))
+        : real.dbQuery(sql, params),
+  };
+});
 
 const DAY_S = 24 * 60 * 60;
 const FROZEN_COPY = 'This key was already shown. Get it again by email from your account page.';
@@ -336,24 +351,31 @@ describe('revealKeyOnce — the Telegram sign-in token (TG-SIGNIN-W1-R2 R2.3)', 
   });
 
   it('a failed mint still reveals the key — without a token, so the page keeps the auth_ button', async () => {
-    // Make the table unusable for the mint: a same-named table without the columns. The lazy ensure's
-    // CREATE IF NOT EXISTS is then a no-op and the INSERT fails, as any real database fault would.
-    // (DDL through dbQuery on Postgres; better-sqlite3's all() refuses a statement that returns no rows.)
-    const ddl = async (sql: string) => (isPgBackend() ? void (await dbQuery(sql)) : dbExec(sql));
-    await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
-    await ddl('CREATE TABLE tg_signin_tokens (unrelated INTEGER)');
-    tokens._resetTgSigninTokensForTest();
+    const customerOf = (s: SessionView) => (s as unknown as { customerId: string }).customerId;
+    // A row an earlier reveal left behind — on the Postgres lane it may be another worker's.
+    const earlier = newId();
+    const e = stage(earlier, tgSession());
+    expect((await kr.revealKeyOnce(earlier) as { signinToken?: string }).signinToken).toMatch(TOKEN_RE);
+    // The fault comes through the dbQuery seam: the token INSERT fails, as any real database fault would. The
+    // shared table is never dropped or recreated — on the Postgres lane another worker is using it (R-REV3 F2).
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const id = newId();
+    const v = stage(id, tgSession());
+    dbFault.tokenInsert = true;
     try {
-      const id = newId();
-      const v = stage(id, tgSession());
       expect(await kr.revealKeyOnce(id)).toEqual({ kind: 'reveal', apiKey: v.apiKey, tier: v.tier, email: v.email });
       expect(err.mock.calls.map((c) => c.join(' ')).join('\n')).toMatch(/\[tg-signin-tokens\] mint failed/);
     } finally {
+      dbFault.tokenInsert = false;
       err.mockRestore();
-      await ddl('DROP TABLE IF EXISTS tg_signin_tokens');
-      tokens._resetTgSigninTokensForTest();
     }
+    // The table and its rows are untouched, and it takes the next token.
+    expect(await rowsFor(customerOf(v))).toEqual([]);
+    expect(await rowsFor(customerOf(e))).toHaveLength(1);
+    const later = newId();
+    const l = stage(later, tgSession());
+    expect((await kr.revealKeyOnce(later) as { signinToken?: string }).signinToken).toMatch(TOKEN_RE);
+    expect(await rowsFor(customerOf(l))).toHaveLength(1);
   });
 });
 
