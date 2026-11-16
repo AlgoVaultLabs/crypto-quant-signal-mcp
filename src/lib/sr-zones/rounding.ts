@@ -120,14 +120,3 @@ export function roundZoneOutward<Z extends { low: number; high: number }>(zone: 
   if (step === null) return zone;
   return { ...zone, low: roundLevelDown(zone.low, step), high: roundLevelUp(zone.high, step) };
 }
-
-/** A frame's support and resistance zones, each through roundZoneOutward, in their computed order. */
-export function roundFrameOutward<Z extends { low: number; high: number }>(
-  frame: { support: readonly Z[]; resistance: readonly Z[] },
-  step: LevelStep | null,
-): { support: Z[]; resistance: Z[] } {
-  return {
-    support: frame.support.map((z) => roundZoneOutward(z, step)),
-    resistance: frame.resistance.map((z) => roundZoneOutward(z, step)),
-  };
-}

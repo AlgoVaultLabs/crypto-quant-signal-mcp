@@ -342,9 +342,10 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
 /**
  * Every reason a read failure gives (unservedReason), one template each — {venue}, {coin} and {n} are filled in — and
  * whether it is transient: the condition clears on its own, so a later call can be served (the refusal is then a 503).
- * R7 #2: the post-deploy docs-samples gate (scripts/check-docs-samples-live.mjs, P10) classifies a live refusal's
- * reasons with isTransientSrUnservedReason over this same table — one list, never a hand copy. A reason from the zone
- * formula (computeSrZones) is not in it, and is not transient.
+ * R7 #2: a refusal's reasons are classified by isTransientSrUnservedReason over this same table, in two places — the
+ * handler's refusal status below, and the post-deploy docs-samples gate (scripts/check-docs-samples-live.mjs, P10) on
+ * a live refusal. One list and one predicate, never a hand copy. A reason from the zone formula (computeSrZones) is
+ * not in it, and is not transient.
  */
 export const SR_UNSERVED_REASONS = {
   timeframe: { template: '{venue} does not serve this timeframe', transient: false },
@@ -361,13 +362,11 @@ export const SR_UNSERVED_REASONS = {
 type SrUnservedKind = keyof typeof SR_UNSERVED_REASONS;
 
 /** One reason from its template. Replacer functions, so a `$` in a caller's coin is never read as a pattern. */
-function reasonOf(kind: SrUnservedKind, fill: { coin?: string; n?: number } = {}): { reason: string; transient: boolean } {
-  const { template, transient } = SR_UNSERVED_REASONS[kind];
-  const reason = template
+function reasonOf(kind: SrUnservedKind, fill: { coin?: string; n?: number } = {}): string {
+  return SR_UNSERVED_REASONS[kind].template
     .replace('{venue}', () => VENUE)
     .replace('{coin}', () => fill.coin ?? '')
     .replace('{n}', () => String(fill.n ?? ''));
-  return { reason, transient };
 }
 
 const PLACEHOLDER_PATTERN = new Map([['{venue}', '[A-Z]+'], ['{coin}', '\\S+'], ['{n}', '\\d+']]);
@@ -382,8 +381,8 @@ export function isTransientSrUnservedReason(reason: string): boolean {
   return TRANSIENT_REASON_PATTERNS.some((re) => re.test(reason));
 }
 
-/** Why a timeframe was not served, from what its read threw; `transient` when a retry can change the answer. */
-function unservedReason(err: unknown, coin: string): { reason: string; transient: boolean } {
+/** Why a timeframe was not served, from what its read threw. */
+function unservedReason(err: unknown, coin: string): string {
   if (err instanceof TimeframeUnservedError) return reasonOf('timeframe');
   if (err instanceof VenueMarketClosedError) return reasonOf('marketClosed', { coin });
   if (err instanceof StaleUpstreamWindowError) return reasonOf('staleWindow', { n: err.headGapBars });
@@ -430,15 +429,16 @@ export async function runGetSrZones(
   for (const timeframe of timeframes) {
     const stepMs = intervalMsFor(timeframe);
     if (stepMs === null) {
-      unserved.push({ timeframe, reason: reasonOf('timeframe').reason });
+      unserved.push({ timeframe, reason: reasonOf('timeframe') });
       continue;
     }
     try {
       windows.push({ timeframe, stepMs, window: await windowFor(deps, coin, timeframe, stepMs) });
     } catch (err) {
-      const why = unservedReason(err, coin);
-      transient ||= why.transient;
-      unserved.push({ timeframe, reason: why.reason });
+      const reason = unservedReason(err, coin);
+      // The status reads the reason through the predicate the docs-samples gate uses: a 503 exactly when it says transient.
+      transient ||= isTransientSrUnservedReason(reason);
+      unserved.push({ timeframe, reason });
     }
   }
 
