@@ -119,9 +119,11 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
     expect(texts).toContain(
       'Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.',
     );
-    expect(texts).toContain(' is rate-limiting requests');
+    // R7 #2: the unserved reasons are templates in one table (SR_UNSERVED_REASONS), linted as written.
+    expect(texts).toContain('{venue} is rate-limiting requests');
     expect(texts).toContain('No requested timeframe could be served for ');
-    expect(texts).toContain(' candle request failed');
+    expect(texts).toContain('{venue} candle request failed');
+    expect(texts).toContain('{venue} candle history did not load within {n} s; the read continues in the background');
   });
 
   it.each(handlerLiterals)('%s literal has no prediction word: %s', (_file, s) => {

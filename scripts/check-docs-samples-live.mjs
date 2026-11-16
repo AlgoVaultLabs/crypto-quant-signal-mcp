@@ -311,8 +311,44 @@ export const PROBES = [
       }
       return f;
     },
+    /**
+     * R7 #2. A refusal whose EVERY unserved reason is transient in the handler's own table (a throttle, an empty or
+     * stale read, the first full read still loading on a fresh container) did not exercise the documented sample:
+     * returns why, and the run reads INDETERMINATE. Null — so `assert` judges it, and a refusal FAILs — for a served
+     * answer, a refusal with no unserved row (the quota wall), any other reason, or when the table cannot be read.
+     */
+    unobserved(res, reasons = srUnservedReasons()) {
+      if (!res.json?.result?.isError || reasons === null) return null;
+      let body;
+      try { body = JSON.parse(res.json.result.content?.[0]?.text); } catch { return null; }
+      const rows = Array.isArray(body?.unserved) ? body.unserved : [];
+      if (rows.length === 0) return null;
+      if (!rows.every((u) => typeof u?.reason === 'string' && reasons.isTransientSrUnservedReason(u.reason))) return null;
+      return `refused for a transient reason only (${rows.map((u) => `${u.timeframe}: ${u.reason}`).join('; ')})`;
+    },
+    /** R7 #2: once unobserved, called again after this long, as the smoke does (scripts/sr-zones-smoke.mjs). */
+    retryAfterMs: 15_000,
   },
 ];
+
+/**
+ * R7 #2: get_sr_zones's unserved-reason table and its transient predicate, from the handler itself
+ * (src/tools/get-sr-zones.ts: SR_UNSERVED_REASONS, isTransientSrUnservedReason) as `npm run build` compiles it —
+ * deploy.yml builds before the post-deploy step runs this gate. Never a hand list here. Null when unreadable.
+ */
+export function loadSrUnservedReasons(path = join(ROOT, 'dist', 'tools', 'get-sr-zones.js')) {
+  try {
+    const m = createRequire(import.meta.url)(path);
+    return m && typeof m.isTransientSrUnservedReason === 'function' && m.SR_UNSERVED_REASONS ? m : null;
+  } catch {
+    return null;
+  }
+}
+let srUnservedReasonsMemo;
+function srUnservedReasons() {
+  if (srUnservedReasonsMemo === undefined) srUnservedReasonsMemo = loadSrUnservedReasons();
+  return srUnservedReasonsMemo;
+}
 
 /**
  * A probe resolves when ITS OWN partial (`source`) contains a call with its METHOD + PATH.
@@ -801,6 +837,11 @@ export function classify(results) {
   if (quota.length) {
     return { verdict: 'INDETERMINATE', why: `rate-limited, documented behaviour not exercised: ${quota.map((r) => `${r.id}=429`).join(', ')} — this gate consumes a real quota on every deploy; the endpoint is fine` };
   }
+  // R7 #2: an in-band refusal for a transient reason only (after the probe's one retry) — not exercised, not divergence.
+  const unobserved = results.filter((r) => r.unobserved);
+  if (unobserved.length) {
+    return { verdict: 'INDETERMINATE', why: `documented behaviour not exercised: ${unobserved.map((r) => `${r.id} ${r.unobserved}`).join('; ')}` };
+  }
   const failed = results.filter((r) => r.failures.length);
   if (failed.length) {
     return { verdict: 'FAIL', why: failed.map((r) => `${r.id} (${r.source}): ${r.failures.join(' · ')}`).join('\n  ') };
@@ -836,9 +877,28 @@ async function run1(base, probe, match) {
   }
 }
 
+/**
+ * One probe's observation. R7 #2: a probe that declares `retryAfterMs` is called once more after that wait when its
+ * first answer was unobserved (P10: refused for a transient reason only), as the smoke does, and is judged on the
+ * second answer. `run` and `sleep` are seams for the self-test; a transport error propagates to the caller.
+ */
+export async function observeProbe(base, probe, match, { run = run1, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const unobservedIn = (o) => (UNOBSERVABLE(o.status) ? null : (probe.unobserved?.(o) ?? null));
+  let observed = await run(base, probe, match);
+  let retried = false;
+  if (probe.retryAfterMs && unobservedIn(observed)) {
+    await sleep(probe.retryAfterMs);
+    observed = await run(base, probe, match);
+    retried = true;
+  }
+  const unobserved = unobservedIn(observed);
+  const failures = UNOBSERVABLE(observed.status) || unobserved ? [] : probe.assert(observed);
+  return { status: observed.status, failures, unobserved, retried };
+}
+
 // ── self-test ────────────────────────────────────────────────────────────────
 
-export function selfTest() {
+export async function selfTest() {
   let passed = 0;
   const failed = [];
   const check = (label, actual, expected) => {
@@ -920,6 +980,65 @@ export function selfTest() {
   check('P10 flags a response that does not answer the 1d the sample sent', p10.assert(srz({}, { timeframe: '4h' })).length, 1);
   const srzRefused = { status: 200, json: { result: { isError: true, content: [{ text: JSON.stringify({ code: 'no_timeframe_served', message: 'm' }) }] } } };
   check('P10 flags a REFUSED sample, naming the code', /no_timeframe_served/.test(p10.assert(srzRefused).join()), true);
+
+  // ── SR-ZONES-W2 R7 #2: a P10 refusal for a TRANSIENT reason only did not exercise the sample (INDETERMINATE); a
+  // refusal for any other reason stays FAIL. The transient set is the handler's own table, read from dist/ — every row
+  // of it is driven here, so a row added there is covered here with no edit. Then the one retry after 15 s.
+  const srReasons = loadSrUnservedReasons();
+  check('R7 #2: the handler\'s unserved-reason table is readable (dist/tools/get-sr-zones.js; run npm run build)', srReasons !== null, true);
+  if (srReasons) {
+    const fill = (t) => t.replace('{venue}', () => 'BINANCE').replace('{coin}', () => 'BTC').replace('{n}', () => '10');
+    const kinds = Object.entries(srReasons.SR_UNSERVED_REASONS);
+    const transientKinds = kinds.filter(([, r]) => r.transient);
+    const otherKinds = kinds.filter(([, r]) => !r.transient);
+    check('R7 #2: the table holds both transient and other reasons (not vacuous)', transientKinds.length > 0 && otherKinds.length > 0, true);
+    const refusal = (rows) => ({ status: 200, json: { result: { isError: true, content: [{ text: JSON.stringify({ code: 'no_timeframe_served', message: 'm', unserved: rows }) }] } } });
+    const asResult = (o) => R({ id: 'P10', status: o.status, failures: o.failures, unobserved: o.unobserved });
+    const verdictOf = (res) => {
+      const unobserved = p10.unobserved(res, srReasons);
+      return classify([asResult({ status: res.status, failures: unobserved ? [] : p10.assert(res), unobserved })]).verdict;
+    };
+    for (const [kind, r] of transientKinds) {
+      check(`R7 #2: a P10 refusal for a transient reason only is INDETERMINATE (${kind})`, verdictOf(refusal([{ timeframe: '1d', reason: fill(r.template) }])), 'INDETERMINATE');
+    }
+    for (const [kind, r] of otherKinds) {
+      check(`R7 #2: a P10 refusal for any other reason is FAIL (${kind})`, verdictOf(refusal([{ timeframe: '1d', reason: fill(r.template) }])), 'FAIL');
+    }
+    check('R7 #2: a reason from the zone formula is FAIL', verdictOf(refusal([{ timeframe: '1d', reason: 'fewer than 21 closed candles' }])), 'FAIL');
+    check('R7 #2: a transient reason beside any other reason is FAIL',
+      verdictOf(refusal([{ timeframe: '1d', reason: fill(transientKinds[0][1].template) }, { timeframe: '4h', reason: fill(otherKinds[0][1].template) }])), 'FAIL');
+    check('R7 #2: a refusal with no unserved row (the quota wall) is FAIL, never vacuously transient', verdictOf(srzRefused), 'FAIL');
+    check('R7 #2: a served answer is observed', p10.unobserved(srz(), srReasons), null);
+    check('R7 #2: P10 declares the 15 s retry', p10.retryAfterMs, 15_000);
+
+    // The post-deploy case: the first full read is still loading on a fresh container.
+    const transient = refusal([{ timeframe: '1d', reason: fill((srReasons.SR_UNSERVED_REASONS.loadTimeout ?? transientKinds[0][1]).template) }]);
+    const other = refusal([{ timeframe: '1d', reason: fill(otherKinds[0][1].template) }]);
+    /** observeProbe over scripted answers: records each call and each wait, never sleeps, never touches the network. */
+    const scripted = async (answers) => {
+      let calls = 0;
+      const waits = [];
+      const o = await observeProbe('http://self-test.invalid', p10, null, {
+        run: async () => answers[Math.min(calls++, answers.length - 1)],
+        sleep: async (ms) => { waits.push(ms); },
+      });
+      return { calls, waits: waits.join(','), verdict: classify([asResult(o)]).verdict, retried: o.retried };
+    };
+    let t = await scripted([transient, srz()]);
+    check('R7 #2: a transient refusal is called again once after 15 s, then judged on the second answer (served → PASS)', `${t.calls}|${t.waits}|${t.verdict}`, '2|15000|PASS');
+    t = await scripted([transient, transient]);
+    check('R7 #2: still refused for a transient reason after the retry is INDETERMINATE', `${t.calls}|${t.waits}|${t.verdict}`, '2|15000|INDETERMINATE');
+    t = await scripted([transient, other]);
+    check('R7 #2: a transient refusal then another reason is FAIL', `${t.calls}|${t.verdict}`, '2|FAIL');
+    t = await scripted([other, srz()]);
+    check('R7 #2: a refusal for any other reason is not retried, and FAILs', `${t.calls}|${t.waits}|${t.verdict}`, '1||FAIL');
+    t = await scripted([srz(), transient]);
+    check('R7 #2: a served first answer is not retried', `${t.calls}|${t.waits}|${t.verdict}`, '1||PASS');
+    const noRetry = { ...p10, retryAfterMs: undefined };
+    let noRetryCalls = 0;
+    const o = await observeProbe('http://self-test.invalid', noRetry, null, { run: async () => { noRetryCalls++; return transient; }, sleep: async () => {} });
+    check('R7 #2: a probe that declares no retry is called once', `${noRetryCalls}|${classify([asResult(o)]).verdict}`, '1|INDETERMINATE');
+  }
 
   // ── the BYPASSED SEAM ──────────────────────────────────────────────────────
   // Every scenario above replaces the extractor, so nothing has exercised it. Assert IDENTITY, not
@@ -1255,17 +1374,17 @@ async function main() {
 
   const results = [];
   for (const { probe, match } of resolved) {
-    let observed;
+    let o;
     try {
-      observed = await run1(base, probe, match);
+      o = await observeProbe(base, probe, match);
     } catch (e) {
       results.push({ id: probe.id, source: probe.source, status: 0, failures: [], transportError: e?.message || String(e) });
       continue;
     }
-    const failures = UNOBSERVABLE(observed.status) ? [] : probe.assert(observed);
-    results.push({ id: probe.id, source: probe.source, status: observed.status, failures, transportError: null });
-    const mark = UNOBSERVABLE(observed.status) ? '~' : failures.length ? '✗' : '✓';
-    console.log(`  ${mark} ${probe.id} ${probe.method} ${probe.path} [${observed.status}] — ${probe.what}`);
+    results.push({ id: probe.id, source: probe.source, status: o.status, failures: o.failures, unobserved: o.unobserved, transportError: null });
+    const mark = UNOBSERVABLE(o.status) || o.unobserved ? '~' : o.failures.length ? '✗' : '✓';
+    const again = o.retried ? ` (called again after ${probe.retryAfterMs / 1000} s)` : '';
+    console.log(`  ${mark} ${probe.id} ${probe.method} ${probe.path} [${o.status}]${again} — ${probe.what}`);
   }
 
   // ── P7 — the published parameter tables against the served schema ──────────
@@ -1470,6 +1589,6 @@ async function main() {
  */
 const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
-  if (process.argv.includes('--self-test')) process.exit(selfTest());
-  main();
+  if (process.argv.includes('--self-test')) selfTest().then((code) => process.exit(code));
+  else main();
 }

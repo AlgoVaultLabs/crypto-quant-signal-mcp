@@ -338,24 +338,61 @@ async function windowFor(deps: SrZonesDeps, coin: string, timeframe: string, ste
   ));
 }
 
+/**
+ * Every reason a read failure gives (unservedReason), one template each — {venue}, {coin} and {n} are filled in — and
+ * whether it is transient: the condition clears on its own, so a later call can be served (the refusal is then a 503).
+ * R7 #2: the post-deploy docs-samples gate (scripts/check-docs-samples-live.mjs, P10) classifies a live refusal's
+ * reasons with isTransientSrUnservedReason over this same table — one list, never a hand copy. A reason from the zone
+ * formula (computeSrZones) is not in it, and is not transient.
+ */
+export const SR_UNSERVED_REASONS = {
+  timeframe: { template: '{venue} does not serve this timeframe', transient: false },
+  marketClosed: { template: '{venue} has the {coin} market closed', transient: false },
+  staleWindow: { template: '{venue} served a candle window that ends {n} closed candles before now', transient: true },
+  rateLimited: { template: '{venue} is rate-limiting requests', transient: true },
+  budgetSkipped: { template: '{venue} candle history was skipped: the shared request budget was full', transient: true },
+  emptyWindow: { template: '{venue} returned no candles for this timeframe', transient: true },
+  loadTimeout: { template: '{venue} candle history did not load within {n} s; the read continues in the background', transient: true },
+  refused400: { template: '{venue} refused the candle request for {coin} (HTTP 400)', transient: false },
+  requestFailed: { template: '{venue} candle request failed', transient: true },
+} as const satisfies Record<string, { template: string; transient: boolean }>;
+
+type SrUnservedKind = keyof typeof SR_UNSERVED_REASONS;
+
+/** One reason from its template. Replacer functions, so a `$` in a caller's coin is never read as a pattern. */
+function reasonOf(kind: SrUnservedKind, fill: { coin?: string; n?: number } = {}): { reason: string; transient: boolean } {
+  const { template, transient } = SR_UNSERVED_REASONS[kind];
+  const reason = template
+    .replace('{venue}', () => VENUE)
+    .replace('{coin}', () => fill.coin ?? '')
+    .replace('{n}', () => String(fill.n ?? ''));
+  return { reason, transient };
+}
+
+const PLACEHOLDER_PATTERN = new Map([['{venue}', '[A-Z]+'], ['{coin}', '\\S+'], ['{n}', '\\d+']]);
+const escapeRegExp = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A template as a whole-string pattern: the literal text exact, each placeholder one token. */
+const TRANSIENT_REASON_PATTERNS: readonly RegExp[] = Object.values(SR_UNSERVED_REASONS)
+  .filter((r) => r.transient)
+  .map((r) => new RegExp(`^${r.template.split(/(\{venue\}|\{coin\}|\{n\})/).map((part) => PLACEHOLDER_PATTERN.get(part) ?? escapeRegExp(part)).join('')}$`));
+
+/** True when `reason` is one of the transient reasons above, whole; false for any other text (R7 #2). */
+export function isTransientSrUnservedReason(reason: string): boolean {
+  return TRANSIENT_REASON_PATTERNS.some((re) => re.test(reason));
+}
+
 /** Why a timeframe was not served, from what its read threw; `transient` when a retry can change the answer. */
 function unservedReason(err: unknown, coin: string): { reason: string; transient: boolean } {
-  if (err instanceof TimeframeUnservedError) return { reason: `${VENUE} does not serve this timeframe`, transient: false };
-  if (err instanceof VenueMarketClosedError) return { reason: `${VENUE} has the ${coin} market closed`, transient: false };
-  if (err instanceof StaleUpstreamWindowError) {
-    return { reason: `${VENUE} served a candle window that ends ${err.headGapBars} closed candles before now`, transient: true };
-  }
-  if (err instanceof UpstreamRateLimitError) return { reason: `${VENUE} is rate-limiting requests`, transient: true };
-  if (err instanceof WeightBudgetSkipError) {
-    return { reason: `${VENUE} candle history was skipped: the shared request budget was full`, transient: true };
-  }
-  if (err instanceof EmptyCandleWindowError) return { reason: `${VENUE} returned no candles for this timeframe`, transient: true };
-  if (err instanceof FullReadTimeoutError) {
-    return { reason: `${VENUE} candle history did not load within ${FULL_READ_TIMEOUT_MS / 1000} s; the read continues in the background`, transient: true };
-  }
+  if (err instanceof TimeframeUnservedError) return reasonOf('timeframe');
+  if (err instanceof VenueMarketClosedError) return reasonOf('marketClosed', { coin });
+  if (err instanceof StaleUpstreamWindowError) return reasonOf('staleWindow', { n: err.headGapBars });
+  if (err instanceof UpstreamRateLimitError) return reasonOf('rateLimited');
+  if (err instanceof WeightBudgetSkipError) return reasonOf('budgetSkipped');
+  if (err instanceof EmptyCandleWindowError) return reasonOf('emptyWindow');
+  if (err instanceof FullReadTimeoutError) return reasonOf('loadTimeout', { n: FULL_READ_TIMEOUT_MS / 1000 });
   const message = err instanceof Error ? err.message : String(err);
-  if (/\bAPI 400\b/.test(message)) return { reason: `${VENUE} refused the candle request for ${coin} (HTTP 400)`, transient: false };
-  return { reason: `${VENUE} candle request failed`, transient: true };
+  if (/\bAPI 400\b/.test(message)) return reasonOf('refused400', { coin });
+  return reasonOf('requestFailed');
 }
 
 /**
@@ -392,7 +429,7 @@ export async function runGetSrZones(
   for (const timeframe of timeframes) {
     const stepMs = intervalMsFor(timeframe);
     if (stepMs === null) {
-      unserved.push({ timeframe, reason: `${VENUE} does not serve this timeframe` });
+      unserved.push({ timeframe, reason: reasonOf('timeframe').reason });
       continue;
     }
     try {
