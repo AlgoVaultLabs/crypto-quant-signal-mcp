@@ -1,0 +1,568 @@
+{
+ "what": "EDGE-REGIME-DIAG-W1 core-parity fixture: synthetic series, served(c, tf, t) per instant",
+ "key": "core-parity",
+ "t0Ms": 1609459200000,
+ "minutes": 187200,
+ "calls": [
+  {
+   "tf": "1h",
+   "m": 124320,
+   "label": "TRENDING_UP",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.008701189829279442
+  },
+  {
+   "tf": "1h",
+   "m": 10719,
+   "label": "TRENDING_UP",
+   "confidence": 92,
+   "slope": "FLAT",
+   "vol": 0.005187060984233368
+  },
+  {
+   "tf": "1h",
+   "m": 47340,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.006438985033069816
+  },
+  {
+   "tf": "1h",
+   "m": 96337,
+   "label": "TRENDING_UP",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.007812486749436872
+  },
+  {
+   "tf": "1h",
+   "m": 156600,
+   "label": "TRENDING_UP",
+   "confidence": 92,
+   "slope": "FLAT",
+   "vol": 0.007387849951122299
+  },
+  {
+   "tf": "1h",
+   "m": 85989,
+   "label": "TRENDING_DOWN",
+   "confidence": 78,
+   "slope": "FALLING",
+   "vol": 0.048948715883445126
+  },
+  {
+   "tf": "1h",
+   "m": 127380,
+   "label": "TRENDING_UP",
+   "confidence": 90,
+   "slope": "FLAT",
+   "vol": 0.007853317794828951
+  },
+  {
+   "tf": "1h",
+   "m": 104925,
+   "label": "TRENDING_DOWN",
+   "confidence": 64,
+   "slope": "FLAT",
+   "vol": 0.005063678571432103
+  },
+  {
+   "tf": "1h",
+   "m": 50880,
+   "label": "TRENDING_DOWN",
+   "confidence": 90,
+   "slope": "FLAT",
+   "vol": 0.0071632972862561714
+  },
+  {
+   "tf": "1h",
+   "m": 83055,
+   "label": "TRENDING_DOWN",
+   "confidence": 93,
+   "slope": "RISING",
+   "vol": 0.0077014137552761895
+  },
+  {
+   "tf": "1h",
+   "m": 79200,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.00798661427132707
+  },
+  {
+   "tf": "1h",
+   "m": 33819,
+   "label": "TRENDING_UP",
+   "confidence": 89,
+   "slope": "FLAT",
+   "vol": 0.008004753719915329
+  },
+  {
+   "tf": "1h",
+   "m": 152340,
+   "label": "TRENDING_UP",
+   "confidence": 93,
+   "slope": "RISING",
+   "vol": 0.019437132423964894
+  },
+  {
+   "tf": "1h",
+   "m": 12586,
+   "label": "TRENDING_UP",
+   "confidence": 75,
+   "slope": "FLAT",
+   "vol": 0.0047685714809860055
+  },
+  {
+   "tf": "1h",
+   "m": 20460,
+   "label": "TRENDING_DOWN",
+   "confidence": 86,
+   "slope": "FALLING",
+   "vol": 0.007912160429150236
+  },
+  {
+   "tf": "1h",
+   "m": 133951,
+   "label": "RANGING",
+   "confidence": 60,
+   "slope": "FLAT",
+   "vol": 0.004664659184157763
+  },
+  {
+   "tf": "1h",
+   "m": 13020,
+   "label": "TRENDING_UP",
+   "confidence": 82,
+   "slope": "FLAT",
+   "vol": 0.005142758643064576
+  },
+  {
+   "tf": "1h",
+   "m": 87122,
+   "label": "RANGING",
+   "confidence": 30,
+   "slope": "FALLING",
+   "vol": 0.06269182790471312
+  },
+  {
+   "tf": "1h",
+   "m": 29100,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.07750928633587395
+  },
+  {
+   "tf": "1h",
+   "m": 69324,
+   "label": "TRENDING_UP",
+   "confidence": 80,
+   "slope": "FALLING",
+   "vol": 0.0071436954754527104
+  },
+  {
+   "tf": "1h",
+   "m": 58080,
+   "label": "TRENDING_UP",
+   "confidence": 42,
+   "slope": "FLAT",
+   "vol": 0.06124123967585992
+  },
+  {
+   "tf": "1h",
+   "m": 162958,
+   "label": "RANGING",
+   "confidence": 30,
+   "slope": "FALLING",
+   "vol": 0.004523024507558873
+  },
+  {
+   "tf": "1h",
+   "m": 141960,
+   "label": "TRENDING_DOWN",
+   "confidence": 92,
+   "slope": "FLAT",
+   "vol": 0.008359106049855307
+  },
+  {
+   "tf": "1h",
+   "m": 42304,
+   "label": "TRENDING_UP",
+   "confidence": 43,
+   "slope": "FLAT",
+   "vol": 0.004335070078564917
+  },
+  {
+   "tf": "1h",
+   "m": 85260,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.025673148237226346
+  },
+  {
+   "tf": "1h",
+   "m": 90760,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "RISING",
+   "vol": 0.09261770257121009
+  },
+  {
+   "tf": "1h",
+   "m": 77760,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.007144181425382816
+  },
+  {
+   "tf": "1h",
+   "m": 177085,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FALLING",
+   "vol": 0.0587392174773335
+  },
+  {
+   "tf": "1h",
+   "m": 55260,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.04696037888831851
+  },
+  {
+   "tf": "1h",
+   "m": 112763,
+   "label": "TRENDING_DOWN",
+   "confidence": 87,
+   "slope": "FALLING",
+   "vol": 0.008444342066156732
+  },
+  {
+   "tf": "1h",
+   "m": 131400,
+   "label": "RANGING",
+   "confidence": 30,
+   "slope": "FALLING",
+   "vol": 0.005502207024746406
+  },
+  {
+   "tf": "1h",
+   "m": 122649,
+   "label": "RANGING",
+   "confidence": 47,
+   "slope": "FLAT",
+   "vol": 0.015267845509285175
+  },
+  {
+   "tf": "1h",
+   "m": 121980,
+   "label": "RANGING",
+   "confidence": 49,
+   "slope": "FLAT",
+   "vol": 0.026549190675157205
+  },
+  {
+   "tf": "1h",
+   "m": 112350,
+   "label": "TRENDING_DOWN",
+   "confidence": 83,
+   "slope": "FALLING",
+   "vol": 0.008397675381127637
+  },
+  {
+   "tf": "1h",
+   "m": 38940,
+   "label": "TRENDING_UP",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.006751531974765342
+  },
+  {
+   "tf": "1h",
+   "m": 52144,
+   "label": "TRENDING_DOWN",
+   "confidence": 89,
+   "slope": "FLAT",
+   "vol": 0.007126760662613201
+  },
+  {
+   "tf": "1h",
+   "m": 38940,
+   "label": "TRENDING_UP",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.006751531974765342
+  },
+  {
+   "tf": "1h",
+   "m": 27084,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FALLING",
+   "vol": 0.0654406862503865
+  },
+  {
+   "tf": "1h",
+   "m": 82560,
+   "label": "TRENDING_DOWN",
+   "confidence": 93,
+   "slope": "RISING",
+   "vol": 0.008478734200019232
+  },
+  {
+   "tf": "1h",
+   "m": 17409,
+   "label": "TRENDING_DOWN",
+   "confidence": 85,
+   "slope": "RISING",
+   "vol": 0.007932324744589003
+  },
+  {
+   "tf": "4h",
+   "m": 26160,
+   "label": "TRENDING_DOWN",
+   "confidence": 77,
+   "slope": "FALLING",
+   "vol": 0.10322357812630946
+  },
+  {
+   "tf": "4h",
+   "m": 37254,
+   "label": "TRENDING_UP",
+   "confidence": 47,
+   "slope": "RISING",
+   "vol": 0.027858572541399867
+  },
+  {
+   "tf": "4h",
+   "m": 66480,
+   "label": "TRENDING_UP",
+   "confidence": 40,
+   "slope": "RISING",
+   "vol": 0.03233622042840383
+  },
+  {
+   "tf": "4h",
+   "m": 87570,
+   "label": "TRENDING_DOWN",
+   "confidence": 75,
+   "slope": "FALLING",
+   "vol": 0.09351554220737368
+  },
+  {
+   "tf": "4h",
+   "m": 33840,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.057830895878025465
+  },
+  {
+   "tf": "4h",
+   "m": 141315,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.01758337954591771
+  },
+  {
+   "tf": "4h",
+   "m": 169680,
+   "label": "TRENDING_DOWN",
+   "confidence": 91,
+   "slope": "RISING",
+   "vol": 0.015107061330230775
+  },
+  {
+   "tf": "4h",
+   "m": 162847,
+   "label": "TRENDING_UP",
+   "confidence": 86,
+   "slope": "FALLING",
+   "vol": 0.012386547891274306
+  },
+  {
+   "tf": "4h",
+   "m": 59760,
+   "label": "TRENDING_UP",
+   "confidence": 56,
+   "slope": "FALLING",
+   "vol": 0.09815004231364198
+  },
+  {
+   "tf": "4h",
+   "m": 15627,
+   "label": "TRENDING_UP",
+   "confidence": 78,
+   "slope": "FALLING",
+   "vol": 0.010940890703960334
+  },
+  {
+   "tf": "4h",
+   "m": 42240,
+   "label": "TRENDING_UP",
+   "confidence": 84,
+   "slope": "FALLING",
+   "vol": 0.01137668205708225
+  },
+  {
+   "tf": "4h",
+   "m": 83535,
+   "label": "TRENDING_DOWN",
+   "confidence": 95,
+   "slope": "RISING",
+   "vol": 0.017814186760023717
+  },
+  {
+   "tf": "4h",
+   "m": 38400,
+   "label": "TRENDING_UP",
+   "confidence": 85,
+   "slope": "RISING",
+   "vol": 0.021570705749080824
+  },
+  {
+   "tf": "4h",
+   "m": 184143,
+   "label": "TRENDING_UP",
+   "confidence": 38,
+   "slope": "FLAT",
+   "vol": 0.06067956864185058
+  },
+  {
+   "tf": "4h",
+   "m": 25200,
+   "label": "TRENDING_DOWN",
+   "confidence": 75,
+   "slope": "FALLING",
+   "vol": 0.0514104984254427
+  },
+  {
+   "tf": "4h",
+   "m": 63795,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FALLING",
+   "vol": 0.059276662752599324
+  },
+  {
+   "tf": "4h",
+   "m": 54240,
+   "label": "TRENDING_DOWN",
+   "confidence": 90,
+   "slope": "FLAT",
+   "vol": 0.016076957626546658
+  },
+  {
+   "tf": "4h",
+   "m": 116841,
+   "label": "TRENDING_DOWN",
+   "confidence": 93,
+   "slope": "RISING",
+   "vol": 0.05805705873722569
+  },
+  {
+   "tf": "4h",
+   "m": 34080,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.05680586084264002
+  },
+  {
+   "tf": "4h",
+   "m": 144822,
+   "label": "TRENDING_DOWN",
+   "confidence": 87,
+   "slope": "FALLING",
+   "vol": 0.01663101803915174
+  },
+  {
+   "tf": "1d",
+   "m": 161280,
+   "label": "TRENDING_UP",
+   "confidence": 76,
+   "slope": "RISING",
+   "vol": 0.06055546472069649
+  },
+  {
+   "tf": "1d",
+   "m": 151735,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.09350540872340675
+  },
+  {
+   "tf": "1d",
+   "m": 151200,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.09748150843491958
+  },
+  {
+   "tf": "1d",
+   "m": 168561,
+   "label": "TRENDING_UP",
+   "confidence": 87,
+   "slope": "RISING",
+   "vol": 0.05522352763036173
+  },
+  {
+   "tf": "1d",
+   "m": 152640,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.0891392692281398
+  },
+  {
+   "tf": "1d",
+   "m": 155711,
+   "label": "TRENDING_UP",
+   "confidence": 49,
+   "slope": "RISING",
+   "vol": 0.07673846630873936
+  },
+  {
+   "tf": "1d",
+   "m": 149760,
+   "label": "VOLATILE",
+   "confidence": 85,
+   "slope": "FLAT",
+   "vol": 0.09846215751660427
+  },
+  {
+   "tf": "1d",
+   "m": 163401,
+   "label": "TRENDING_UP",
+   "confidence": 81,
+   "slope": "RISING",
+   "vol": 0.057308751679143566
+  },
+  {
+   "tf": "1d",
+   "m": 169920,
+   "label": "TRENDING_UP",
+   "confidence": 81,
+   "slope": "RISING",
+   "vol": 0.06170038626584604
+  },
+  {
+   "tf": "1d",
+   "m": 186484,
+   "label": "TRENDING_UP",
+   "confidence": 43,
+   "slope": "FLAT",
+   "vol": 0.08719473016565639
+  }
+ ]
+}
