@@ -34,9 +34,6 @@ export function parityCalls(): ParityCall[] {
   return out;
 }
 
-export const parityFixtureText = (): string =>
-  `${JSON.stringify({ what: 'EDGE-REGIME-DIAG-W1 core-parity fixture: synthetic series, served(c, tf, t) per instant', key: KEY, t0Ms: SPAN.t0Ms, minutes: SPAN.n, calls: parityCalls() }, null, 1)}\n`;
-
 /** Replays the fixture. Not ok — reason named — on any difference, and on a fixture that does not hold the whole list. */
 export function checkCoreParity(text: string): { ok: boolean; calls: number; mismatches: number; reason: string } {
   let want: ParityCall[];

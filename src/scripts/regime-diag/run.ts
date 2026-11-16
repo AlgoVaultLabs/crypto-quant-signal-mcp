@@ -33,7 +33,7 @@ import {
 import { ARCHIVES_PIN, checkDiagGuard, claimSeal, initStore, logGuard } from './guard.js';
 import { PHASE_UP, keyBLead } from './keys.js';
 import { OUT_NULL } from './labeler.js';
-import { attainableOf, bhOf, prims } from './prims.js';
+import { attainableOf, bhOf, floorClusters, prims, seedsFor } from './prims.js';
 import {
   A3_FAMILY, ALPHA, BH_Q, FIT, FLOOR_PP, FLOOR_RATIO, HOLDOUT, KEY_B_DESCRIPTIVE_LEADS, LAST_MONTH, L_UP, L_VOLATILE,
   REGIME_AGAINST_MIN_CONFIDENCE, REGISTRATION, SECONDARY_IDS, SEED, SPAN, STAT_IDS, TFS, VENUE, VOLATILE_MIN_CONFIDENCE, WAVE,
@@ -98,9 +98,9 @@ class Session {
   private readonly a5effs = new Map<string, number>();
   constructor(readonly study: Study, public f: Frame, readonly keep?: ReadonlySet<number>) {
     const arms = STAT_IDS.flatMap((id) => PURPOSES.map((p) => seedArm(f.win.name, id, p)));
-    const [seeds, floor] = prims([{ op: 'seeds', label: SEED, arms }, { op: 'floor' }]) as [number[], number];
+    const seeds = seedsFor(arms);
     arms.forEach((a, i) => this.seeds.set(a, seeds[i]));
-    this.F = study.floorClusters ?? floor;
+    this.F = study.floorClusters ?? floorClusters();
   }
   seed(id: string, purpose: (typeof PURPOSES)[number]): number { return this.seeds.get(seedArm(this.f.win.name, id, purpose)) as number; }
   ctx(variant?: Variant): Ctx {

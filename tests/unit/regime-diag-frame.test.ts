@@ -7,7 +7,7 @@ import { keyBAt, phaseAt, volLeg } from '../../src/scripts/regime-diag/keys.js';
 import { labelEntry, newCellTable } from '../../src/scripts/regime-diag/labeler.js';
 import { quietly, served } from '../../src/scripts/regime-diag/replay.js';
 import * as spec from '../../src/scripts/regime-diag/diag-spec.js';
-import { SYNTH_CENSUS_TEXT, SYNTH_FIT, SYNTH_HOLDOUT, SYNTH_HOLE, SYNTH_SPAN, synthLoad } from '../../src/scripts/regime-diag/synth.js';
+import { SYNTH_CENSUS_TEXT, SYNTH_FIT, SYNTH_HOLDOUT, SYNTH_HOLE, SYNTH_SPAN, synthLoad } from '../fixtures/regime-diag/synth-study.js';
 import { sigma1hFromVolatilityRatio } from '../../src/lib/pre-trade-calc.js';
 
 const census = parseCensus(SYNTH_CENSUS_TEXT);

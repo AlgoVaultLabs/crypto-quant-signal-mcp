@@ -133,28 +133,6 @@ export function aggregate(g: Grid, min: number): Bars {
   return b;
 }
 
-/**
- * §4.1's check: the venue's own `min`-minute klines against the aggregate of the 1 m grid. A kline whose bar
- * lacks a 1 m row, or lies off the grid, is skipped and counted. Prices must agree exactly, volume to 1e-9.
- */
-export function aggregationParity(g: Grid, min: number, klineCsv: string): { compared: number; skipped: number; mismatches: number } {
-  const b = aggregate(g, min);
-  const r = { compared: 0, skipped: 0, mismatches: 0 };
-  for (const raw of klineCsv.split('\n')) {
-    const f = raw.trimEnd().split(',');
-    if (f.length < 6 || !f.slice(0, 6).every((x) => DECIMAL.test(x))) continue;
-    let ts = Number(f[0]);
-    if (ts > 1e14) ts = Math.floor(ts / 1000);
-    const k = (ts - g.span.t0Ms) / (min * MIN_MS);
-    if (!Number.isInteger(k) || k < 0 || k >= b.nb || b.cnt[k] !== min) { r.skipped++; continue; }
-    r.compared++;
-    const v = Number(f[5]);
-    const same = b.O[k] === Number(f[1]) && b.H[k] === Number(f[2]) && b.L[k] === Number(f[3]) && b.C[k] === Number(f[4]) && Math.abs(b.V[k] - v) <= 1e-9 * Math.max(1, Math.abs(v));
-    if (!same) r.mismatches++;
-  }
-  return r;
-}
-
 // ── the two archive stores ──────────────────────────────────────────────────────────────────────────────────────
 
 export interface ArchiveStore { cache: string; overlay: string }

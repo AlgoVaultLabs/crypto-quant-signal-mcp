@@ -30,13 +30,3 @@ export function sampleWithoutReplacement(pool: Int32Array, n: number, rnd: Rnd):
   }
   return a.slice(0, m).sort();
 }
-
-/** A uniform permutation of 0 … n−1 (Fisher–Yates), written into `out`. */
-export function permute(n: number, rnd: Rnd, out: Int32Array): Int32Array {
-  for (let i = 0; i < n; i++) out[i] = i;
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    const t = out[i]; out[i] = out[j]; out[j] = t;
-  }
-  return out;
-}

@@ -8,7 +8,7 @@
 import { sigma1hFromVolatilityRatio } from '../../lib/pre-trade-calc.js';
 import { aggregate, noGap, type Bars, type Grid } from './archive.js';
 import { PHASE_NONE, PHASE_UP, buildKeyA, keyBAt, phaseAt, volLeg, type KeyA } from './keys.js';
-import { drawEntries, labelEntry, newCellTable, type CellTable } from './labeler.js';
+import { OUT_BOTH, OUT_NULL, countOutcomes, drawEntries, labelEntry, newCellTable, type CellTable } from './labeler.js';
 import { buildSeries, quietly, served, type Series } from './replay.js';
 import { CONF_BINS, ENTRIES_PER_DAY, HISTORY_MIN, KEY_B_DESCRIPTIVE_LEADS, L_DOWN, L_RANGING, L_UP, L_VOLATILE, NO_LABEL, N_CS, PATH_MIN,
   REGIME_AGAINST_MIN_CONFIDENCE, TFS, VOLATILE_MIN_CONFIDENCE, type Span, type Win } from './diag-spec.js';
@@ -71,9 +71,8 @@ const newRows = (n: number): Chunk['rows'] => {
 const sigmaOf = (has: Uint8Array, vol: Float64Array, e: number): number | null => (has[e * N_TF] ? sigma1hFromVolatilityRatio(vol[e * N_TF]) : null);
 /** The two outcome drops (§3): cell-sides whose deciding bar touches both barriers, and cell-sides with a null in the odds. */
 const outcomeDrops = (cells: CellTable): { both_touch: number; null_odds: number } => {
-  let both = 0, nul = 0;
-  for (let i = 0; i < cells.out.length; i++) { if (cells.out[i] === 3) both++; else if (cells.out[i] === 4) nul++; }
-  return { both_touch: both, null_odds: nul };
+  const n = countOutcomes(cells);
+  return { both_touch: n[OUT_BOTH], null_odds: n[OUT_NULL] };
 };
 
 /**

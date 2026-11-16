@@ -5,8 +5,8 @@
 // outputs are its paired excesses over the baselines (a), (b) and (d), or the arms of a contrast.
 import { contrast, joint, type Stat } from './engine.js';
 import { N_TF, isTrending, phaseLab, type Frame, type Lab } from './frame.js';
-import { A3_GROUPS, L_RANGING, L_UP, L_VOLATILE, NO_LABEL, N_CELLS, N_CS, N_HOLDS, N_SHAPES, REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE,
-  VOL_LINE, VOL_LINE_CONF70, YOUNG_BARS, cellOf, type Key } from './diag-spec.js';
+import { A3_GROUPS, DEFAULT_TIMEFRAME, L_RANGING, L_UP, L_VOLATILE, NO_LABEL, N_CELLS, N_CS, N_HOLDS, N_SHAPES, REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE,
+  TFS, VOL_LINE, VOL_LINE_CONF70, YOUNG_BARS, cellOf, type Key } from './diag-spec.js';
 
 const T = 1, S = 2; // OUT_TARGET, OUT_STOP; 3 and 4 are the excluded outcomes
 
@@ -305,10 +305,14 @@ export function registered(f: Frame, id: string, cell?: A3Cell): Built | null {
     case 'M11': return two(v2('conf>=70', S_, c70), v2('conf<70', S_, 0, c70));
     case 'M12': {
       const all3 = (r: number): boolean => { const e = Math.floor(r / N_TF) * N_TF; return f.has[e] === 1 && f.has[e + 1] === 1 && f.has[e + 2] === 1; };
-      const at = (t: number): Stat => d1(['1h', '4h', '1d'][t], S_, c60, 101, (r) => r % N_TF === t && all3(r));
-      const arms = [at(1), at(0), at(2)];
+      const at = (t: number): Stat => d1(TFS[t].key, S_, c60, 101, (r) => r % N_TF === t && all3(r));
+      // the served default first, then the other two in timeframe order
+      const def = TFS.findIndex((t) => t.key === DEFAULT_TIMEFRAME);
+      const order = [def, ...TFS.map((_, t) => t).filter((t) => t !== def)];
+      const arms = order.map(at);
       const j = joint(id, arms), tmp = new Float64Array(15);
-      const stat: Stat = { id, m: j.m, names: ['theta_4h_1h', 'theta_4h_1d', '4h', '1h', '1d'], seq: S_.lab, add: j.add,
+      const names = [...order.slice(1).map((t) => `theta_${DEFAULT_TIMEFRAME}_${TFS[t].key}`), ...order.map((t) => TFS[t].key)];
+      const stat: Stat = { id, m: j.m, names, seq: S_.lab, add: j.add,
         evaluate(tot, off, out, o) { j.evaluate(tot, off, tmp, 0); out[o] = tmp[0] - tmp[5]; out[o + 1] = tmp[0] - tmp[10]; out[o + 2] = tmp[0]; out[o + 3] = tmp[5]; out[o + 4] = tmp[10]; } };
       return { stat, arms, counts: {} };
     }

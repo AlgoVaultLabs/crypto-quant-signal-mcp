@@ -13,7 +13,8 @@ import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { PARITY_FIXTURE } from '../../src/scripts/regime-diag/parity.js';
 import * as run from '../../src/scripts/regime-diag/run.js';
 import { SPAN, type Win } from '../../src/scripts/regime-diag/diag-spec.js';
-import { SYNTH_CENSUS_TEXT, SYNTH_SPAN, synthCsv, synthLoad, zipSingle } from '../../src/scripts/regime-diag/synth.js';
+import { synthCsv } from '../../src/scripts/regime-diag/synth.js';
+import { SYNTH_CENSUS_TEXT, SYNTH_SPAN, synthLoad, zipSingle } from '../fixtures/regime-diag/synth-study.js';
 
 const REPO = path.resolve(__dirname, '../..');
 // Most tests here block the worker (git, the replay, the resamples), and back-to-back synchronous tests never
