@@ -806,3 +806,27 @@ The two test files that carry the fixes are recorded here with their bytes as co
 
 - tests/unit/regime-diag-stats.test.ts, sha256 `6775978262802ee5421bfcc3d2f3a96b7789870169e3bd9767cb857d891635c7`: B1. Every key reading against reading 16, the served readings byte for byte, and the `keyseq` proof.
 - tests/unit/regime-diag-guard.test.ts, sha256 `bc746d53ffe011b9f6fdcce61ef9e1b757f2166d5d8c6a08ed7522b07d408157`: B3. A second store that reproduces both manifests is refused; the seal's place; the `seal` proof.
+
+## Amendment 2026-11-16 — amendment 3: where a key reading's floor count is taken, and what "not computed" means (pre-read, text only; recorded per §1 and §8 / PROCEDURE §8 with its reason)
+
+**Write-time clock (live `date -u`):** 2026-11-16T14:21:58Z.
+
+Below, "amendment 1" and "amendment 2" are the two sections above; this section is amendment 3. It is written by `EDGE-REGIME-DIAG-W2`, the wave that runs the read (§9), as that wave's first step.
+
+**Ordering.** Pre-read. No outcome statistic has been computed on real archives. Since amendment 2 landed (commit `3a994a64c14a44716a9d9f2758fd0bd9d544909e`), the study store's guard log still holds exactly the two refusals amendment 1 records, and the store holds no seal and no result. Before writing this section, this wave has run no mode of the harness on real archives; the tests it has run are on synthetic series. The body and amendments 1 and 2 are unchanged: the first 117,857 bytes of this file (sha256 `16177be8fc5ae7d14c9dbf5e92d85355e3e08a66929f3e2e7cb48ed57335440d`, as landed at that commit) open it, and this section is appended after them.
+
+**Reason.** The re-check of amendment 2's fixes, made before any read, left one finding, rated plausible and minor. The registered text can be read two ways on where a key reading's floor is counted, and it calls a key reading below the floor "not computed" while the pinned harness forms that reading's point in memory before dropping it. No number can move under either reading of the text. Only an amendment made before the read can align the text with the pinned code, so the text is settled here, while no outcome exists and none can choose between the readings. PROCEDURE §7 does not apply: there is no result to respecify after.
+
+**Scope.** Text only, and two statements. No harness file changes and nothing is re-pinned: every pin of amendments 1 and 2 stands, and this section adds no pin, no registry row and no table.
+
+### C1. Key readings: where the floor count is taken
+
+B2 states an order for an arm's support: it is counted at run time, in the fit window's secondary step, before the row's statistic is read. That statement extends to key readings (`*.A`, `*.B`). In the fit window, a key reading's effective clusters are counted after the outcome frame is built and before that reading's statistic is read (`src/scripts/regime-diag/run.ts`, lines 264, 271 and 551 of the pinned file).
+
+The count is outcome-free. It is the Kish-effective count of the per-cluster weight totals `Σ ω` of the rows the reading's statistic takes. Whether a row is taken is a function of the labels and the key, and its weight is its design weight; for A3 this is said of the cell the reading is taken on. Per-cluster weights do not depend on outcomes.
+
+This settles §5 against reading 52. §5 applies the floor to "every key reading", and its last bullet says "Floors are checked before outcomes". Reading 52 lists the checks made on the label-free frame before any outcome in a window, and that list holds no key reading. For a key reading the two are read together as above: its floor is checked before its statistic is read, on a count that no outcome enters, and it is not one of the checks made on the label-free frame. Reading 52's list is unchanged.
+
+### C2. "Not computed"
+
+Reading 22 says a key reading below the floor "is named too little data and not computed". "Not computed" means that no reading is formed into any output. To count the clusters of a key reading or of an arm, `accumulate` (`src/scripts/regime-diag/engine.ts`, lines 82 and 83 of the pinned file) also forms that statistic's point in memory. Below the floor that point is discarded unwritten: the result holds `reading: null` for the key reading, and a null point and null bounds for the map row.
