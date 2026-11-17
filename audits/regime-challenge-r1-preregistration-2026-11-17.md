@@ -444,11 +444,11 @@ The test file that carries the fix is recorded here with its bytes as committed 
 
 The fix was written test-first, and the tests failed before it. With the spelling-only `within()` put back, the four tests fail; restored, they pass.
 
-## Amendment 3 — 2026-11-17, before the read: containment walks the resolved path too, a matrix closes the class, and one re-pin
+## Amendment 3 — 2026-11-17, before the read: containment walks the resolved path too, a matrix closes the class, the last component is checked, and two re-pins
 
 **Write-time clock (live `date -u`):** 2026-11-17T08:10Z (2026-11-17 local, the date in the file name).
 
-Below, "the body and Amendments 1 and 2" is everything before this section, and the parts of this section are F5, the matrix and the re-pin.
+Below, "the body and Amendments 1 and 2" is everything before this section, and the parts of this section are F5, the matrix, F6 and the re-pin.
 
 **Ordering.** Before the read. The judge has not run. Its store holds the two manifests and the plan that `--init-store` wrote (§2, E6), and no guard log. The seal home holds T3's `holdout.seal` only, and no `challenge-r1.seal`. This round has computed no outcome of 2026-01 … 2026-10. The body and Amendments 1 and 2 are unchanged: the first 81,057 bytes of this file (sha256 `518aed810f5b55768e2ac032246ae18d888cbc32fb62fb67562587aa7920e791`) are byte-identical to the file as landed at commit `f40b8667f37ec9ad865c628881689332de7c05c4`.
 
@@ -457,7 +457,7 @@ Below, "the body and Amendments 1 and 2" is everything before this section, and 
 ### F5. Containment walks the resolved path too (code)
 
 - **The finding.** Amendment 2's `within(p, root)` walked `{dev, ino}` over the ancestors of `p` as written (`path.resolve(p)`) only, and compared `p` with its symlinks resolved (`real(p)`) by spelling only. So a symlink outside the root whose target is another name of a directory inside it — a case variant (`…/SEAL-HOME/inner`) or the firmlink (`/System/Volumes/Data/…`) — passed both checks: as written, no ancestor is the root; resolved, the spelling differs. In a sandbox, the judge passed with its store reached through such a symlink and wrote inside its seal home, and the pre-score wrote its result into the repository's `audits/` through one. The repository checks of the pre-score's output and of the judge's store and output were open the same way.
-- **The fix, in the same one function.** The identity walk covers the ancestors of both `path.resolve(p)` and `real(p)`. The spelling check stays, and either check counts. Every caller gains at once, as in Amendment 2. `challenge-run.ts` is unchanged, and its pin (Amendment 1) stands.
+- **The fix, in the same one function.** The identity walk covers the ancestors of both `path.resolve(p)` and `real(p)`. The spelling check stays, and either check counts. Every caller gains at once, as in Amendment 2. F5 changes nothing in `challenge-run.ts`; F6 does (below).
 - **The judge's store passes.** At the write-time clock, `storeRefusal` on the store made at E6 returns no refusal, both as the judge asks it and as `--init-store` asks it. These checks read the judge store's plan and nothing else, and write nothing.
 
 ### The matrix: the gate that closes the class
@@ -471,14 +471,40 @@ Every cell is refused, with nothing written: the seal home's listing is unchange
 
 The matrix was written first. At `f40b8667` it failed in exactly the cells where a symlink, or a chain of two, points at a case variant or at the firmlink, for both roots; the canonical cells and the unlinked cells passed. With the fix it passes. With the walk of `real(p)` dropped, the same cells fail; restored, byte for byte, they pass.
 
+### F6. The last component of a written name (code)
+
+**Write-time clock of this part (live `date -u`):** 2026-11-17T08:40Z. **Reason.** The lead's review of this section before it landed (CH4; 2026-11-17T08:18Z, 16:18 local) accepted F5 and the matrix and confirmed one more case of the same class by a run (F6). This section had not landed, so F6 is a part of it, settled before any row of the judge window is read, like F5. It changes none of the read's statistics, months, seal or decision.
+
+- **The finding.** `within()` holds a directory, and the matrix asks directories. The run then writes fixed names inside the directory it accepted. In the store, it appends the guard log and writes the registration's first sighting (`registration-seen.json`, as `.tmp`, then renamed); `--init-store` writes the three init files (each as `.tmp`, then renamed). In the output directory, the pre-score appends its log, and each run writes its result (as `.tmp`, then renamed). Each write follows a link at its last component: a symlink, live or dangling, carries the write to its target, and a hard link is another name of the target's own bytes. So a plain directory outside every root, holding a link at one of those names to a file inside a root, made the run write inside that root. In a sandbox, the judge appended its guard log and wrote its registration sighting inside its seal home this way, and the pre-score and the judge wrote their logs and results into the repository. It is the class of F1, F4 and F5: whether a write lands inside a root.
+- **The fix.** One function, `linkRefusal` in `challenge-guard.ts`, is asked once before the run's first write. When it refuses, nothing is written.
+  - **The store.** `storeRefusal` refuses a store any entry of which, at any depth, is a symlink, or a non-directory with more than one link. The judge asks it before its first guard line, and `--init-store` asks it before it writes the store.
+  - **The output directory.** The pre-score and the judge each refuse an output directory where a name the run writes there exists as a symlink (live or dangling) or with more than one link: the pre-score's log, the result, and the result's `.tmp`. They ask it before the directory is made.
+  - T3's modules are unchanged.
+- **Scope.** The check is made once, before the first write. It guards against operator error: a link left at one of these names, or a store copied together with its links. A writer that makes such a link while the run is running is outside it.
+- **The judge's store passes.** At the write-time clock of this part, the judge's store holds three plain files, each with one link. `storeRefusal` returns no refusal for it, both as the judge asks it and as `--init-store` asks it, and so does `linkRefusal`. These checks read the store and write nothing.
+
+**The gate: a final-component axis on the matrix.** The directory is plain, and it sits outside every root.
+- **written name:**
+  - the store, through the judge, with an injected study whose own seal home is the root: `guard.log`, `registration-seen.json` and its `.tmp`;
+  - the store, through `storeRefusal` as `--init-store` asks it: every name the judge and `--init-store` write there (those three, and the three init files with their `.tmp`);
+  - the store, through the `--init-store` CLI itself: `guard.log`, `registration-seen.json`, and the plan's `.tmp`;
+  - the output directory: the pre-score's log, its result and the result's `.tmp`, through the pre-score; the judge's result and its `.tmp`, through the judge, with a store and a seal home of its own.
+- **link form:** a symlink to a file inside the root; a symlink to a name inside the root where no file is (dangling); a chain of two symlinks to a file inside the root, the middle one outside every root; a hard link to a file inside the root.
+- **root:** a sandbox seal home; a sandbox repository.
+
+All 80 cells are refused with the link's reason and nothing written. The root's tree is byte-identical: every entry's kind, and its sha256 or link target, before and after, and for the repository also its status. No seal is claimed. The legitimate cases still pass: the plain store the sandbox judge reads, with its guard log among its files, in both modes; and a plain output into which the pre-score writes twice, the second time while it holds the plain log and result of the first. Every earlier test's plain stores and outputs pass too.
+
+The axis was written first. At `43fd5da5` all 80 cells failed. The guard log, the registration sighting's `.tmp`, the pre-score's log and both results' `.tmp` were written inside the root through the link. At the other names, nothing refused the link: the run accepted the store or the output, or, at the plan's own name, refused the store for another reason. With the fix, all 80 pass. With the check dropped (`linkRefusal` answering null), the same 80 fail; restored, byte for byte, they pass.
+
 ### Re-pin
 
-The sha256 of `challenge-guard.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so this row replaces the earlier rows of the same name; every other pin of §10 and of Amendments 1 and 2 stands. The pinned file is byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+The sha256 of `challenge-guard.ts` and of `challenge-run.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so these rows replace the earlier rows of the same names; every other pin of §10 and of Amendments 1 and 2 stands. The pinned files are byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
 
 | pin | sha256 | role |
 |---|---|---|
-| `src/scripts/regime-challenge/challenge-guard.ts` | `ae2bd5a7d97008dc9785edaa16df92a1524a84949a2ff86322c08b6ce8bae7f6` | the record loader, the archive and skeleton checks, the landed source, the registration on `origin/main`, and path containment by spelling, or by identity over the ancestors of the written path and of the resolved path (F4, F5) |
+| `src/scripts/regime-challenge/challenge-guard.ts` | `f09a657d47a5148540ae09b0c4c4cb18251f5381ceb5e5f508cd7f2b6a5ea9f8` | the record loader, the archive and skeleton checks, the landed source, the registration on `origin/main`, path containment by spelling, or by identity over the ancestors of the written path and of the resolved path (F4, F5), and the refusal of a link at a name a run writes (F6) |
+| `src/scripts/regime-challenge/challenge-run.ts` | `0b3e6b9445dee17c3a1ea706eec74d612397da0609d8af893df989a150704377` | the CLI: the pre-score and its selection, its refusal of a record that reaches the judge window (F2), `--init-store`, the judge, the store refusal both ask before they write (F1, and F6: no entry of the store is a link), the refusal of an output directory where a name the run writes is a link (F6), the refusals, the order, the pre-seal `identifiability` line and the result. F6 adds refusals made before the first write, and changes no computed quantity |
 
-The test file that carries the fix and the matrix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
+The test file that carries the fixes and the matrix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
 
-- tests/unit/regime-challenge-run.test.ts, sha256 `21ac58cb39e1f17ecaa47743007f84fb88db5b869d3f4ccd4c72428e53519f14`. For F5, two matrix tests in a sandbox, one per root. The seal-home test makes a seal home, a store inside it and a sibling store, all for this round; it asks every cell of the store inside of `storeRefusal` in both modes and of the judge, and then asks every form of the sibling and of a store outside the seal home. The repository test asks every cell of an output inside the repository of the pre-score and of the judge (with a store and a seal home of its own), and then asks every form of a sibling of the repository, and runs the pre-score into it.
+- tests/unit/regime-challenge-run.test.ts, sha256 `a9a5e6910d5e6eec540c7f30e59dcd29428429472ecbdf6cd7b742096dfea51d`. For F6, three tests in a sandbox, together the final-component axis. The store test makes, per cell, a seal home and a store for this round outside it, puts the link in the store, and asks `storeRefusal` in both modes and the judge. The `--init-store` test asks `storeRefusal` as `--init-store` asks it at every name, and runs the CLI at three of them. The output test puts the links in output directories outside the repository, pointing at files inside it, and asks the pre-score and the judge; it then runs the pre-score twice into a plain output. For F5, two matrix tests in a sandbox, one per root. The seal-home test makes a seal home, a store inside it and a sibling store, all for this round; it asks every cell of the store inside of `storeRefusal` in both modes and of the judge, and then asks every form of the sibling and of a store outside the seal home. The repository test asks every cell of an output inside the repository of the pre-score and of the judge (with a store and a seal home of its own), and then asks every form of a sibling of the repository, and runs the pre-score into it.

@@ -571,6 +571,133 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect(status()).toBe(before);
   });
 
+  // F6 (amendment 3): the last component. A directory that passes — plain, and outside every root — still holds the
+  // names the run writes there, and each write follows a link at that name: a symlink (live; dangling; a chain of two,
+  // its middle link outside every root) carries the write to its target, and a hard link is the target's own bytes
+  // under another name. The final-component axis puts at a written name a link to a file inside a root. Every cell is
+  // refused before the first write, with the root's tree byte-identical.
+  const FINAL_FORMS = ['live', 'dangling', 'chain', 'hard'] as const;
+  type FinalForm = (typeof FINAL_FORMS)[number];
+  /** Puts at `at` a link of `form` to `target`, a file inside a root holding `{}` (made for every form but dangling). */
+  const finalLink = (at: string, target: string, form: FinalForm, cell: string): void => {
+    fs.mkdirSync(path.dirname(at), { recursive: true });
+    if (form !== 'dangling') fs.writeFileSync(target, '{}\n');
+    if (form === 'hard') return fs.linkSync(target, at);
+    if (form === 'live' || form === 'dangling') return fs.symlinkSync(target, at);
+    const mid = path.join(dir, 'f6-links', cell);
+    fs.mkdirSync(path.dirname(mid), { recursive: true });
+    fs.symlinkSync(target, mid);
+    fs.symlinkSync(mid, at);
+  };
+  /** A tree: every entry below `root` (but `skip`), its kind, and its bytes' sha256 or its link's target. */
+  const treeOf = (root: string, skip: readonly string[] = []): string[] => {
+    const rows: string[] = [];
+    const walk = (d: string): void => {
+      for (const n of fs.readdirSync(d).sort()) {
+        const p = path.join(d, n), rel = path.relative(root, p);
+        if (skip.includes(rel)) continue;
+        const s = fs.lstatSync(p);
+        if (s.isSymbolicLink()) rows.push(`link ${rel} -> ${fs.readlinkSync(p)}`);
+        else if (s.isDirectory()) { rows.push(`dir ${rel}`); walk(p); } else rows.push(`file ${rel} ${sha256(fs.readFileSync(p))}`);
+      }
+    };
+    walk(root);
+    return rows;
+  };
+  const linkReason = (what: string, name: string, form: FinalForm): string =>
+    `${what}'s ${name} is ${form === 'hard' ? 'a hard link' : 'a symlink'}: the run writes its files there only in place, never through a link`;
+  // every name the judge and --init-store write in a store: the guard log (appended), the registration's first
+  // sighting, and the three init files (each written as `.tmp`, then renamed)
+  const STORE_NAMES = ['guard.log', 'registration-seen.json', 'registration-seen.json.tmp', ...['regime-diag-archives.json', 'plan-BINANCE.json', 'manifest-BINANCE.json'].flatMap((n) => [n, `${n}.tmp`])];
+
+  it('F6: a store outside the seal home whose guard.log or registration-seen.json is a link into it is refused by storeRefusal and by the judge, with the seal home byte-identical', { timeout: 180_000 }, () => {
+    const leaked: string[] = [];
+    for (const name of ['guard.log', 'registration-seen.json', 'registration-seen.json.tmp']) {
+      for (const form of FINAL_FORMS) {
+        const cell = `store-${name}-${form}`, want = linkReason('the store', name, form);
+        // a sandbox seal home (the root), and a store made for this round outside it: as made, nothing refuses it
+        const h = path.join(dir, 'f6-home', cell), s = path.join(dir, 'f6-store', cell);
+        fs.mkdirSync(h, { recursive: true });
+        guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+        const plain = [run.storeRefusal(s, h, true), run.storeRefusal(s, h, false)];
+        finalLink(path.join(s, name), path.join(h, 'inside.json'), form, cell);
+        const root = treeOf(h), own = treeOf(s);
+        const asked = [run.storeRefusal(s, h, true), run.storeRefusal(s, h, false)];
+        // were the check gone, a registration without the carry row stops the judge after its guard, before its seal
+        const r = judge(`f6-out-${cell}`, { store: s, registration: 'audits/reg-nocarry.md', study: judgeStudy({ sealHome: h }) });
+        const got = [...plain, ...asked, `${r.verdict} — ${r.reason}`, lines.length, JSON.stringify(treeOf(h)) === JSON.stringify(root), JSON.stringify(treeOf(s)) === JSON.stringify(own), fs.existsSync(path.join(dir, `f6-out-${cell}`))];
+        if (JSON.stringify(got) !== JSON.stringify([null, null, want, want, `REFUSED — ${want}`, 0, true, true, false])) leaked.push(`${cell}: ${JSON.stringify(got)}`);
+      }
+    }
+    expect(leaked).toEqual([]);
+    // the plain store the judge reads in this sandbox (its guard log among its files) still passes
+    expect(fs.existsSync(guard.guardLog(store))).toBe(true);
+    expect([run.storeRefusal(store, home, true), run.storeRefusal(store, home, false)]).toEqual([null, null]);
+  });
+
+  it('F6: --init-store refuses a store whose guard.log, registration-seen.json or an init file is a link into the seal home, and writes nothing', { timeout: 180_000 }, async () => {
+    // every name, as --init-store asks storeRefusal before it writes: a store not made yet, holding only the link
+    const leaked: string[] = [];
+    const cells = STORE_NAMES.flatMap((name) => FINAL_FORMS.map((form) => ({ name, form, cell: `init-${name}-${form}` })));
+    for (const { name, form, cell } of cells) {
+      const h = path.join(dir, 'f6-home', cell), s = path.join(dir, 'f6-store', cell);
+      fs.mkdirSync(h, { recursive: true });
+      finalLink(path.join(s, name), path.join(h, 'inside.json'), form, cell);
+      const asked = run.storeRefusal(s, h, false), want = linkReason('the store', name, form);
+      if (asked !== want) leaked.push(`${cell}: ${JSON.stringify(asked)}`);
+    }
+    // and through the CLI itself, on the judge's two names and on an init file's .tmp: refused, exit 1, nothing written
+    const cli = cells.filter(({ name }) => ['guard.log', 'registration-seen.json', 'plan-BINANCE.json.tmp'].includes(name));
+    expect(cli.length).toBe(12);
+    const before = new Map(cli.map(({ cell }) => [cell, JSON.stringify([treeOf(path.join(dir, 'f6-home', cell)), treeOf(path.join(dir, 'f6-store', cell))])]));
+    const tsx = promisify(execFile);
+    const runs = await Promise.all(cli.map(({ cell }) => tsx(path.join(REPO, 'node_modules/.bin/tsx'), [path.join(REPO, CHALLENGE_FILES[4]), '--init-store', '--census', censusFile,
+      '--cache', archives.cache, '--overlay', archives.overlay, '--store', path.join(dir, 'f6-store', cell)], { cwd: REPO, timeout: 150_000 })
+      .then((x) => ({ code: 0, stdout: x.stdout }), (e: { code: number; stdout: string }) => ({ code: e.code, stdout: e.stdout }))));
+    cli.forEach(({ name, form, cell }, i) => {
+      const after = JSON.stringify([treeOf(path.join(dir, 'f6-home', cell)), treeOf(path.join(dir, 'f6-store', cell))]);
+      const want = `REGIME_CHALLENGE_RUN_VERDICT=REFUSED — ${linkReason('the store', name, form)}\n`;
+      if (runs[i].code !== 1 || runs[i].stdout !== want || after !== before.get(cell)) leaked.push(`${cell}: ${JSON.stringify([runs[i].code, runs[i].stdout, after === before.get(cell)])}`);
+    });
+    expect(leaked).toEqual([]);
+  });
+
+  it('F6: an output outside the repository whose log, result or result .tmp is a link into it is refused by the pre-score and the judge, with the repository byte-identical', { timeout: 300_000 }, () => {
+    const inside = path.join(repo, 'f6-inside');
+    fs.mkdirSync(inside);
+    try {
+      const status = (): string => git(repo, 'status', '--porcelain', '--untracked-files=all');
+      // the judge's store is plain and its own, and each judge cell names its own seal home: none is ever made
+      const own = path.join(dir, 'f6-judge-store');
+      guard.initStore(own, archives, census.panel, judgeStudyRecord(''));
+      const cells = [
+        ...['regime-challenge-r1-prescore.log', PRESCORE_FILE, `${PRESCORE_FILE}.tmp`].flatMap((name) => FINAL_FORMS.map((form) => ({ run: 'pre', name, form }))),
+        ...[JUDGE_FILE, `${JUDGE_FILE}.tmp`].flatMap((name) => FINAL_FORMS.map((form) => ({ run: 'judge', name, form }))),
+      ].map((c) => ({ ...c, cell: `${c.run}-${c.name}-${c.form}` }));
+      for (const { name, form, cell } of cells) finalLink(path.join(dir, 'f6-out', cell, name), path.join(inside, `${cell}.json`), form, cell);
+      const root = treeOf(repo, ['.git']), state = status(), store0 = treeOf(own);
+      const leaked: string[] = [];
+      for (const { run: which, name, form, cell } of cells) {
+        const out = path.join('f6-out', cell), mine = JSON.stringify(treeOf(path.join(dir, out))), repoNow = JSON.stringify(treeOf(repo, ['.git'])), ownHome = path.join(dir, 'f6-seal', cell);
+        const r = which === 'pre' ? prescore(out) : judge(out, { store: own, study: judgeStudy({ sealHome: ownHome }) });
+        const want = linkReason('the output directory', name, form);
+        const got = [`${r.verdict} — ${r.reason}`, lines.length, JSON.stringify(treeOf(path.join(dir, out))) === mine, JSON.stringify(treeOf(repo, ['.git'])) === repoNow, fs.existsSync(ownHome)];
+        if (JSON.stringify(got) !== JSON.stringify([`REFUSED — ${want}`, 0, true, true, false])) leaked.push(`${cell}: ${JSON.stringify(got)}`);
+      }
+      expect(leaked).toEqual([]);
+      // the repository, the judge's store: byte-identical
+      expect(treeOf(repo, ['.git'])).toEqual(root);
+      expect(status()).toBe(state);
+      expect(treeOf(own)).toEqual(store0);
+      // a plain output passes, and again when it holds the plain log and result of the run before
+      const plain = [prescore('f6-out-plain'), prescore('f6-out-plain')].map((x) => `${x.verdict} — ${x.reason}`);
+      expect(plain).toEqual(['PASS — ok', 'PASS — ok']);
+      expect(fs.readFileSync(path.join(dir, 'f6-out-plain', 'regime-challenge-r1-prescore.log'), 'utf8').trim().split('\n').length).toBeGreaterThan(2);
+    } finally {
+      fs.rmSync(inside, { recursive: true, force: true });
+    }
+  });
+
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
     // the five files of this round and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
     expect(CHALLENGE_FILES.every((f) => REQUIRED_PINS.includes(f))).toBe(true);

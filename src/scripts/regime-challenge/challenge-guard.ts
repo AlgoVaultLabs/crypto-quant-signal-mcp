@@ -45,6 +45,25 @@ export function within(p: string, root: string): boolean {
   return false;
 }
 
+/**
+ * Why a run may not write into `dir`, or null (Amendment 3, F6). `within()` holds the directory, and the run then
+ * writes fixed names inside it; each write follows a link at the last component — a symlink, live or dangling, to
+ * its target, and a hard link to the bytes of every other name of the file. So a name the run writes (`names`; with
+ * none, every entry below `dir`) must not be a symlink, nor a non-directory of more than one link. Asked once,
+ * before the run's first write: against operator error, not against a writer working beside the run.
+ */
+export function linkRefusal(dir: string, what: string, names?: readonly string[]): string | null {
+  const list = (rel: string): string[] => fs.readdirSync(path.join(dir, rel)).sort().map((n) => path.join(rel, n));
+  const todo = names ? [...names] : fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? list('') : [];
+  while (todo.length) {
+    const rel = todo.shift() as string, s = fs.lstatSync(path.join(dir, rel), { throwIfNoEntry: false });
+    const kind = !s ? null : s.isSymbolicLink() ? 'a symlink' : !s.isDirectory() && s.nlink > 1 ? 'a hard link' : null;
+    if (kind) return `${what}'s ${rel} is ${kind}: the run writes its files there only in place, never through a link`;
+    if (s?.isDirectory() && !names) todo.push(...list(rel));
+  }
+  return null;
+}
+
 /** The archive months a run opened, and how many files of each. */
 export type Opened = Map<string, number>;
 

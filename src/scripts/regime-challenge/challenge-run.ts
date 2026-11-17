@@ -11,7 +11,8 @@
 // seal `challenge-r1.seal` in the one seal home. Its order is T3's: guard → skeleton → identifiability → seal →
 // outcomes. Its result holds paired quantities only — challenger minus served, challenger over served.
 // `--init-store` writes the judge's own store (the two manifests its registration pins): T3's store is never written.
-// Both it and `--judge` refuse a store that is the seal home or lies inside it, or whose plan names another wave.
+// Both it and `--judge` refuse a store that is the seal home or lies inside it, whose plan names another wave, or
+// that holds a link; every run refuses an output directory where a name it writes is a link.
 // `S` and `DIR` sit outside the repository: no figure is written into it.
 //
 // Callers gate on the token, never on the exit code alone:
@@ -29,7 +30,7 @@ import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGu
 import { MUTATE } from '../regime-diag/mutate.js';
 import { PARITY_FIXTURE, checkCoreParity } from '../regime-diag/parity.js';
 import { floorClusters, seedsFor } from '../regime-diag/prims.js';
-import { archivesRefusal, landedSource, real, recordLoader, registrationOnMain, skeletonRefusal, within, type Opened } from './challenge-guard.js';
+import { archivesRefusal, landedSource, linkRefusal, real, recordLoader, registrationOnMain, skeletonRefusal, within, type Opened } from './challenge-guard.js';
 import {
   CANDIDATES, CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE, PRESCORE_PIN, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, coinDaysOf, judgeStudyRecord, windowRefusal,
   type Candidate, type ChallengeRecord, type Dial,
@@ -71,11 +72,14 @@ const countsOf = (study?: ChallengeStudy): Counts => ({ boot: Math.min(B_BOOT, s
 /**
  * The judge's store is its own, and the store pin cannot show it: the guard-store manifest of this round's store is
  * byte-identical to T3's. So the store is never the seal home nor inside it (T3's store is the seal home), and the
- * wave its plan names is this round's. The judge asks it of a made store (`made`: a store with no plan names no
- * wave); `--init-store` asks it before it writes one, and a store with no plan yet is one it may make. Null: accepted.
+ * wave its plan names is this round's. No entry of it is a link (F6). The judge asks it of a made store (`made`: a store
+ * with no plan names no wave); `--init-store` asks it before it writes one, and a store with no plan yet is one it may
+ * make. Both ask it before their first write to the store. Null: accepted.
  */
 export function storeRefusal(store: string, home: string | undefined, made: boolean): string | null {
   if (home && within(store, home)) return 'the store is the seal home or lies inside it: the judge keeps its own store';
+  const linked = linkRefusal(store, 'the store');
+  if (linked) return linked;
   const file = planFile(store, VENUE), name = path.basename(file);
   if (!fs.existsSync(file)) return made ? `the store holds no ${name}: it names no wave` : null;
   let source: unknown;
@@ -206,6 +210,8 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const rec = input.study?.rec ?? PRESCORE;
   const reaches = judgeWindowRefusal(rec);
   if (reaches) return stop('REFUSED', reaches);
+  const linked = linkRefusal(input.out, 'the output directory', [PRESCORE_LOG, PRESCORE.file, `${PRESCORE.file}.tmp`]);
+  if (linked) return stop('REFUSED', linked);
   fs.mkdirSync(input.out, { recursive: true });
   const record = (entry: Record<string, unknown>): void => { fs.appendFileSync(path.join(input.out, PRESCORE_LOG), `${JSON.stringify({ at: new Date().toISOString(), wave: PRESCORE.wave, record: PRESCORE.id, ...entry })}\n`); };
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { record({ ok: false, leg, reason }); return stop(verdict, reason); };
@@ -342,6 +348,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   // the store is this round's own, before the first line is written to it: never the seal home, and made for this wave
   const foreign = storeRefusal(store, home, true);
   if (foreign) return stop('REFUSED', foreign);
+  // no name the judge writes in its output directory is a link, before its first write anywhere (F6)
+  const linked = linkRefusal(input.out, 'the output directory', [JUDGE.file, `${JUDGE.file}.tmp`]);
+  if (linked) return stop('REFUSED', linked);
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, JUDGE.wave, { mode: 'holdout', ok: false, leg, reason }); return stop(verdict, reason); };
   if (within(input.out, repo)) return refuse('out', 'REFUSED', 'the output directory must sit outside the repository');
   if (!input.study && !isChallengeSource(__filename, repo)) return refuse('source', 'REFUSED', 'the judge is read by the pinned sources of its repository (tsx src/scripts/regime-challenge/challenge-run.ts), never a compiled or copied harness');
