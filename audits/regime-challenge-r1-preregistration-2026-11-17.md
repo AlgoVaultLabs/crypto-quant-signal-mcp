@@ -443,3 +443,42 @@ The test file that carries the fix is recorded here with its bytes as committed 
 - tests/unit/regime-challenge-run.test.ts, sha256 `830aa90a8e136d6185b107309e49e1ca013145bebd1dad51b1cf27fde1e87506`. For F4, four tests in a sandbox. The seal home and a store inside it, named through a case variant and through the firmlink, are refused by `storeRefusal` as the judge and `--init-store` ask it; the judge, with an injected study and its own seal home, refuses them with the seal home's listing unchanged and no output; and a sibling named through the same alias is accepted. The repository named through either alias is refused as the pre-score's output and as the judge's store and output, with nothing written. The case-variant tests assert on macOS that the volume is case-insensitive, so they never skip there; on a case-sensitive volume they assert that the variant lies outside. The firmlink tests run where the firmlink of the sandbox exists.
 
 The fix was written test-first, and the tests failed before it. With the spelling-only `within()` put back, the four tests fail; restored, they pass.
+
+## Amendment 3 — 2026-11-17, before the read: containment walks the resolved path too, a matrix closes the class, and one re-pin
+
+**Write-time clock (live `date -u`):** 2026-11-17T08:10Z (2026-11-17 local, the date in the file name).
+
+Below, "the body and Amendments 1 and 2" is everything before this section, and the parts of this section are F5, the matrix and the re-pin.
+
+**Ordering.** Before the read. The judge has not run. Its store holds the two manifests and the plan that `--init-store` wrote (§2, E6), and no guard log. The seal home holds T3's `holdout.seal` only, and no `challenge-r1.seal`. This round has computed no outcome of 2026-01 … 2026-10. The body and Amendments 1 and 2 are unchanged: the first 81,057 bytes of this file (sha256 `518aed810f5b55768e2ac032246ae18d888cbc32fb62fb67562587aa7920e791`) are byte-identical to the file as landed at commit `f40b8667f37ec9ad865c628881689332de7c05c4`.
+
+**Reason.** A fresh auditor's re-check of Amendment 2, made before the read (CH4; the lead's ruling of 2026-11-17T07:41Z, 15:41 local), passed F4 for direct aliases and returned one new confirmed finding (F5). F5 is the third fix in one class, after F1 and F4: whether a path lies inside a root. So this section closes the class with a gate, not with one more case. It is settled here, before any row of the judge window is read, so no result can choose it. It changes none of the read's statistics, months, seal or decision. PROCEDURE §7 does not apply: there is no result.
+
+### F5. Containment walks the resolved path too (code)
+
+- **The finding.** Amendment 2's `within(p, root)` walked `{dev, ino}` over the ancestors of `p` as written (`path.resolve(p)`) only, and compared `p` with its symlinks resolved (`real(p)`) by spelling only. So a symlink outside the root whose target is another name of a directory inside it — a case variant (`…/SEAL-HOME/inner`) or the firmlink (`/System/Volumes/Data/…`) — passed both checks: as written, no ancestor is the root; resolved, the spelling differs. In a sandbox, the judge passed with its store reached through such a symlink and wrote inside its seal home, and the pre-score wrote its result into the repository's `audits/` through one. The repository checks of the pre-score's output and of the judge's store and output were open the same way.
+- **The fix, in the same one function.** The identity walk covers the ancestors of both `path.resolve(p)` and `real(p)`. The spelling check stays, and either check counts. Every caller gains at once, as in Amendment 2. `challenge-run.ts` is unchanged, and its pin (Amendment 1) stands.
+- **The judge's store passes.** At the write-time clock, `storeRefusal` on the store made at E6 returns no refusal, both as the judge asks it and as `--init-store` asks it. These checks read the judge store's plan and nothing else, and write nothing.
+
+### The matrix: the gate that closes the class
+
+F1 and F4 each closed the case their finding named, and F5 is a case that F4's fix left open: two checks that each covered one renaming step did not cover the two steps together. The class is now held by one test over the composition, in `tests/unit/regime-challenge-run.test.ts`:
+- **written form:** the canonical name; a case variant of the root, on a case-insensitive volume; the root's `/System/Volumes/Data` firmlink, where it exists;
+- **link form:** none; a symlink outside the root that points at that form; a chain of two such symlinks;
+- **root:** a store inside a sandbox seal home, asked of `storeRefusal` as the judge asks it and as `--init-store` asks it (of the store, and of a store not made yet below it), and of the judge with an injected study and its own seal home; and an output inside a sandbox repository, asked of the pre-score and of the judge.
+
+Every cell is refused, with nothing written: the seal home's listing is unchanged, no result is written, and the repository's status is unchanged. The same forms of directories outside the roots still pass: a sibling whose name shares the root's prefix, a store outside the seal home, and an output outside the repository, into which the pre-score writes through the matrix's last cell (on this Mac, a chain of two symlinks to the firmlink). On macOS the test asserts that the volume is case-insensitive, and that the firmlink column runs wherever `/System/Volumes/Data` exists, so no column is skipped silently.
+
+The matrix was written first. At `f40b8667` it failed in exactly the cells where a symlink, or a chain of two, points at a case variant or at the firmlink, for both roots; the canonical cells and the unlinked cells passed. With the fix it passes. With the walk of `real(p)` dropped, the same cells fail; restored, byte for byte, they pass.
+
+### Re-pin
+
+The sha256 of `challenge-guard.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so this row replaces the earlier rows of the same name; every other pin of §10 and of Amendments 1 and 2 stands. The pinned file is byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-challenge/challenge-guard.ts` | `ae2bd5a7d97008dc9785edaa16df92a1524a84949a2ff86322c08b6ce8bae7f6` | the record loader, the archive and skeleton checks, the landed source, the registration on `origin/main`, and path containment by spelling, or by identity over the ancestors of the written path and of the resolved path (F4, F5) |
+
+The test file that carries the fix and the matrix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-challenge-run.test.ts, sha256 `21ac58cb39e1f17ecaa47743007f84fb88db5b869d3f4ccd4c72428e53519f14`. For F5, two matrix tests in a sandbox, one per root. The seal-home test makes a seal home, a store inside it and a sibling store, all for this round; it asks every cell of the store inside of `storeRefusal` in both modes and of the judge, and then asks every form of the sibling and of a store outside the seal home. The repository test asks every cell of an output inside the repository of the pre-score and of the judge (with a store and a seal home of its own), and then asks every form of a sibling of the repository, and runs the pre-score into it.

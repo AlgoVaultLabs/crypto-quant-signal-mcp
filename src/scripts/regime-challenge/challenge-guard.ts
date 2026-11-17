@@ -23,21 +23,26 @@ function identity(p: string): { dev: bigint; ino: bigint } | null {
 }
 /**
  * Whether `p` is `root` or lies inside it. Two checks, and either one counts: the spelling, with symlinks resolved;
- * and identity, `p` or an existing ancestor of it being the directory `root` is (the same `{dev, ino}`). Spelling
- * alone misses another name of the same directory: a case variant on a case-insensitive volume, or the macOS
- * firmlink `/System/Volumes/Data/…` (registration Amendment 2, F4). A `root` that does not exist has no identity, and
- * only the spelling speaks for it.
+ * and identity, an existing ancestor of `p` (or `p` itself) being the directory `root` is (the same `{dev, ino}`).
+ * Spelling alone misses another name of the same directory: a case variant on a case-insensitive volume, or the
+ * macOS firmlink `/System/Volumes/Data/…` (registration Amendment 2, F4). Identity walks the ancestors of `p` as
+ * written AND of `p` with its symlinks resolved: a symlink outside `root` whose target is such another name of a
+ * directory inside it has neither the spelling nor, as written, the identity (Amendment 3, F5). A `root` that does
+ * not exist has no identity, and only the spelling speaks for it.
  */
 export function within(p: string, root: string): boolean {
   const rel = path.relative(real(root), real(p));
   if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return true;
   const want = identity(root);
   if (!want) return false;
-  for (let head = path.resolve(p); ; head = path.dirname(head)) {
-    const id = identity(head);
-    if (id && id.dev === want.dev && id.ino === want.ino) return true;
-    if (path.dirname(head) === head) return false;
+  for (const start of [path.resolve(p), real(p)]) {
+    for (let head = start; ; head = path.dirname(head)) {
+      const id = identity(head);
+      if (id && id.dev === want.dev && id.ino === want.ino) return true;
+      if (path.dirname(head) === head) break;
+    }
   }
+  return false;
 }
 
 /** The archive months a run opened, and how many files of each. */

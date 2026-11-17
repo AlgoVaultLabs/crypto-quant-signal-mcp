@@ -476,6 +476,101 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     repoAliasRefusals('firmlink', firmlinkOf);
   });
 
+  // F5 (amendment 3): containment, as a matrix over every step that renames a path. A directory inside a root is
+  // named in every written form — its canonical name; through a case variant of the root, on a case-insensitive
+  // volume; through the root's /System/Volumes/Data firmlink, where it exists — and reached through every link form:
+  // none; a symlink outside the root pointing at that name; a chain of two symlinks outside the root. Every cell is
+  // inside the root and is refused, with nothing written. The same forms of a directory outside the root still pass.
+  type WrittenForm = { name: string; of: (p: string) => string };
+  const LINK_FORMS = ['none', 'symlink', 'chain'] as const;
+  const writtenForms = (): WrittenForm[] => {
+    const forms: WrittenForm[] = [{ name: 'canonical', of: (p) => fs.realpathSync(p) }];
+    // this Mac's volume is case-insensitive: asserted there, so the case column never skips silently
+    if (caseInsensitiveHere(path.join(dir, 'case-probe'))) forms.push({ name: 'case', of: caseVariant });
+    if (fs.existsSync(FIRMLINK_TMP)) forms.push({ name: 'firmlink', of: firmlinkOf });
+    if (process.platform === 'darwin') expect(forms.length).toBe(fs.existsSync(DATA_VOLUME) ? 3 : 2);
+    return forms;
+  };
+  /** `target` as written, through a symlink outside every root, or through a chain of two such symlinks. */
+  const linked = (target: string, link: (typeof LINK_FORMS)[number], name: string): string => {
+    if (link === 'none') return target;
+    const links = path.join(dir, 'matrix-links');
+    fs.mkdirSync(links, { recursive: true });
+    const first = path.join(links, `${name}-1`);
+    fs.symlinkSync(target, first);
+    if (link === 'symlink') return first;
+    const second = path.join(links, `${name}-2`);
+    fs.symlinkSync(first, second);
+    return second;
+  };
+  /** Every cell of the matrix: `sub` below `base`, with `base` in each written form, reached through each link form. */
+  const matrix = (base: string, sub: string, tag: string): Array<{ cell: string; p: string }> =>
+    writtenForms().flatMap((f) => LINK_FORMS.map((l) => {
+      const cell = `${tag}/${f.name}/${l}`;
+      return { cell, p: linked(path.join(f.of(base), sub), l, cell.split('/').join('-')) };
+    }));
+
+  it('F5: a store inside the seal home, in every written form and through every link form, is refused by storeRefusal in both modes and by the judge, with nothing written', { timeout: 180_000 }, () => {
+    const IN = 'the store is the seal home or lies inside it: the judge keeps its own store';
+    const listing = (d: string): string[] => fs.readdirSync(d, { recursive: true }).map(String).sort();
+    // stores made for this round, so their plans name this wave: only where they sit can refuse them
+    const h = path.join(dir, 'seal-home-matrix'), sibling = `${h}-sibling`, out = path.join(dir, 'out-matrix-home');
+    for (const s of [h, path.join(h, 'inner'), sibling]) guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+    const before = listing(h);
+    const cells = matrix(h, 'inner', 'seal-home');
+    const leaked: string[] = [];
+    for (const { cell, p } of cells) {
+      // the judge asks it of a made store; --init-store of the store, and of a store not made yet below it
+      const asked = [run.storeRefusal(p, h, true), run.storeRefusal(p, h, false), run.storeRefusal(path.join(p, 'not-yet'), h, false)];
+      const r = judge('out-matrix-home', { store: p, study: judgeStudy({ sealHome: h }) });
+      const read = /guard: ok|identifiability|seal|outcomes/.test(lines.join('|'));
+      if (asked.some((a) => a !== IN) || r.verdict !== 'REFUSED' || r.reason !== IN || read) leaked.push(`${cell}: ${JSON.stringify([...asked, `${r.verdict} — ${r.reason}`])}`);
+    }
+    expect(leaked).toEqual([]);
+    // no guard line, no seal, no result
+    expect(listing(h)).toEqual(before);
+    expect(fs.existsSync(out)).toBe(false);
+    // outside the seal home, in every form: a sibling whose name shares its prefix, and a store outside it
+    const passed: string[] = [];
+    for (const { cell, p } of [...matrix(sibling, '', 'sibling'), ...matrix(store, '', 'store')]) {
+      const asked = [run.storeRefusal(p, h, true), run.storeRefusal(path.join(p, 'not-yet'), h, false)];
+      if (asked.some((a) => a !== null)) passed.push(`${cell}: ${JSON.stringify(asked)}`);
+    }
+    expect(passed).toEqual([]);
+  });
+
+  it('F5: an output inside the repository, in every written form and through every link form, is refused as the pre-score\'s and the judge\'s output, with nothing written', { timeout: 180_000 }, () => {
+    const OUT = 'the output directory must sit outside the repository';
+    const status = (): string => git(repo, 'status', '--porcelain', '--untracked-files=all');
+    const before = status();
+    // the judge's output is asked after its store: a store and a seal home of the test's own, outside both roots
+    const own = path.join(dir, 'store-matrix'), ownHome = path.join(dir, 'seal-home-matrix-own'), sibling = `${repo}-sibling`;
+    guard.initStore(own, archives, census.panel, judgeStudyRecord(''));
+    fs.mkdirSync(sibling);
+    const leaked: string[] = [];
+    for (const { cell, p } of matrix(repo, 'audits', 'repo')) {
+      const o = path.join(p, `out-${cell.split('/').join('-')}`);
+      const pr = prescore('out-matrix-unused', { out: o });
+      const jr = judge('out-matrix-unused', { store: own, out: o, study: judgeStudy({ sealHome: ownHome }) });
+      const read = /guard: ok|identifiability|seal|outcomes/.test(lines.join('|'));
+      if ([pr.verdict, pr.reason, jr.verdict, jr.reason].join('|') !== ['REFUSED', OUT, 'REFUSED', OUT].join('|') || fs.existsSync(o) || read) {
+        leaked.push(`${cell}: ${JSON.stringify([`${pr.verdict} — ${pr.reason}`, `${jr.verdict} — ${jr.reason}`])}`);
+      }
+    }
+    expect(leaked).toEqual([]);
+    // nothing in the repository, no seal home, no result
+    expect(status()).toBe(before);
+    expect(fs.existsSync(ownHome)).toBe(false);
+    // outside the repository, in every form: a sibling whose name shares its prefix
+    const outside = matrix(sibling, '', 'repo-sibling');
+    expect(outside.filter(({ p }) => within(path.join(p, 'out'), repo)).map(({ cell }) => cell)).toEqual([]);
+    // and the pre-score writes there through the last cell (two symlinks, then the last written form)
+    const pass = prescore('out-matrix-unused', { out: path.join(outside[outside.length - 1].p, 'out-matrix-pass') });
+    expect([pass.verdict, pass.reason]).toEqual(['PASS', 'ok']);
+    expect(fs.existsSync(path.join(sibling, 'out-matrix-pass', PRESCORE_FILE))).toBe(true);
+    expect(status()).toBe(before);
+  });
+
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
     // the five files of this round and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
     expect(CHALLENGE_FILES.every((f) => REQUIRED_PINS.includes(f))).toBe(true);
