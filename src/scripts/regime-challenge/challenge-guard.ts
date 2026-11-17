@@ -17,7 +17,28 @@ export function real(p: string): string {
   while (!fs.existsSync(head) && path.dirname(head) !== head) { tail = path.join(path.basename(head), tail); head = path.dirname(head); }
   return path.join(fs.realpathSync(head), tail);
 }
-export const within = (p: string, root: string): boolean => { const rel = path.relative(real(root), real(p)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
+/** The `{dev, ino}` of an existing path, or null. */
+function identity(p: string): { dev: bigint; ino: bigint } | null {
+  try { const s = fs.statSync(p, { bigint: true }); return { dev: s.dev, ino: s.ino }; } catch { return null; }
+}
+/**
+ * Whether `p` is `root` or lies inside it. Two checks, and either one counts: the spelling, with symlinks resolved;
+ * and identity, `p` or an existing ancestor of it being the directory `root` is (the same `{dev, ino}`). Spelling
+ * alone misses another name of the same directory: a case variant on a case-insensitive volume, or the macOS
+ * firmlink `/System/Volumes/Data/…` (registration Amendment 2, F4). A `root` that does not exist has no identity, and
+ * only the spelling speaks for it.
+ */
+export function within(p: string, root: string): boolean {
+  const rel = path.relative(real(root), real(p));
+  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return true;
+  const want = identity(root);
+  if (!want) return false;
+  for (let head = path.resolve(p); ; head = path.dirname(head)) {
+    const id = identity(head);
+    if (id && id.dev === want.dev && id.ino === want.ino) return true;
+    if (path.dirname(head) === head) return false;
+  }
+}
 
 /** The archive months a run opened, and how many files of each. */
 export type Opened = Map<string, number>;

@@ -14,7 +14,7 @@ import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, parseCensus, skeletonOf, type Census, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { seedsFor } from '../../src/scripts/regime-diag/prims.js';
-import { archivesRefusal, registrationOnMain } from '../../src/scripts/regime-challenge/challenge-guard.js';
+import { archivesRefusal, registrationOnMain, within } from '../../src/scripts/regime-challenge/challenge-guard.js';
 import * as run from '../../src/scripts/regime-challenge/challenge-run.js';
 import {
   CANDIDATES, CHALLENGE_SEED, CHALLENGE_WAVE, JUDGE, JUDGE_FILE, PRESCORE, PRESCORE_FILE, PRESCORE_PIN, REGISTRATION_RE, REQUIRED_PINS, judgeStudyRecord,
@@ -38,6 +38,12 @@ const TABLES = 'audits/reg-tables.md', MOVED = 'audits/reg-tables-moved.md';
 const DECISION = '(WINS|KEEP|KEEP — underpowered|NOT_IDENTIFIABLE)';
 const COUNTS = { boot: 200, shuffle: 50 }, FLOOR = 5;
 const cand = (id: string): Candidate => CANDIDATES.find((c) => c.id === id) as Candidate;
+// Two other names of one directory (amendment 2, F4): its last segment in upper case, which on a case-insensitive
+// volume is the same directory; and on macOS its firmlink under /System/Volumes/Data.
+const caseVariant = (p: string): string => path.join(path.dirname(p), path.basename(p).toUpperCase());
+const DATA_VOLUME = '/System/Volumes/Data';
+const firmlinkOf = (p: string): string => path.join(DATA_VOLUME, fs.realpathSync(p));
+const FIRMLINK_TMP = path.join(DATA_VOLUME, fs.realpathSync(os.tmpdir()));
 
 const git = (repo: string, ...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -392,6 +398,82 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect([cli.code, cli.stdout]).toEqual([1, `REGIME_CHALLENGE_RUN_VERDICT=REFUSED — the store is ${t3.wave}'s, not ${CHALLENGE_WAVE}'s: its plan-BINANCE.json names that wave\n`]);
     expect(fs.readFileSync(path.join(other, 'plan-BINANCE.json')).equals(plan)).toBe(true);
     expect(fs.readdirSync(other).sort()).toEqual(before);
+  });
+
+  // F4 (amendment 2): a directory named another way is still that directory. Through `alias`, the seal home, a store
+  // inside it and the repository are refused as by their own names, with nothing written; a sibling is not inside.
+  const sealHomeAliasRefusals = (name: string, alias: (p: string) => string): void => {
+    const IN = 'the store is the seal home or lies inside it: the judge keeps its own store';
+    const listing = (d: string): string[] => fs.readdirSync(d, { recursive: true }).map(String).sort();
+    // stores made for this round, by their own names, so their plans name this wave: only where they sit refuses them
+    const h = path.join(dir, `seal-home-${name}`), inner = path.join(h, 'inner');
+    guard.initStore(h, archives, census.panel, judgeStudyRecord(''));
+    guard.initStore(inner, archives, census.panel, judgeStudyRecord(''));
+    const before = listing(h);
+    expect(alias(h)).not.toBe(h);
+    expect(fs.existsSync(alias(h))).toBe(true);
+    // the store named through the alias, and the seal home named through it
+    for (const [s, sealHome] of [[alias(h), h], [path.join(alias(h), 'inner'), h], [inner, alias(h)]]) {
+      expect(run.storeRefusal(s, sealHome, true)).toBe(IN);
+      const r = judge(`out-${name}`, { store: s, study: judgeStudy({ sealHome }) });
+      expect([r.verdict, r.reason]).toEqual(['REFUSED', IN]);
+      expect(lines.join('|')).not.toMatch(/guard: ok|identifiability|seal|outcomes/);
+    }
+    // --init-store asks it of a store not made yet
+    expect(run.storeRefusal(path.join(alias(h), 'not-yet'), h, false)).toBe(IN);
+    // no guard line, no seal, no result
+    expect(listing(h)).toEqual(before);
+    expect(fs.existsSync(path.join(dir, `out-${name}`))).toBe(false);
+    // the identity is the seal home's own, not an ancestor's: a sibling named through the alias of the sandbox passes
+    expect(run.storeRefusal(path.join(alias(dir), `store-${name}-new`), h, false)).toBeNull();
+  };
+  const repoAliasRefusals = (name: string, alias: (p: string) => string): void => {
+    const R = alias(repo);
+    expect(R).not.toBe(repo);
+    expect(fs.existsSync(R)).toBe(true);
+    // the pre-score's output, the judge's store, and the judge's output
+    const p = prescore(`out-pre-${name}`, { out: path.join(R, `out-${name}`) });
+    expect([p.verdict, p.reason]).toEqual(['REFUSED', 'the output directory must sit outside the repository']);
+    const js = judge(`out-${name}`, { store: path.join(R, `store-${name}`) });
+    expect([js.verdict, js.reason]).toEqual(['REFUSED', 'the store must sit outside the repository']);
+    // the output is asked after the store: a store and a seal home of the test's own, so nothing else is touched
+    const own = path.join(dir, `store-${name}`), ownHome = path.join(dir, `seal-home-${name}-own`);
+    guard.initStore(own, archives, census.panel, judgeStudyRecord(''));
+    const jo = judge(`out-${name}`, { store: own, out: path.join(R, `out-${name}`), study: judgeStudy({ sealHome: ownHome }) });
+    expect([jo.verdict, jo.reason]).toEqual(['REFUSED', 'the output directory must sit outside the repository']);
+    expect(lines.join('|')).not.toMatch(/guard: ok|identifiability|seal|outcomes/);
+    for (const x of [`out-${name}`, `store-${name}`]) expect(fs.existsSync(path.join(repo, x))).toBe(false);
+    expect(fs.existsSync(ownHome)).toBe(false);
+    expect(fs.existsSync(path.join(dir, `out-pre-${name}`))).toBe(false);
+    // a sibling of the repository, named through the alias of the sandbox, is outside it
+    expect(within(path.join(alias(dir), `out-${name}-new`), repo)).toBe(false);
+  };
+  /** Whether a case variant names the same directory here. This Mac's volume is case-insensitive: there it is asserted, never skipped. */
+  const caseInsensitiveHere = (probe: string): boolean => {
+    fs.mkdirSync(probe, { recursive: true });
+    const insensitive = fs.existsSync(caseVariant(probe));
+    if (process.platform === 'darwin') expect(insensitive).toBe(true);
+    return insensitive;
+  };
+
+  it('F4: a case variant of the seal home, or of a store inside it, is that directory, and is refused with nothing written', { timeout: 60_000 }, () => {
+    if (caseInsensitiveHere(path.join(dir, 'case-probe'))) return sealHomeAliasRefusals('case', caseVariant);
+    // a case-sensitive volume: a case variant is another directory, and lies outside
+    expect(within(path.join(caseVariant(home), 'inner'), home)).toBe(false);
+  });
+
+  it('F4: a case variant of the repository, as the pre-score\'s output, the judge\'s store or the judge\'s output, is refused with nothing written', { timeout: 60_000 }, () => {
+    if (caseInsensitiveHere(path.join(dir, 'case-probe'))) return repoAliasRefusals('case', caseVariant);
+    expect(within(path.join(caseVariant(repo), 'out'), repo)).toBe(false);
+  });
+
+  it.runIf(fs.existsSync(FIRMLINK_TMP))('F4: on macOS, the /System/Volumes/Data name of the seal home, or of a store inside it, is refused with nothing written', { timeout: 60_000 }, () => {
+    expect(fs.existsSync(firmlinkOf(dir))).toBe(true);
+    sealHomeAliasRefusals('firmlink', firmlinkOf);
+  });
+
+  it.runIf(fs.existsSync(FIRMLINK_TMP))('F4: on macOS, the /System/Volumes/Data name of the repository, as an output or a store, is refused with nothing written', { timeout: 60_000 }, () => {
+    repoAliasRefusals('firmlink', firmlinkOf);
   });
 
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
