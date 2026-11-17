@@ -21,7 +21,7 @@ import path from 'node:path';
 import { pinsOf } from '../sr-backtest/guard.js';
 import { writeAtomic } from '../sr-backtest/store.js';
 import { sha256, type ArchiveManifest, type ArchiveStore } from '../regime-diag/archive.js';
-import { ALPHA, B_BOOT, B_SHUFFLE, REGISTRATION as T3_REGISTRATION, VENUE } from '../regime-diag/diag-spec.js';
+import { ALPHA, B_BOOT, B_SHUFFLE, FLOOR_PP, REGISTRATION as T3_REGISTRATION, VENUE } from '../regime-diag/diag-spec.js';
 import { context, type Ctx } from '../regime-diag/engine.js';
 import { buildFrames, parseCensus, withOutcomes, type Census, type Frame, type Loaded } from '../regime-diag/frame.js';
 import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from '../regime-diag/guard.js';
@@ -36,7 +36,7 @@ import {
 import { challengerColumns, checkChallengerParity } from './challenger-replay.js';
 import {
   a4Difference, a4Guard, a5Guard, a5Ratio, armSums, coverageGuard, coverageRatio, deltaDelta1, holm, pairOf, powerAt, sameDial, supportOf,
-  type ArmSums, type GuardState, type Pair, type PairedReading,
+  type ArmSums, type ArmSupport, type GuardState, type Pair, type PairedReading,
 } from './paired-stats.js';
 
 const REPO = path.resolve(__dirname, '../../..');
@@ -127,6 +127,12 @@ const slim = (r: PairedReading | null): Record<string, unknown> | null => (r ? {
   ...(r.arms ? { arms: { challenger: num(r.arms.challenger), served: num(r.arms.served) } } : {}),
 } : null);
 const halfWidth = (r: PairedReading): number => (r.ub - r.lb) / 2;
+/** One arm's support as the judge's pre-seal line writes it: label-only, null where undefined. */
+const armSupport = (a: ArmSupport): Record<string, number | null> => ({ eff: num(a.eff), share: num(a.share), bound: a.bound === null ? null : num(a.bound) });
+/** A judged challenger's label-only decision inputs: its identifiability, the support of both arms, and the coverage ratio. */
+const preSeal = (it: Item): Record<string, unknown> => ({
+  identifiable: it.support.identifiable, arms: { challenger: armSupport(it.support.challenger), served: armSupport(it.support.served) }, coverage: num(it.coverage),
+});
 
 // ── the pre-score: selection ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -350,8 +356,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   const F = input.study?.floorClusters ?? floorClusters();
   const P = prepare(rec, census, load, pre.cands, fs.readFileSync(path.join(repo, tables), 'utf8'), F, log);
   if (isStop(P)) return refuse(P.leg, P.stop, P.reason);
-  // identifiability is on record before the seal is claimed and before any outcome is read
-  logGuard(store, JUDGE.wave, { mode: 'holdout', ok: true, leg: 'identifiability', floor_clusters: F, candidates: Object.fromEntries(P.items.map((it) => [it.cand.id, it.support.identifiable])) });
+  // what the decision reads from the labels is on record before the seal is claimed and before any outcome is read:
+  // each challenger's identifiability, the support of each arm it was decided on, and the coverage ratio, beside the floors
+  logGuard(store, JUDGE.wave, { mode: 'holdout', ok: true, leg: 'identifiability', floor_clusters: F, floor_pp: FLOOR_PP, candidates: Object.fromEntries(P.items.map((it) => [it.cand.id, preSeal(it)])) });
   log('identifiability: judge');
   fs.mkdirSync(input.out, { recursive: true });
   fs.accessSync(input.out, fs.constants.W_OK);

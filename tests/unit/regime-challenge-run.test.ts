@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { archiveName, sha256, type ArchiveManifest, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
-import { ALPHA } from '../../src/scripts/regime-diag/diag-spec.js';
+import { ALPHA, FLOOR_PP } from '../../src/scripts/regime-diag/diag-spec.js';
 import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, parseCensus, skeletonOf, type Census, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
@@ -20,7 +20,7 @@ import {
   type Candidate, type Dial,
 } from '../../src/scripts/regime-challenge/challenge-spec.js';
 import { challengerColumns } from '../../src/scripts/regime-challenge/challenger-replay.js';
-import { deltaDelta1, pairOf } from '../../src/scripts/regime-challenge/paired-stats.js';
+import { coverageRatio, deltaDelta1, pairOf, supportOf, type ArmSupport } from '../../src/scripts/regime-challenge/paired-stats.js';
 import { zipSingle } from '../fixtures/regime-diag/synth-study.js';
 import { SYN_AFTER, SYN_CENSUS_TEXT, SYN_FIT, SYN_HOLD, SYN_JUDGE, SYN_PRESCORE, SYN_SPAN, synFullLoad, writeSynArchives } from '../fixtures/regime-challenge/synth-challenge.js';
 
@@ -471,6 +471,38 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect(Object.keys(out.candidates)).toEqual(['C1.7', 'C3']);
     expect(out.line).toBe(r.line);
     expect(logged().slice(-1)[0].result_sha256).toBe(sha256(fs.readFileSync(r.file as string)));
+  });
+
+  it('before the seal the judge writes what its decision reads from the labels: identifiability, each arm\'s support, coverage, beside the floors', { timeout: 60_000 }, () => {
+    const all = logged();
+    const at = all.findIndex((e) => e.leg === 'identifiability');
+    // one line, from the one read, written before the seal was claimed
+    expect(all.filter((e) => e.leg === 'identifiability')).toHaveLength(1);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(at).toBeLessThan(all.findIndex((e) => e.leg === 'seal' && e.ok === true));
+    const line = all[at] as { ok: boolean; floor_clusters: number; floor_pp: number; candidates: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect([line.ok, line.floor_clusters, line.floor_pp]).toEqual([true, FLOOR, FLOOR_PP]);
+    // label-only: the line carries no key a reading or an outcome carries
+    expect([...keysOf(line.candidates)].filter((k) => !(k in line.candidates)).sort()).toEqual(['arms', 'bound', 'challenger', 'coverage', 'eff', 'identifiable', 'served', 'share']);
+    // equal to the decision's inputs: recomputed from the labels of the same frame, and the decision the result wrote
+    const out = json(path.join(dir, 'out-judge', JUDGE_FILE));
+    const f = buildFrames(SYN_SPAN, [SYN_HOLD], census, synFullLoad, { outcomes: false, seed: JUDGE.entrySeed })[0];
+    const ctx = context(f);
+    const judged = (out.family as string[]).map(cand);
+    expect(Object.keys(line.candidates)).toEqual(out.family);
+    const dials = judged.flatMap((c) => (c.dial ? [c.dial] : []));
+    const cols = dials.length ? challengerColumns(f, synFullLoad, dials) : null;
+    const fin = (x: number | null): number | null => (x !== null && Number.isFinite(x) ? x : null);
+    const arm = (a: ArmSupport): Record<string, number | null> => ({ eff: fin(a.eff), share: fin(a.share), bound: fin(a.bound) });
+    for (const c of judged) {
+      const pair = pairOf(f, c, cols), s = supportOf(f, ctx, pair, FLOOR);
+      expect(line.candidates[c.id]).toEqual({ identifiable: s.identifiable, arms: { challenger: arm(s.challenger), served: arm(s.served) }, coverage: fin(coverageRatio(ctx.w, pair)) });
+      expect(line.candidates[c.id].identifiable).toBe(out.candidates[c.id].identifiable);
+      expect(line.candidates[c.id].coverage).toBe(out.candidates[c.id].coverage.ratio);
+      // the arms' own facts decide the boolean: each arm at or above the cluster floor and the attainable floor
+      const ok = (a: Record<string, number | null>): boolean => (a.eff as number) >= line.floor_clusters && a.bound !== null && a.bound >= line.floor_pp;
+      expect(line.candidates[c.id].identifiable).toBe(ok(line.candidates[c.id].arms.challenger) && ok(line.candidates[c.id].arms.served));
+    }
   });
 
   it('the judge result holds paired quantities only: no arm\'s own value, and no served-only key', { timeout: 60_000 }, () => {
