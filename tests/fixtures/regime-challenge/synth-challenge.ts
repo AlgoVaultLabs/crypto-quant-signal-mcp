@@ -9,7 +9,7 @@ import { archiveName, type ArchiveStore, type Grid } from '../../../src/scripts/
 import { MIN_MS, type Span, type Win } from '../../../src/scripts/regime-diag/diag-spec.js';
 import type { Loaded } from '../../../src/scripts/regime-diag/frame.js';
 import { synthCsv, synthGrid } from '../../../src/scripts/regime-diag/synth.js';
-import { JUDGE, PRESCORE, type ChallengeRecord } from '../../../src/scripts/regime-diag/challenge/challenge-spec.js';
+import { JUDGE, PRESCORE, type ChallengeRecord } from '../../../src/scripts/regime-challenge/challenge-spec.js';
 import { SYNTH_CENSUS_TEXT, zipSingle } from '../regime-diag/synth-study.js';
 
 const D = 1440;

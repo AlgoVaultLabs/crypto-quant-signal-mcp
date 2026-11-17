@@ -1,4 +1,4 @@
-// regime-diag/challenge/paired-stats.ts — EDGE-REGIME-CHALLENGE-R1-W1: the paired statistics.
+// regime-challenge/paired-stats.ts — EDGE-REGIME-CHALLENGE-R1-W1: the paired statistics.
 //
 // Every quantity here compares two arms on the SAME entries — the challenger's rows and the served rule's — and
 // both arms are recomputed on every coin × UTC-day cluster-bootstrap resample (T3 §4.6). A reading built with
@@ -8,13 +8,13 @@
 //   A4    S4(challenger) − S4(served)                                    fails when the interval is wholly below −3.0 pp
 //   A5    R5(challenger) ÷ R5(served), on the per-closed-bar series       fails when the interval is wholly below 1/1.10
 //   cov   the challenger's TRENDING ≥ 60 row share over the served's      fails below 0.5
-import { runsOf, barSeq, type BarSeq, type Runs } from '../bars.js';
-import { ALPHA, FLOOR_PP, REGIME_AGAINST_MIN_CONFIDENCE, TFS } from '../diag-spec.js';
-import { bootstrap, compute, contrast, cwOfRows, effOfCw, shuffleBlocks, type Acc, type Ctx, type Stat } from '../engine.js';
-import { N_TF, dayOf, type Census, type Frame, type Lab } from '../frame.js';
-import { attainableOf, boundsOf, kishOf } from '../prims.js';
-import { mulberry32 } from '../rng.js';
-import { a4, delta1, trendDir } from '../stats.js';
+import { runsOf, barSeq, type BarSeq, type Runs } from '../regime-diag/bars.js';
+import { ALPHA, FLOOR_PP, REGIME_AGAINST_MIN_CONFIDENCE, TFS } from '../regime-diag/diag-spec.js';
+import { bootstrap, compute, contrast, cwOfRows, effOfCw, shuffleBlocks, type Acc, type Ctx, type Stat } from '../regime-diag/engine.js';
+import { N_TF, dayOf, type Census, type Frame, type Lab } from '../regime-diag/frame.js';
+import { attainableOf, boundsOf, kishOf } from '../regime-diag/prims.js';
+import { mulberry32 } from '../regime-diag/rng.js';
+import { a4, delta1, trendDir } from '../regime-diag/stats.js';
 import type { ChallengerCols } from './challenger-replay.js';
 import { A4_GUARD_PP, A5_GUARD_RATIO, C3_TF, COVERAGE_FLOOR, HALF_WIDTH_Z, POWER_Z, SERVED_TF, type Candidate, type Dial } from './challenge-spec.js';
 

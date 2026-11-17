@@ -1,4 +1,4 @@
-// regime-diag/challenge/challenge-guard.ts — EDGE-REGIME-CHALLENGE-R1-W1: what a run opens, and what it checks before any outcome.
+// regime-challenge/challenge-guard.ts — EDGE-REGIME-CHALLENGE-R1-W1: what a run opens, and what it checks before any outcome.
 //
 // A record's loader opens the archives of the record's own months and no other: each month is asked of
 // `monthRefusal` before its file is touched, and every month opened goes on the run's record. The label-free
@@ -7,8 +7,8 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { archiveName, buildGrid, resolveArchive, sha256, type ArchiveManifest, type ArchiveStore } from '../archive.js';
-import { diffSkeleton, registeredSkeleton, skeletonOf, type Frame, type Loaded, type Skeleton } from '../frame.js';
+import { archiveName, buildGrid, resolveArchive, sha256, type ArchiveManifest, type ArchiveStore } from '../regime-diag/archive.js';
+import { diffSkeleton, registeredSkeleton, skeletonOf, type Frame, type Loaded, type Skeleton } from '../regime-diag/frame.js';
 import { monthRefusal, monthsOpened, type ChallengeRecord } from './challenge-spec.js';
 
 /** A path with its existing part resolved through symlinks (run.ts keeps its own copy private). */

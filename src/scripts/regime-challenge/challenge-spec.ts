@@ -1,4 +1,4 @@
-// regime-diag/challenge/challenge-spec.ts — EDGE-REGIME-CHALLENGE-R1-W1 (T6, round 1): the challengers and the two records.
+// regime-challenge/challenge-spec.ts — EDGE-REGIME-CHALLENGE-R1-W1 (T6, round 1): the challengers and the two records.
 //
 // A challenger is the served rule with ONE input changed. Round 1 holds three, on the dials the component map
 // flagged: M01 (the ADX smoothing period), M08 (direction precedence) and M12 (the label timeframe).
@@ -11,9 +11,9 @@
 // built. No record opens a month after 2026-10: those are the successor study's corpus.
 //
 // Nothing here is part of T3's or its successor's pinned harness: this module imports from it and edits none of it.
-import { months } from '../archive.js';
-import { FIT, FLOOR_PP, FLOOR_RATIO, HISTORY_MIN, HOLDOUT, LAST_MONTH, MIN_MS, PATH_MIN, SEED, SPAN, TFS, DEFAULT_TIMEFRAME, type Span, type StudyRecord, type Win } from '../diag-spec.js';
-import { MUTATE } from '../mutate.js';
+import { months } from '../regime-diag/archive.js';
+import { FIT, FLOOR_PP, FLOOR_RATIO, HISTORY_MIN, HOLDOUT, LAST_MONTH, MIN_MS, PATH_MIN, SEED, SPAN, TFS, DEFAULT_TIMEFRAME, type Span, type StudyRecord, type Win } from '../regime-diag/diag-spec.js';
+import { MUTATE } from '../regime-diag/mutate.js';
 
 export const CHALLENGE_WAVE = 'EDGE-REGIME-CHALLENGE-R1-W1';
 /** The seed label of every resample of this round (the entry draw keeps T3's label: the frames are T3's frames). */
@@ -35,7 +35,7 @@ export const REGISTRATION_RE = /^audits\/regime-challenge-r1-preregistration-\d{
  * the judge refuses a registration that leaves one out; a pinned one the pinned guard holds to its sha256.
  */
 export const REQUIRED_PINS: readonly string[] = Object.freeze([
-  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((m) => `src/scripts/regime-diag/challenge/${m}.ts`),
+  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((m) => `src/scripts/regime-challenge/${m}.ts`),
   ...['market-regime-core', 'indicators', 'candle-window', 'candle-guard', 'serving-windows', 'errors', 'pre-trade-calc', 'pre-trade-odds-calibration', 'venue-fees', 'funding-venues']
     .map((m) => `src/lib/${m}.ts`),
   'src/scripts/cluster-perm-stats.py',

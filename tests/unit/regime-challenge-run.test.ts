@@ -13,14 +13,14 @@ import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, parseCensus, skeletonOf, type Census, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { seedsFor } from '../../src/scripts/regime-diag/prims.js';
-import { archivesRefusal, registrationOnMain } from '../../src/scripts/regime-diag/challenge/challenge-guard.js';
-import * as run from '../../src/scripts/regime-diag/challenge/challenge-run.js';
+import { archivesRefusal, registrationOnMain } from '../../src/scripts/regime-challenge/challenge-guard.js';
+import * as run from '../../src/scripts/regime-challenge/challenge-run.js';
 import {
   CANDIDATES, CHALLENGE_SEED, CHALLENGE_WAVE, JUDGE, JUDGE_FILE, PRESCORE, PRESCORE_FILE, PRESCORE_PIN, REGISTRATION_RE, REQUIRED_PINS, judgeStudyRecord,
   type Candidate, type Dial,
-} from '../../src/scripts/regime-diag/challenge/challenge-spec.js';
-import { challengerColumns } from '../../src/scripts/regime-diag/challenge/challenger-replay.js';
-import { deltaDelta1, pairOf } from '../../src/scripts/regime-diag/challenge/paired-stats.js';
+} from '../../src/scripts/regime-challenge/challenge-spec.js';
+import { challengerColumns } from '../../src/scripts/regime-challenge/challenger-replay.js';
+import { deltaDelta1, pairOf } from '../../src/scripts/regime-challenge/paired-stats.js';
 import { zipSingle } from '../fixtures/regime-diag/synth-study.js';
 import { SYN_AFTER, SYN_CENSUS_TEXT, SYN_FIT, SYN_HOLD, SYN_JUDGE, SYN_PRESCORE, SYN_SPAN, synFullLoad, writeSynArchives } from '../fixtures/regime-challenge/synth-challenge.js';
 
@@ -28,7 +28,7 @@ const REPO = path.resolve(__dirname, '../..');
 // One setImmediate per test lets the worker answer vitest between long synchronous tests (the measurement behind
 // this hook is in tests/unit/regime-diag-guard.test.ts).
 afterEach(() => new Promise<void>((done) => { setImmediate(done); }));
-const CHALLENGE_FILES = ['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((n) => `src/scripts/regime-diag/challenge/${n}.ts`);
+const CHALLENGE_FILES = ['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((n) => `src/scripts/regime-challenge/${n}.ts`);
 // the harness list the pinned guard asks for, and what the judge asks for beyond it: this round's files and the
 // modules outside the harness list
 const COPIED = [...guard.HARNESS_FILES, ...REQUIRED_PINS];
@@ -65,7 +65,7 @@ async function mutated<T>(lever: string, fn: (m: typeof run) => T): Promise<T> {
   process.env.REGIME_DIAG_MUTATE = lever;
   vi.resetModules();
   try {
-    return fn(await import('../../src/scripts/regime-diag/challenge/challenge-run.js'));
+    return fn(await import('../../src/scripts/regime-challenge/challenge-run.js'));
   } finally {
     delete process.env.REGIME_DIAG_MUTATE;
     vi.resetModules();

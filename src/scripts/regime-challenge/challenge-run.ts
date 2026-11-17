@@ -1,8 +1,8 @@
-// regime-diag/challenge/challenge-run.ts — EDGE-REGIME-CHALLENGE-R1-W1 (T6, round 1): the run CLI.
+// regime-challenge/challenge-run.ts — EDGE-REGIME-CHALLENGE-R1-W1 (T6, round 1): the run CLI.
 //
-//   npx tsx src/scripts/regime-diag/challenge/challenge-run.ts --prescore   --census F --cache C --overlay O --manifest M --out DIR
-//   npx tsx src/scripts/regime-diag/challenge/challenge-run.ts --init-store --census F --cache C --overlay O --store S
-//   npx tsx src/scripts/regime-diag/challenge/challenge-run.ts --judge      --census F --cache C --overlay O --store S --prescore-result FILE --out DIR
+//   npx tsx src/scripts/regime-challenge/challenge-run.ts --prescore   --census F --cache C --overlay O --manifest M --out DIR
+//   npx tsx src/scripts/regime-challenge/challenge-run.ts --init-store --census F --cache C --overlay O --store S
+//   npx tsx src/scripts/regime-challenge/challenge-run.ts --judge      --census F --cache C --overlay O --store S --prescore-result FILE --out DIR
 //
 // `--prescore` reads 2024-01 … 2025-12 and no other month: in-sample, internal, selection only. It needs no
 // registration and claims no seal; `M` is T3's archive-store manifest, read and never written.
@@ -18,16 +18,16 @@
 // Only `main()` prints the token, and `main()` never injects a study: a test's study cannot print PASS.
 import fs from 'node:fs';
 import path from 'node:path';
-import { pinsOf } from '../../sr-backtest/guard.js';
-import { writeAtomic } from '../../sr-backtest/store.js';
-import { sha256, type ArchiveManifest, type ArchiveStore } from '../archive.js';
-import { ALPHA, B_BOOT, B_SHUFFLE, REGISTRATION as T3_REGISTRATION, VENUE } from '../diag-spec.js';
-import { context, type Ctx } from '../engine.js';
-import { buildFrames, parseCensus, withOutcomes, type Census, type Frame, type Loaded } from '../frame.js';
-import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from '../guard.js';
-import { MUTATE } from '../mutate.js';
-import { PARITY_FIXTURE, checkCoreParity } from '../parity.js';
-import { floorClusters, seedsFor } from '../prims.js';
+import { pinsOf } from '../sr-backtest/guard.js';
+import { writeAtomic } from '../sr-backtest/store.js';
+import { sha256, type ArchiveManifest, type ArchiveStore } from '../regime-diag/archive.js';
+import { ALPHA, B_BOOT, B_SHUFFLE, REGISTRATION as T3_REGISTRATION, VENUE } from '../regime-diag/diag-spec.js';
+import { context, type Ctx } from '../regime-diag/engine.js';
+import { buildFrames, parseCensus, withOutcomes, type Census, type Frame, type Loaded } from '../regime-diag/frame.js';
+import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGuard, sealHome } from '../regime-diag/guard.js';
+import { MUTATE } from '../regime-diag/mutate.js';
+import { PARITY_FIXTURE, checkCoreParity } from '../regime-diag/parity.js';
+import { floorClusters, seedsFor } from '../regime-diag/prims.js';
 import { archivesRefusal, landedSource, real, recordLoader, registrationOnMain, skeletonRefusal, within, type Opened } from './challenge-guard.js';
 import {
   CANDIDATES, CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE, PRESCORE_PIN, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, coinDaysOf, judgeStudyRecord, windowRefusal,
@@ -39,7 +39,7 @@ import {
   type ArmSums, type GuardState, type Pair, type PairedReading,
 } from './paired-stats.js';
 
-const REPO = path.resolve(__dirname, '../../../..');
+const REPO = path.resolve(__dirname, '../../..');
 const TOKEN = 'REGIME_CHALLENGE_RUN_VERDICT';
 const PRESCORE_LOG = 'regime-challenge-r1-prescore.log';
 
@@ -64,7 +64,7 @@ export interface RunResult { verdict: 'PASS' | 'REFUSED' | 'INDETERMINATE'; reas
 
 const jsonText = (x: unknown): string => `${JSON.stringify(x, null, 1)}\n`;
 /** The pins bind the code that runs only when the running file IS the landed source of the repository the run reads. */
-export const isChallengeSource = (file: string, repo: string): boolean => real(file) === real(path.join(repo, 'src/scripts/regime-diag/challenge/challenge-run.ts'));
+export const isChallengeSource = (file: string, repo: string): boolean => real(file) === real(path.join(repo, 'src/scripts/regime-challenge/challenge-run.ts'));
 const countsOf = (study?: ChallengeStudy): Counts => ({ boot: Math.min(B_BOOT, study?.counts?.boot ?? B_BOOT), shuffle: Math.min(B_SHUFFLE, study?.counts?.shuffle ?? B_SHUFFLE) });
 
 // ── before any outcome: the frame, its checks, the challenger columns, the support of each pair ────────────────
@@ -178,7 +178,7 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const record = (entry: Record<string, unknown>): void => { fs.appendFileSync(path.join(input.out, PRESCORE_LOG), `${JSON.stringify({ at: new Date().toISOString(), wave: PRESCORE.wave, record: PRESCORE.id, ...entry })}\n`); };
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { record({ ok: false, leg, reason }); return stop(verdict, reason); };
   if (MUTATE !== '') return refuse('mutation', 'REFUSED', `REGIME_DIAG_MUTATE is set (${MUTATE}): a deliberately broken harness computes no outcome`);
-  if (!input.study && !isChallengeSource(__filename, input.repo)) return refuse('source', 'REFUSED', 'the pre-score is read by the landed sources of its repository (tsx src/scripts/regime-diag/challenge/challenge-run.ts), never a compiled or copied harness');
+  if (!input.study && !isChallengeSource(__filename, input.repo)) return refuse('source', 'REFUSED', 'the pre-score is read by the landed sources of its repository (tsx src/scripts/regime-challenge/challenge-run.ts), never a compiled or copied harness');
   const source = landedSource(input.repo);
   if (!source.ok) return refuse('source', 'REFUSED', source.reason);
   const want = input.study ? input.study.pins : { census: CENSUS_SHA256, archives: T3_ARCHIVES_SHA256 };
@@ -308,7 +308,7 @@ export function judgeRun(input: JudgeInput): RunResult {
   if (within(store, repo)) return stop('REFUSED', 'the store must sit outside the repository');
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, JUDGE.wave, { mode: 'holdout', ok: false, leg, reason }); return stop(verdict, reason); };
   if (within(input.out, repo)) return refuse('out', 'REFUSED', 'the output directory must sit outside the repository');
-  if (!input.study && !isChallengeSource(__filename, repo)) return refuse('source', 'REFUSED', 'the judge is read by the pinned sources of its repository (tsx src/scripts/regime-diag/challenge/challenge-run.ts), never a compiled or copied harness');
+  if (!input.study && !isChallengeSource(__filename, repo)) return refuse('source', 'REFUSED', 'the judge is read by the pinned sources of its repository (tsx src/scripts/regime-challenge/challenge-run.ts), never a compiled or copied harness');
   // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
   const home = input.study ? input.study.sealHome : sealHome();
   if (!home) return refuse('seal-home', 'REFUSED', 'a synthetic study must name its own seal home');

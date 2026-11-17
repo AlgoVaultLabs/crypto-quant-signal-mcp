@@ -7,8 +7,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { L_DOWN, L_UP, NO_LABEL } from '../../src/scripts/regime-diag/diag-spec.js';
 import { buildFrames, parseCensus, type Frame } from '../../src/scripts/regime-diag/frame.js';
 import { PARITY_FIXTURE } from '../../src/scripts/regime-diag/parity.js';
-import { CANDIDATES, SERVED_DIAL, dialRefusal, type Dial } from '../../src/scripts/regime-diag/challenge/challenge-spec.js';
-import * as replay from '../../src/scripts/regime-diag/challenge/challenger-replay.js';
+import { CANDIDATES, SERVED_DIAL, dialRefusal, type Dial } from '../../src/scripts/regime-challenge/challenge-spec.js';
+import * as replay from '../../src/scripts/regime-challenge/challenger-replay.js';
 import { SYN_CENSUS_TEXT, SYN_HOLD, SYN_SPAN, synFullLoad } from '../fixtures/regime-challenge/synth-challenge.js';
 
 const REPO = path.resolve(__dirname, '../..');
@@ -24,7 +24,7 @@ async function mutated<T>(lever: string, fn: (m: typeof replay) => T): Promise<T
   process.env.REGIME_DIAG_MUTATE = lever;
   vi.resetModules();
   try {
-    return fn(await import('../../src/scripts/regime-diag/challenge/challenger-replay.js'));
+    return fn(await import('../../src/scripts/regime-challenge/challenger-replay.js'));
   } finally {
     delete process.env.REGIME_DIAG_MUTATE;
     vi.resetModules();

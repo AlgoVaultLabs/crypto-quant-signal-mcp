@@ -1,4 +1,4 @@
-// regime-diag/challenge/challenger-replay.ts — EDGE-REGIME-CHALLENGE-R1-W1: the challenger replays.
+// regime-challenge/challenger-replay.ts — EDGE-REGIME-CHALLENGE-R1-W1: the challenger replays.
 //
 // A challenger's label is the landed core's own classification with one input changed:
 //   C1 (M01)  the indicators come from `regimeIndicatorsAt`, a copy of the core's computeRegimeIndicators whose
@@ -8,17 +8,17 @@
 //             the core's trending branch falls through to ±DI. Nothing else is touched.
 //   C3 (M12)  no replay: the served rule at another timeframe (the frame's own 1h rows).
 // Every verdict goes through the core's `projectRegime` → `classifyRegime`: the rule is called, never rewritten.
-import { REQUIRED_CANDLES, computeRegimeIndicators, projectRegime, type RegimeIndicators } from '../../../lib/market-regime-core.js';
-import { adx, atr, detectPriceStructure } from '../../../lib/indicators.js';
-import { splitCandleWindow } from '../../../lib/candle-window.js';
-import type { Candle } from '../../../types.js';
-import { aggregate, type Bars, type Grid } from '../archive.js';
-import { LABELS, NO_LABEL, TFS, type Tf, type Win } from '../diag-spec.js';
-import { N_TF, posName, type Frame, type Lab, type Loaded } from '../frame.js';
-import { MUTATE } from '../mutate.js';
-import { PARITY_FIXTURE } from '../parity.js';
-import { candlesAt, quietly, type CandleWindow, type Series } from '../replay.js';
-import { synthGrid } from '../synth.js';
+import { REQUIRED_CANDLES, computeRegimeIndicators, projectRegime, type RegimeIndicators } from '../../lib/market-regime-core.js';
+import { adx, atr, detectPriceStructure } from '../../lib/indicators.js';
+import { splitCandleWindow } from '../../lib/candle-window.js';
+import type { Candle } from '../../types.js';
+import { aggregate, type Bars, type Grid } from '../regime-diag/archive.js';
+import { LABELS, NO_LABEL, TFS, type Tf, type Win } from '../regime-diag/diag-spec.js';
+import { N_TF, posName, type Frame, type Lab, type Loaded } from '../regime-diag/frame.js';
+import { MUTATE } from '../regime-diag/mutate.js';
+import { PARITY_FIXTURE } from '../regime-diag/parity.js';
+import { candlesAt, quietly, type CandleWindow, type Series } from '../regime-diag/replay.js';
+import { synthGrid } from '../regime-diag/synth.js';
 import { SERVED_ADX_PERIOD, SERVED_DIAL, dialRefusal, type Dial } from './challenge-spec.js';
 
 /**

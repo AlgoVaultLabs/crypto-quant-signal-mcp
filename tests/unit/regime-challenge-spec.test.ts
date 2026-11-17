@@ -8,11 +8,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { archiveName, months, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
 import { FIT, HOLDOUT, PATH_MIN, SEED, SPAN, STUDIES, studyOf } from '../../src/scripts/regime-diag/diag-spec.js';
 import { synthCsv } from '../../src/scripts/regime-diag/synth.js';
-import * as guard from '../../src/scripts/regime-diag/challenge/challenge-guard.js';
-import * as spec from '../../src/scripts/regime-diag/challenge/challenge-spec.js';
+import * as guard from '../../src/scripts/regime-challenge/challenge-guard.js';
+import * as spec from '../../src/scripts/regime-challenge/challenge-spec.js';
 import { zipSingle } from '../fixtures/regime-diag/synth-study.js';
 import { minuteOfMonth } from '../fixtures/regime-challenge/synth-challenge.js';
 
+const REPO = path.resolve(__dirname, '../..');
 type Mods = { spec: typeof spec; guard: typeof guard };
 afterEach(() => new Promise<void>((done) => { setImmediate(done); }));
 
@@ -21,8 +22,8 @@ async function mutated<T>(lever: string, fn: (m: Mods) => T): Promise<T> {
   vi.resetModules();
   try {
     return fn({
-      spec: await import('../../src/scripts/regime-diag/challenge/challenge-spec.js'),
-      guard: await import('../../src/scripts/regime-diag/challenge/challenge-guard.js'),
+      spec: await import('../../src/scripts/regime-challenge/challenge-spec.js'),
+      guard: await import('../../src/scripts/regime-challenge/challenge-guard.js'),
     });
   } finally {
     delete process.env.REGIME_DIAG_MUTATE;
@@ -102,6 +103,16 @@ describe('regime-challenge: the two records', () => {
     expect([spec.candidateOf('C2')?.map, spec.candidateOf('C4'), spec.candidateOf(7)]).toEqual(['M08', null, null]);
     expect([spec.SERVED_TF, spec.C3_TF]).toEqual([1, 0]);
     expect([spec.A4_GUARD_PP, spec.A5_GUARD_RATIO, spec.COVERAGE_FLOOR]).toEqual([-3, 1 / 1.1, 0.5]);
+  });
+
+  // T3's control ("HARNESS_FILES is the harness directory, file for file"), on this round's own directory: a file
+  // there that a judge registration is not required to pin would run bound to nothing.
+  it('REQUIRED_PINS is this round\'s directory, file for file', { timeout: 60_000 }, () => {
+    const DIR = 'src/scripts/regime-challenge';
+    const onDisk = fs.readdirSync(path.join(REPO, DIR)).map((f) => `${DIR}/${f}`).sort();
+    expect(spec.REQUIRED_PINS.filter((f) => f.startsWith(`${DIR}/`)).slice().sort()).toEqual(onDisk);
+    expect(onDisk.length).toBe(5);
+    for (const f of spec.REQUIRED_PINS) expect(fs.existsSync(path.join(REPO, f)), f).toBe(true);
   });
 });
 

@@ -7,13 +7,13 @@ import { TFS } from '../../src/scripts/regime-diag/diag-spec.js';
 import { compute, context, contrast, cwOfRows, effOfCw, type Ctx } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, parseCensus, type Frame } from '../../src/scripts/regime-diag/frame.js';
 import { delta1 } from '../../src/scripts/regime-diag/stats.js';
-import { decisionOf, selectionOf, type PrescoreRow } from '../../src/scripts/regime-diag/challenge/challenge-run.js';
-import { C3_TF, CANDIDATES, SERVED_DIAL, SERVED_TF, coinDaysOf, JUDGE, PRESCORE, type Candidate, type Dial } from '../../src/scripts/regime-diag/challenge/challenge-spec.js';
-import { challengerColumns, type ChallengerCols } from '../../src/scripts/regime-diag/challenge/challenger-replay.js';
+import { decisionOf, selectionOf, type PrescoreRow } from '../../src/scripts/regime-challenge/challenge-run.js';
+import { C3_TF, CANDIDATES, SERVED_DIAL, SERVED_TF, coinDaysOf, JUDGE, PRESCORE, type Candidate, type Dial } from '../../src/scripts/regime-challenge/challenge-spec.js';
+import { challengerColumns, type ChallengerCols } from '../../src/scripts/regime-challenge/challenger-replay.js';
 import {
   a4Difference, a4Guard, a5Guard, a5Ratio, armSums, coverageGuard, coverageRatio, deltaDelta1, holm, pairOf, powerAt, supportOf,
   type Pair, type PairedReading,
-} from '../../src/scripts/regime-diag/challenge/paired-stats.js';
+} from '../../src/scripts/regime-challenge/paired-stats.js';
 import { SYN_CENSUS_TEXT, SYN_HOLD, SYN_SPAN, synFullLoad } from '../fixtures/regime-challenge/synth-challenge.js';
 
 const N_TF = TFS.length;
