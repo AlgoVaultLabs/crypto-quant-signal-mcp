@@ -13,7 +13,8 @@
 // `--init-store` writes the judge's own store (the two manifests its registration pins): T3's store is never written.
 // Both it and `--judge` refuse a store that is the seal home or lies inside it, whose plan names another wave, or
 // that holds a link; every run refuses an output directory where a name it writes is a link, or is not a plain file
-// it can write.
+// it can write. Before its seal the judge makes its one write after the seal, with a placeholder, and refuses if
+// that write fails.
 // `S` and `DIR` sit outside the repository: no figure is written into it.
 //
 // Callers gate on the token, never on the exit code alone:
@@ -336,9 +337,35 @@ export interface JudgeInput {
   study?: ChallengeStudy;
 }
 
+/** What the judge writes at its result's name before its seal: it names itself, carries no figure, and is never a result. */
+const PLACEHOLDER = jsonText({ wave: JUDGE.wave, kind: 'placeholder', note: 'This is not a result: the judge wrote it before claiming its seal, and the judge\'s result replaces it.' });
+/**
+ * Why the judge's one write after its seal would fail, or null (registration Amendment 5, F8). A permission check
+ * does not show that a write will work: on macOS a BSD flag or an ACL lets `access W_OK` pass and still blocks the
+ * rename that puts the result in place. So that write is made before the seal, the same way on the same names: the
+ * same `writeAtomic` of a placeholder at the result's name (its `.tmp` written, then renamed over the result). It is
+ * made twice, so that the last one starts from the state the result's write will find — the placeholder at the
+ * name and no `.tmp` — whatever the name held before. After the seal only repeats of writes that already succeeded
+ * remain, and the result replaces the placeholder. A refusal leaves at most the placeholder, at the name or at its
+ * `.tmp`. Checked once, against operator error: a full disk and a writer working beside the run are outside it.
+ */
+function rehearsalRefusal(out: string): string | null {
+  const file = path.join(out, JUDGE.file);
+  try {
+    for (let i = 0; i < 2; i++) writeAtomic(file, PLACEHOLDER);
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { dest?: string };
+    const name = (p: string | undefined): string => (p ? path.relative(out, p) || '.' : '?');
+    const step = `${err.syscall ?? 'write'} ${name(err.path)}${err.dest ? ` → ${name(err.dest)}` : ''}`;
+    return `the output directory's ${JUDGE.file} cannot take the judge's write after the seal: the same write, made before it with a placeholder, failed (${step}: ${err.code ?? (err instanceof Error ? err.message : String(e))})`;
+  }
+  return null;
+}
+
 /**
  * The judge: one read of the judge record's window, in T3's order — the guard, the skeleton, the identifiability
- * of every pair, the seal, and only then the outcomes. A refusal computes no outcome and is logged in the store.
+ * of every pair, the seal, and only then the outcomes. Before the seal it also makes its one write after the seal,
+ * with a placeholder (F8). A refusal computes no outcome and is logged in the store.
  */
 export function judgeRun(input: JudgeInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-challenge: ${l}\n`); });
@@ -403,6 +430,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   log('identifiability: judge');
   fs.mkdirSync(input.out, { recursive: true });
   fs.accessSync(input.out, fs.constants.W_OK);
+  // the one write after the seal is made here first, the same way on the same names (F8)
+  const rehearsed = rehearsalRefusal(input.out);
+  if (rehearsed) return refuse('rehearsal', 'REFUSED', rehearsed);
 
   const prescoreSha = sha256(bytes);
   const seal = { registration_commit: g.registrationCommit, origin_main: g.originMain, prescore_sha256: prescoreSha, claimed_at: new Date().toISOString() };

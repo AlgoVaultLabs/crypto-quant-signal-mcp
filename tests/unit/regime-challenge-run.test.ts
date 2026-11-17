@@ -749,6 +749,110 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect(fs.readdirSync(h)).toEqual([JUDGE.seal]);
   });
 
+  // F8 (amendment 5): permission is not the write. On macOS a BSD flag or an ACL passes `access W_OK` and every other
+  // check made before the seal, and still blocks the rename that puts the result in place: the seal was claimed and
+  // the read spent with no result. So the judge makes its one write after the seal before it too — a placeholder, by
+  // the same writeAtomic, onto the same names — and refuses when that fails. Each cell plants one condition the
+  // auditor ran (G1–G4). chflags and ACLs are macOS tools and root ignores both, so the cells run on darwin, as
+  // another user; every flag and ACL is undone in `finally`, so the sandbox can be removed.
+  const F8_SKIP = process.platform !== 'darwin' ? 'chflags and chmod +a are macOS tools' : process.getuid?.() === 0 ? 'root ignores BSD flags and ACLs' : '';
+  const mac = (cmd: string, ...args: string[]): void => { execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }); };
+  /** A plain 0644 file holding `old`, with the ACL `everyone deny delete`. */
+  const denyDelete = (file: string): void => { fs.writeFileSync(file, 'old\n'); fs.chmodSync(file, 0o644); mac('chmod', '+a', 'everyone deny delete', file); };
+  const F8_CELLS: ReadonlyArray<{ cell: string; errno: string; plant: (out: string) => void }> = [
+    { cell: 'G1-uappnd-on-out', errno: 'EPERM', plant: (out) => mac('chflags', 'uappnd', out) },
+    { cell: 'G2-deny-delete_child-on-out', errno: 'EACCES', plant: (out) => mac('chmod', '+a', 'everyone deny delete_child', out) },
+    { cell: 'G3-deny-delete-on-the-result', errno: 'EACCES', plant: (out) => denyDelete(path.join(out, JUDGE_FILE)) },
+    { cell: 'G4-deny-delete-on-the-tmp', errno: 'EACCES', plant: (out) => denyDelete(path.join(out, `${JUDGE_FILE}.tmp`)) },
+  ];
+  /** Undoes every flag and ACL a cell can plant: on the output directory, and on whatever it holds. */
+  const unplant = (out: string): void => {
+    if (!fs.existsSync(out)) return;
+    mac('chflags', 'nouappnd', out);
+    for (const p of [out, ...fs.readdirSync(out).map((n) => path.join(out, n))]) mac('chmod', '-N', p);
+  };
+  const rehearsalReason = (errno: string): string =>
+    `the output directory's ${JUDGE_FILE} cannot take the judge's write after the seal: the same write, made before it with a placeholder, failed (rename ${JUDGE_FILE}.tmp → ${JUDGE_FILE}: ${errno})`;
+  /** The placeholder the rehearsal writes: it names itself, and carries no figure. */
+  const isPlaceholder = (text: string): boolean => {
+    let x: Record<string, unknown>;
+    try { x = JSON.parse(text) as Record<string, unknown>; } catch { return false; }
+    return JSON.stringify(Object.keys(x)) === JSON.stringify(['wave', 'kind', 'note']) && x.wave === CHALLENGE_WAVE && x.kind === 'placeholder'
+      && typeof x.note === 'string' && !/[0-9]/.test(x.note);
+  };
+  const legsOf = (s: string): unknown[] => (fs.existsSync(guard.guardLog(s)) ? fs.readFileSync(guard.guardLog(s), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as Record<string, unknown>).leg) : []);
+
+  it.skipIf(F8_SKIP !== '')(`F8: a BSD flag or an ACL that blocks the result's rename (G1–G4) is refused before the seal by the judge's rehearsal of that write, leaving at most its placeholder${F8_SKIP ? ` — skipped: ${F8_SKIP}` : ''}`, { timeout: 300_000 }, () => {
+    const leaked: string[] = [];
+    for (const { cell, errno, plant } of F8_CELLS) {
+      // the judge, with a store and a seal home of its own; the condition is planted in an output directory it has not seen
+      const s = path.join(dir, 'f8-store', cell), h = path.join(dir, 'f8-seal', cell), out = path.join(dir, 'f8-out', cell);
+      guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+      fs.mkdirSync(out, { recursive: true });
+      try {
+        plant(out);
+        const got = outcome(() => judge(path.join('f8-out', cell), { store: s, study: judgeStudy({ sealHome: h }) }));
+        // what the refusal left in the output directory: a planted file as it was planted, or the placeholder; never a result
+        const left = fs.readdirSync(out).map((n) => fs.readFileSync(path.join(out, n), 'utf8'));
+        const row = [got, fs.existsSync(path.join(h, JUDGE.seal as string)), JSON.stringify(legsOf(s)), lines.some((l) => /^(seal|outcomes)/.test(l)), left.every((t) => t === 'old\n' || isPlaceholder(t))];
+        if (JSON.stringify(row) !== JSON.stringify([`REFUSED — ${rehearsalReason(errno)}`, false, JSON.stringify(['ok', 'identifiability', 'rehearsal']), false, true])) leaked.push(`${cell}: ${JSON.stringify(row)}`);
+      } finally {
+        unplant(out);
+      }
+    }
+    expect(leaked).toEqual([]);
+  });
+
+  it('F8: the rehearsal refuses no plain output — an absent result and a 0600 one pass, the result replaces the placeholder, and no .tmp is left', { timeout: 120_000 }, () => {
+    for (const cell of ['absent', 'result-0600']) {
+      const s = path.join(dir, 'f8-store', cell), h = path.join(dir, 'f8-seal', cell), out = path.join(dir, 'f8-out', cell);
+      guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+      if (cell === 'result-0600') {
+        fs.mkdirSync(out, { recursive: true });
+        fs.writeFileSync(path.join(out, JUDGE_FILE), 'old\n');
+        fs.chmodSync(path.join(out, JUDGE_FILE), 0o600);
+      }
+      const r = judge(path.join('f8-out', cell), { store: s, study: judgeStudy({ sealHome: h }) });
+      expect([cell, r.verdict, r.reason]).toEqual([cell, 'PASS', 'ok']);
+      expect(fs.readdirSync(out)).toEqual([JUDGE_FILE]);
+      expect(json(path.join(out, JUDGE_FILE)).kind).toBe('judge');
+      expect(fs.readdirSync(h)).toEqual([JUDGE.seal]);
+      expect(legsOf(s)).toEqual(['ok', 'identifiability', 'seal', 'outcomes', 'result']);
+    }
+  });
+
+  it('F8: after its seal the judge only repeats writes it made before the seal — the same operation, on the same name, from the same state', { timeout: 120_000 }, () => {
+    // every directory made, file written or appended, and rename, with the state of each name it touches, split at the
+    // seal's exclusive open; the seal's own descriptor writes are the claim itself, and are not traced
+    const s = path.join(dir, 'f8-store', 'trace'), h = path.join(dir, 'f8-seal', 'trace'), sealPath = path.join(h, JUDGE.seal as string);
+    guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+    const before: string[] = [], after: string[] = [];
+    let ops = before;
+    const at = (p: fs.PathLike | number): string => (typeof p === 'number' ? `fd` : `${path.relative(dir, String(p))} (${fs.existsSync(String(p)) ? 'present' : 'absent'})`);
+    const flag = (o: unknown): string => (o && typeof o === 'object' && 'flag' in o ? String((o as { flag: unknown }).flag) : 'w');
+    const real = { mkdirSync: fs.mkdirSync, writeFileSync: fs.writeFileSync, appendFileSync: fs.appendFileSync, renameSync: fs.renameSync, openSync: fs.openSync };
+    const spies = [
+      vi.spyOn(fs, 'mkdirSync').mockImplementation(((p: fs.PathLike, o?: fs.MakeDirectoryOptions) => { ops.push(`mkdir ${at(p)}`); return real.mkdirSync(p, o); }) as typeof fs.mkdirSync),
+      vi.spyOn(fs, 'writeFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, d: string, o?: fs.WriteFileOptions) => { ops.push(`write ${at(p as fs.PathLike)} flag ${flag(o)}`); return real.writeFileSync(p, d, o); }) as typeof fs.writeFileSync),
+      vi.spyOn(fs, 'appendFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, d: string, o?: fs.WriteFileOptions) => { ops.push(`append ${at(p as fs.PathLike)}`); return real.appendFileSync(p, d, o); }) as typeof fs.appendFileSync),
+      vi.spyOn(fs, 'renameSync').mockImplementation(((a: fs.PathLike, b: fs.PathLike) => { ops.push(`rename ${at(a)} → ${at(b)}`); return real.renameSync(a, b); }) as typeof fs.renameSync),
+      vi.spyOn(fs, 'openSync').mockImplementation(((p: fs.PathLike, f?: fs.OpenMode, m?: fs.Mode | null) => { if (String(p) === sealPath) ops = after; return real.openSync(p, f, m); }) as typeof fs.openSync),
+    ];
+    let r: run.RunResult;
+    try {
+      r = judge(path.join('f8-out', 'trace'), { store: s, study: judgeStudy({ sealHome: h }) });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect([r.verdict, r.reason]).toEqual(['PASS', 'ok']);
+    // the result's write after the seal, and the guard log's appends, are each on the trace before the seal
+    expect(after.filter((o) => o.includes(JUDGE_FILE))).toEqual([
+      `write f8-out/trace/${JUDGE_FILE}.tmp (absent) flag w`, `rename f8-out/trace/${JUDGE_FILE}.tmp (present) → f8-out/trace/${JUDGE_FILE} (present)`,
+    ]);
+    expect(after.filter((o) => o.includes('guard.log (present)')).length).toBeGreaterThanOrEqual(3);
+    expect(after.filter((o) => !before.includes(o))).toEqual([]);
+  });
+
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
     // the five files of this round and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
     expect(CHALLENGE_FILES.every((f) => REQUIRED_PINS.includes(f))).toBe(true);

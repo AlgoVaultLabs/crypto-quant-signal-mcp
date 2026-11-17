@@ -551,3 +551,62 @@ The sha256 of `challenge-guard.ts` and of `challenge-run.ts` as committed with t
 The test file that carries the fix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
 
 - tests/unit/regime-challenge-run.test.ts, sha256 `db4f3a813b58cbad94d79ec3652efc368dc68b4ef96a3b2a65402aa4168a5c50`. For F7, one test in a sandbox. Per cell, the judge gets a store and a seal home of its own and an output directory outside the repository holding the planted form, and the pre-score gets an output directory holding the same form at its own result; each must refuse with nothing written. It then runs the judge into an output directory that holds a plain, writable result and `.tmp`, and it passes.
+
+## Amendment 5 — 2026-11-17, before the read: the judge makes its one write after the seal before it, and one re-pin
+
+**Write-time clock (live `date -u`):** 2026-11-17T16:39Z (2026-11-18 00:39 local; the file name keeps the date it landed under).
+
+Below, "the body and Amendments 1 to 4" is everything before this section, and the parts of this section are F8, the inventory, the gate and the re-pin.
+
+**Ordering.** Before the read. The judge has not run. Its store holds the two manifests and the plan that `--init-store` wrote (§2, E6), and no guard log. The seal home holds T3's `holdout.seal` only, and no `challenge-r1.seal`. This round has computed no outcome of 2026-01 … 2026-10. The body and Amendments 1 to 4 are unchanged: the first 100,938 bytes of this file (sha256 `bde855a7b89a70b41503537b238a132ba135e16412f9ba07db5c5b2f518f3054`) are byte-identical to the file as landed at commit `4a81554a7c81eb276f9baed208232fd13ddbf345`.
+
+**Reason.** A fresh auditor's narrow re-check of Amendment 4, made before the read (CH4; the lead's ruling of 2026-11-17T11:26Z, 19:26 local), passed F7 and found F8. The lead ruled it a defect, and the third of one class: a failure after the seal spends the read (T3's hold-out, F7, F8). So the fix is made in the write itself, not as one more check before it. F8 is settled here, before any row of the judge window is read, so no result can choose it. It changes none of the read's statistics, months, seal or decision. PROCEDURE §7 does not apply: there is no result.
+
+### F8. The judge makes its one write after the seal before it (code)
+
+- **The finding.** A permission check shows permission, not that a write will work. On macOS a BSD flag or an ACL passes `access W_OK`, and every other check made before the seal, and still blocks the rename that puts the result in place (`writeAtomic` in sr-backtest's `store.ts`: the `.tmp` is written, then renamed over the result). The auditor ran four such conditions: the append-only flag `uappnd` on the output directory (EPERM); the ACL `everyone deny delete_child` on the output directory; and the ACL `everyone deny delete` on a plain result, or on a plain `.tmp` (each EACCES). In each, the judge claimed its seal, read the outcomes and threw on the rename, with its result left in `.tmp`: the read was spent.
+- **The rule.** Before its seal, the judge makes the write it will make after the seal: the same `writeAtomic`, on the same names, with a placeholder in place of the result. If that write fails, the judge refuses and claims no seal. After the seal it only repeats writes that have already succeeded, and its result replaces the placeholder.
+- **The fix.** One function, `rehearsalRefusal` in `challenge-run.ts`, called after the output directory is made and immediately before the seal is claimed.
+  - It writes the placeholder twice. The second write starts from the state the result's write will find — the placeholder at the result's name, and no `.tmp` — whatever the name held before.
+  - The placeholder is JSON that names itself: the wave, `kind: "placeholder"`, and one sentence saying that it is not a result and that the judge's result replaces it. It carries no figure, so it cannot be read as a result.
+  - A failure is a refusal under the guard leg `rehearsal`, with a reason that names the failed step, the name and the error code. A refusal leaves at most the placeholder, at the result's name or at its `.tmp`.
+  - The pre-score claims no seal, so it can spend no read, and it is unchanged. `challenge-guard.ts`, sr-backtest's `store.ts` and T3's modules are unchanged.
+- **Scope.** As in F6 and F7: made once, before the seal, against operator error — here a flag or an ACL on the output directory or on a name in it. A full disk, and a writer that changes these names while the run is running, are outside it.
+
+### The inventory: every operation from the seal to the result
+
+Every write, append, read and subprocess the judge makes after `claimSeal` creates the seal, up to its return, and what shows that it cannot fail on a precondition visible before the seal. Line numbers are those of the files as committed with this section.
+
+| after the seal | shown before the seal by |
+|---|---|
+| the seal's record: write, fsync and close on the descriptor `claimSeal` has just created with `wx` (regime-diag `guard.ts:283–286`) | nothing: this is the claim. Its creator's descriptor is open for writing, so only a full disk or an I/O error stops it |
+| the guard log's `seal`, `outcomes` and `result` lines (`guard.ts:288`; `challenge-run.ts:443`, `:474`): each a `mkdir` of the existing store, then an append to its existing `guard.log` | the same two operations on the same names: `guard.ts:198` creates or appends `guard.log`, then `challenge-run.ts:429` appends to the existing file |
+| the result (`challenge-run.ts:473`; `store.ts:60–62`): a `mkdir` of the existing output directory, a write of the absent `.tmp`, a rename over the placeholder | the rehearsal's second `writeAtomic` (`challenge-run.ts:355`, called at `:434`), from the same state |
+| the archives of the record's months, read again for the outcomes (`challenge-run.ts:137`, `withOutcomes`, through the record's loader) | the same files, read through the same loader for the frame (`:106`) and the challenger columns (`:115`); the loader opens the record's months only |
+| the statistics bridge, `python3 -I scripts/regime-diag/prims.py` (`prims.ts:55`), with the ops `seeds` (`challenge-run.ts:129`), `bounds` and `kish` (`paired-stats.ts:177`, `:179`, `:239`) | the same interpreter and script, which loads both pinned modules before any op (`prims.py:57–58`), ran before the seal for each pair's support (`kish` and `attainable`, `challenge-run.ts:118`) and, for the registered round, the cluster floor (`floor`, `:424`). The `seeds` and `bounds` ops run first after the seal; each reads no file, and each caller passes it only input it accepts |
+| log lines on standard error (`challenge-run.ts:441`, `:444`, `:146`, `:475`; the bridge's re-issue line, `prims.ts:63`) | the same stream, written before the seal (`:399`, `:430`) |
+| the rest: the decision, Holm's levels, the result's JSON and its sha256 | computation; no input or output |
+
+- **Measured.** A sandbox trace of every directory made, file written or appended, and rename, split at the seal's exclusive open: every operation after the seal is on the trace before it, on the same name in the same state. A committed test holds this (below).
+- **Conclusion.** After the seal, each write repeats one that already succeeded on the same name from the same state, or is the claim's own descriptor. Only the size of what is written differs: the result is larger than the placeholder, and the guard log grows. So a limit on size can still stop a write after the seal: a full disk (outside the scope, as registered), a quota, or a file-size limit set on the process (`ulimit -f`; measured under `ulimit -f 1`: a 300-byte write passed and a 4,000-byte write failed with EFBIG). Limits on memory and CPU time, which the outcome computation uses after the seal, are of the same kind (not measured).
+
+### The gate
+
+In `tests/unit/regime-challenge-run.test.ts`, each cell gives the judge a store and a seal home of its own and an output directory outside the repository:
+- **G1 to G4**, the auditor's four conditions, each planted in the output directory. Each is refused with the rehearsal's reason, which names the rename and its error code (EPERM; EACCES three times). No seal is claimed. The store's guard legs are `ok`, `identifiability` and `rehearsal`: no `seal` and no `outcomes` line. The output directory holds what was planted and at most the placeholder. The flags and ACLs are macOS tools and root ignores both, so these cells run on darwin, as another user, and are skipped elsewhere with the reason in their name. Every flag and ACL is undone in `finally`.
+- **No false refusal.** An output directory with no result, and one holding a 0600 result, both pass: the seal is claimed, and the directory ends holding the result only, with no `.tmp`. F7's cells, which include a plain result and `.tmp`, are unchanged and pass.
+- **The trace.** The judge's writes into its store and output directory are traced, split at the seal's exclusive open. Every operation after the seal must be on the trace before it, on the same name in the same state.
+
+The cells were written first. At `4a81554a` G1 to G4 failed: the judge claimed its seal, wrote its `seal` and `outcomes` lines, and threw (EPERM, then EACCES three times) with a result in `.tmp`. With the fix, all pass. With the rehearsal dropped, G1 to G4 fail again with the seal claimed, and the trace fails. With the rehearsal made once, the trace fails: after the seal, the rename finds the placeholder at the result's name, which no rename before the seal had found. Restored byte for byte, all pass. The synthetic judge's normalized result (the auditor's recipe) is unchanged, sha256 `11944c59c9cc9b89a7f681b929309fed380393cf6a38c1b716de709f5330b148`.
+
+### Re-pin
+
+The sha256 of `challenge-run.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so this row replaces the earlier rows of the same name; every other pin of §10 and of Amendments 1 to 4 stands, `challenge-guard.ts` included (unchanged). The pinned file is byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-challenge/challenge-run.ts` | `e17f9c74621d232c09e2aa3c50149ea5d6b8fc01426519ad6608327c7e0d6a56` | the CLI: the pre-score and its selection, its refusal of a record that reaches the judge window (F2), `--init-store`, the judge, the store refusal both ask before they write (F1, and F6: no entry of the store is a link), the refusal of an output directory where a name the run writes is a link (F6) or is not a plain file the run can write (F7), the judge's write after the seal made first with a placeholder (F8), the refusals, the order, the pre-seal `identifiability` line and the result. F6, F7 and F8 add refusals made before the seal, and change no computed quantity |
+
+The test file that carries the fix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-challenge-run.test.ts, sha256 `81c7fb224be3d6b3408d16895b3a5e756cf438149b750ff757bd1b7e8f431170`. For F8, three tests in a sandbox: the four cells G1 to G4 (darwin, not as root); an output directory with no result and one with a 0600 result, which pass; and the trace of the judge's writes, split at its seal.
