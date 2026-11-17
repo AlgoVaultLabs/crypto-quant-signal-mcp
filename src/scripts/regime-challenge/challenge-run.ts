@@ -11,6 +11,7 @@
 // seal `challenge-r1.seal` in the one seal home. Its order is T3's: guard → skeleton → identifiability → seal →
 // outcomes. Its result holds paired quantities only — challenger minus served, challenger over served.
 // `--init-store` writes the judge's own store (the two manifests its registration pins): T3's store is never written.
+// Both it and `--judge` refuse a store that is the seal home or lies inside it, or whose plan names another wave.
 // `S` and `DIR` sit outside the repository: no figure is written into it.
 //
 // Callers gate on the token, never on the exit code alone:
@@ -19,7 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pinsOf } from '../sr-backtest/guard.js';
-import { writeAtomic } from '../sr-backtest/store.js';
+import { planFile, writeAtomic } from '../sr-backtest/store.js';
 import { sha256, type ArchiveManifest, type ArchiveStore } from '../regime-diag/archive.js';
 import { ALPHA, B_BOOT, B_SHUFFLE, FLOOR_PP, REGISTRATION as T3_REGISTRATION, VENUE } from '../regime-diag/diag-spec.js';
 import { context, type Ctx } from '../regime-diag/engine.js';
@@ -66,6 +67,27 @@ const jsonText = (x: unknown): string => `${JSON.stringify(x, null, 1)}\n`;
 /** The pins bind the code that runs only when the running file IS the landed source of the repository the run reads. */
 export const isChallengeSource = (file: string, repo: string): boolean => real(file) === real(path.join(repo, 'src/scripts/regime-challenge/challenge-run.ts'));
 const countsOf = (study?: ChallengeStudy): Counts => ({ boot: Math.min(B_BOOT, study?.counts?.boot ?? B_BOOT), shuffle: Math.min(B_SHUFFLE, study?.counts?.shuffle ?? B_SHUFFLE) });
+
+/**
+ * The judge's store is its own, and the store pin cannot show it: the guard-store manifest of this round's store is
+ * byte-identical to T3's. So the store is never the seal home nor inside it (T3's store is the seal home), and the
+ * wave its plan names is this round's. The judge asks it of a made store (`made`: a store with no plan names no
+ * wave); `--init-store` asks it before it writes one, and a store with no plan yet is one it may make. Null: accepted.
+ */
+export function storeRefusal(store: string, home: string | undefined, made: boolean): string | null {
+  if (home && within(store, home)) return 'the store is the seal home or lies inside it: the judge keeps its own store';
+  const file = planFile(store, VENUE), name = path.basename(file);
+  if (!fs.existsSync(file)) return made ? `the store holds no ${name}: it names no wave` : null;
+  let source: unknown;
+  try { source = (JSON.parse(fs.readFileSync(file, 'utf8')) as { panelSource?: unknown }).panelSource; } catch { return `the store's ${name} cannot be read: it names no wave`; }
+  if (typeof source === 'string' && source.startsWith(`${JUDGE.wave}: `)) return null;
+  const wave = typeof source === 'string' && source.includes(': ') ? source.slice(0, source.indexOf(': ')) : '';
+  return wave ? `the store is ${wave}'s, not ${JUDGE.wave}'s: its ${name} names that wave` : `the store's ${name} names no wave`;
+}
+/** The pre-score's record never reaches the judge window: none of its outcome months lies inside the window's. */
+const judgeWindowRefusal = (rec: ChallengeRecord): string | null => (rec.outcomes.first <= JUDGE.outcomes.last && JUDGE.outcomes.first <= rec.outcomes.last
+  ? `the record's outcome months ${rec.outcomes.first} … ${rec.outcomes.last} overlap the judge window ${JUDGE.outcomes.first} … ${JUDGE.outcomes.last}: the pre-score never reads it`
+  : null);
 
 // ── before any outcome: the frame, its checks, the challenger columns, the support of each pair ────────────────
 
@@ -180,6 +202,10 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-challenge: ${l}\n`); });
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   if (within(input.out, input.repo)) return stop('REFUSED', 'the output directory must sit outside the repository');
+  // the one-shot window is the judge's: a record that reaches it is refused before a directory, a log line or a frame
+  const rec = input.study?.rec ?? PRESCORE;
+  const reaches = judgeWindowRefusal(rec);
+  if (reaches) return stop('REFUSED', reaches);
   fs.mkdirSync(input.out, { recursive: true });
   const record = (entry: Record<string, unknown>): void => { fs.appendFileSync(path.join(input.out, PRESCORE_LOG), `${JSON.stringify({ at: new Date().toISOString(), wave: PRESCORE.wave, record: PRESCORE.id, ...entry })}\n`); };
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { record({ ok: false, leg, reason }); return stop(verdict, reason); };
@@ -196,7 +222,6 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const manifestBytes = fs.readFileSync(input.manifest);
   if (sha256(manifestBytes) !== want.archives) return refuse('archives', 'REFUSED', 'the archive-store manifest is not the registered one');
   const census = parseCensus(censusBytes.toString('utf8'));
-  const rec = input.study?.rec ?? PRESCORE;
   const stale = archivesRefusal(rec, input.archives, census.panel, JSON.parse(manifestBytes.toString('utf8')) as ArchiveManifest);
   if (stale) return refuse('archives', 'REFUSED', stale);
   const fixture = fs.readFileSync(path.join(input.repo, PARITY_FIXTURE), 'utf8');
@@ -312,11 +337,14 @@ export function judgeRun(input: JudgeInput): RunResult {
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   const { store, repo } = input;
   if (within(store, repo)) return stop('REFUSED', 'the store must sit outside the repository');
+  // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
+  const home = input.study ? input.study.sealHome : sealHome();
+  // the store is this round's own, before the first line is written to it: never the seal home, and made for this wave
+  const foreign = storeRefusal(store, home, true);
+  if (foreign) return stop('REFUSED', foreign);
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { logGuard(store, JUDGE.wave, { mode: 'holdout', ok: false, leg, reason }); return stop(verdict, reason); };
   if (within(input.out, repo)) return refuse('out', 'REFUSED', 'the output directory must sit outside the repository');
   if (!input.study && !isChallengeSource(__filename, repo)) return refuse('source', 'REFUSED', 'the judge is read by the pinned sources of its repository (tsx src/scripts/regime-challenge/challenge-run.ts), never a compiled or copied harness');
-  // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
-  const home = input.study ? input.study.sealHome : sealHome();
   if (!home) return refuse('seal-home', 'REFUSED', 'a synthetic study must name its own seal home');
   if (!fs.existsSync(input.prescore)) return refuse('carry', 'REFUSED', 'the pre-score result is absent');
   let registration = input.registration;
@@ -424,6 +452,8 @@ function main(): void {
   const archives: ArchiveStore = { cache, overlay };
   if (mode === '--init-store') {
     if (within(store as string, REPO)) return finish('REFUSED', 'the store must sit outside the repository');
+    const foreign = storeRefusal(store as string, sealHome(), false);
+    if (foreign) return finish('REFUSED', foreign);
     const made = initStore(store as string, archives, parseCensus(fs.readFileSync(censusFile, 'utf8')).panel, judgeStudyRecord(''));
     process.stdout.write(`| \`${ARCHIVES_PIN}\` | \`${made.archivesSha256}\` |\n| \`store:manifest-${VENUE}.json\` | \`${made.guardStoreSha256}\` |\narchive_files=${made.archiveFiles}\n`);
     return finish('PASS');

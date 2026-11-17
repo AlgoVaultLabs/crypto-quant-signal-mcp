@@ -2,13 +2,14 @@
 // (AC1.1: the window refusals, the judge seal claimed once, the carry accepted only by its sha256). Everything
 // runs on synthetic monthly archives with a bare origin, and the synthetic judge keeps its seal in the sandbox:
 // no test reads a real archive, T3's store, or the registered round's seal home.
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { archiveName, sha256, type ArchiveManifest, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
-import { ALPHA, FLOOR_PP } from '../../src/scripts/regime-diag/diag-spec.js';
+import { ALPHA, FLOOR_PP, studyOf, type StudyRecord } from '../../src/scripts/regime-diag/diag-spec.js';
 import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, parseCensus, skeletonOf, type Census, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
@@ -275,6 +276,20 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect(log.map((e) => e.leg)).toEqual(['pins', 'census', 'archives', 'archives', 'census', 'skeleton', 'skeleton']);
   });
 
+  it('the pre-score never reads the judge window: a record whose outcome months overlap it is refused before anything is written', { timeout: 60_000 }, () => {
+    // the judge's own record, and a record whose last outcome month is the window's first
+    for (const rec of [JUDGE, { ...SYN_PRESCORE, outcomes: { first: '2025-12', last: JUDGE.outcomes.first } }]) {
+      const r = prescore('out-pre-window', { study: preStudy({ rec }) });
+      expect([r.verdict, r.reason]).toEqual(['REFUSED',
+        `the record's outcome months ${rec.outcomes.first} … ${rec.outcomes.last} overlap the judge window ${JUDGE.outcomes.first} … ${JUDGE.outcomes.last}: the pre-score never reads it`]);
+      expect(lines.join('|')).not.toMatch(/skeleton|outcomes/);
+    }
+    // no result, no log, no directory
+    expect(fs.existsSync(path.join(dir, 'out-pre-window'))).toBe(false);
+    // the synthetic pre-score, whose months end before the window, is read
+    expect([pre.verdict, pre.reason]).toEqual(['PASS', 'ok']);
+  });
+
   it('an archive of a record\'s months that is not the registered one refuses the run; a month outside them is never opened', { timeout: 60_000 }, () => {
     const manifest = json(guard.archivesFile(store)) as ArchiveManifest;
     expect(archivesRefusal(SYN_PRESCORE, archives, census.panel, manifest)).toBeNull();
@@ -325,6 +340,58 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     expect([h.verdict, h.reason]).toEqual(['REFUSED', 'a synthetic study must name its own seal home']);
     nothingRead('out-j1');
     expect(logged().slice(-2).map((e) => [e.ok, e.leg, e.wave])).toEqual([[false, 'out', CHALLENGE_WAVE], [false, 'seal-home', CHALLENGE_WAVE]]);
+  });
+
+  it('the judge refuses the seal home as its store, and a store inside it, before any line or write', { timeout: 60_000 }, () => {
+    // stores made for this round, so their plans name this wave: only where they sit refuses them
+    const h2 = path.join(dir, 'seal-home-2'), inner = path.join(h2, 'inner');
+    guard.initStore(h2, archives, census.panel, judgeStudyRecord(''));
+    guard.initStore(inner, archives, census.panel, judgeStudyRecord(''));
+    const listing = (d: string): string[] => fs.readdirSync(d, { recursive: true }).map(String).sort();
+    const before = listing(h2);
+    for (const s of [h2, inner]) {
+      const r = judge('out-j-home', { store: s, study: judgeStudy({ sealHome: h2 }) });
+      expect([r.verdict, r.reason]).toEqual(['REFUSED', 'the store is the seal home or lies inside it: the judge keeps its own store']);
+      expect(lines.join('|')).not.toMatch(/guard: ok|identifiability|seal|outcomes/);
+    }
+    // no guard line, no seal, no result: the seal home's listing is unchanged
+    expect(listing(h2)).toEqual(before);
+    expect(fs.existsSync(path.join(dir, 'out-j-home'))).toBe(false);
+    // the one check, as --init-store asks it of the store before it writes one: the seal home and below are refused
+    expect(run.storeRefusal(h2, h2, false)).toBe('the store is the seal home or lies inside it: the judge keeps its own store');
+    expect(run.storeRefusal(path.join(h2, 'not-yet'), h2, false)).toBe('the store is the seal home or lies inside it: the judge keeps its own store');
+    expect(run.storeRefusal(path.join(dir, 'store-new'), h2, false)).toBeNull();
+  });
+
+  it('the judge refuses a store another study made, and one that names no wave: the plan of its store names this round', { timeout: 90_000 }, async () => {
+    const t3 = studyOf('diag-2026-11-16') as StudyRecord;
+    const other = path.join(dir, 'store-t3'), h3 = path.join(dir, 'seal-home-3');
+    guard.initStore(other, archives, census.panel, t3);
+    // the store pin cannot tell the two stores apart: their guard-store manifests are byte-identical
+    expect(fs.readFileSync(path.join(other, 'manifest-BINANCE.json')).equals(fs.readFileSync(path.join(store, 'manifest-BINANCE.json')))).toBe(true);
+    const plan = fs.readFileSync(path.join(other, 'plan-BINANCE.json')), before = fs.readdirSync(other).sort();
+    const r = judge('out-j-other', { store: other, study: judgeStudy({ sealHome: h3 }) });
+    expect([r.verdict, r.reason]).toEqual(['REFUSED', `the store is ${t3.wave}'s, not ${CHALLENGE_WAVE}'s: its plan-BINANCE.json names that wave`]);
+    expect(lines.join('|')).not.toMatch(/guard: ok|identifiability|seal|outcomes/);
+    expect(fs.readdirSync(other).sort()).toEqual(before);
+    expect(fs.existsSync(h3)).toBe(false);
+    // a store with no plan names no wave
+    const bare = path.join(dir, 'store-bare');
+    fs.mkdirSync(bare);
+    const b = judge('out-j-other', { store: bare, study: judgeStudy({ sealHome: h3 }) });
+    expect([b.verdict, b.reason]).toEqual(['REFUSED', 'the store holds no plan-BINANCE.json: it names no wave']);
+    expect(fs.readdirSync(bare)).toEqual([]);
+    expect(fs.existsSync(path.join(dir, 'out-j-other'))).toBe(false);
+    // this round's store is accepted: its plan names this wave, as the registered judge store's plan does
+    expect(JSON.parse(fs.readFileSync(path.join(store, 'plan-BINANCE.json'), 'utf8')).panelSource).toMatch(new RegExp(`^${CHALLENGE_WAVE}: `));
+    expect(run.storeRefusal(store, home, true)).toBeNull();
+    // --init-store refuses the other study's store and rewrites nothing in it
+    const cli = await promisify(execFile)(path.join(REPO, 'node_modules/.bin/tsx'), [path.join(REPO, CHALLENGE_FILES[4]), '--init-store', '--census', censusFile,
+      '--cache', archives.cache, '--overlay', archives.overlay, '--store', other], { cwd: REPO, timeout: 80_000 })
+      .then((x) => ({ code: 0, stdout: x.stdout }), (e: { code: number; stdout: string }) => ({ code: e.code, stdout: e.stdout }));
+    expect([cli.code, cli.stdout]).toEqual([1, `REGIME_CHALLENGE_RUN_VERDICT=REFUSED — the store is ${t3.wave}'s, not ${CHALLENGE_WAVE}'s: its plan-BINANCE.json names that wave\n`]);
+    expect(fs.readFileSync(path.join(other, 'plan-BINANCE.json')).equals(plan)).toBe(true);
+    expect(fs.readdirSync(other).sort()).toEqual(before);
   });
 
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {

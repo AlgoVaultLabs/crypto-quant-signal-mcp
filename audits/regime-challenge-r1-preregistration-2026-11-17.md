@@ -374,3 +374,42 @@ The sha256 of the file bytes at commit `0dab4aa5991ed2a2785583165338a56ade7ca453
 **Not pinned byte for byte.** T3 §10 names the files that the core's and the guard's import closures reach and that T3 did not pin byte for byte (T3 §8, correction 16). They are not pinned here either. This round adds one: `src/types.ts`, which `challenger-replay.ts` imports for a type alone and which is erased at run time. The core-parity fixture covers the behaviour: the guard refuses the read if a label of the fixture changes for any reason (leg (v)), and the judge refuses it if C1's copy at period 14 differs from the fixture (leg `parity`). No test file or test fixture of this round is a pin, and no leg reads one.
 
 **Who enforces what.** `checkOutcomeGuard` enforces the file rows and its own store manifest. The pinned guard's legs enforce the census, the archive-store manifest by its sha256 pass, the core-parity fixture and the seal. The judge enforces `REQUIRED_PINS`, the carried pre-score by its sha256, the tables row, C1's parity, the frame against T3's tables, the months, and identifiability before the seal. The tests that hold each of these are in `tests/unit/regime-challenge-run.test.ts`, `tests/unit/regime-challenge-spec.test.ts`, `tests/unit/regime-challenge-replay.test.ts` and `tests/unit/regime-challenge-stats.test.ts`.
+
+## Amendment 1 — 2026-11-17, before the read: the judge's store is its own, the pre-score never reaches the judge window, and one re-pin
+
+**Write-time clock (live `date -u`):** 2026-11-17T05:46Z (2026-11-17 local, the date in the file name).
+
+Below, "the body" is everything before this section, and the parts of this section are F1, F2, F3 and the re-pin.
+
+**Ordering.** Before the read. The judge has not run. Its store holds the two manifests and the plan that `--init-store` wrote (§2, E6), and no guard log. The seal home holds T3's `holdout.seal` only, and no `challenge-r1.seal`. This round has computed no outcome of 2026-01 … 2026-10. The body is unchanged: the first 70,221 bytes of this file (sha256 `f3e1ebfa2dd50565b0da4527f133f296aa3089b1e196851707d54593f683f6bb`) are as landed at commit `c45097a62362cf5289e8b2a43951c06252e4c253`.
+
+**Reason.** An independent audit of the harness against this file, made before the read (CH4; the lead's ruling of 2026-11-17T05:36Z, 13:36 local), returned one confirmed finding (F1) and two plausible ones (F2, F3). Each is settled here, before any row of the judge window is read, so no result can choose it. None changes the read's statistics, months, seal or decision. PROCEDURE §7 does not apply: there is no result.
+
+### F1. The judge's store is its own (code, and a correction to §10)
+
+- **The correction.** §10's role text for `store:manifest-BINANCE.json` says the manifest "differs from T3's and T9's because its plan names this round's wave". That is false for T3. The guard-store manifest holds the venue, the span, the warm-up, the panel date, and the empty plan's coins, series and failures; it does not hold the plan's wave. The judge store's manifest is byte-identical to T3's: both hash to `57c995bbfb65cf07fb210b64b94c6e9e99d866543b5842d52da59cca8d755e53` (T9's differs). So the store pin cannot tell this round's store from T3's. The row's sha256 stands; its role text is corrected here.
+- **The fix.** The judge and `--init-store` now tell the stores apart themselves, through `storeRefusal` in `challenge-run.ts`. Each refuses a store that is the seal home or lies inside it; T3's store directory is the seal home (§7). Each also refuses a store whose `plan-BINANCE.json` names a wave other than this round's, `EDGE-REGIME-CHALLENGE-R1-W1`; the plan names its wave at the head of its `panelSource`. The judge also refuses a store with no plan, which names no wave. Each refusal comes before the first guard-log line and before any write: the judge returns `REFUSED` with nothing written in the store, the seal home or the output directory, and `--init-store` prints `REFUSED` and writes nothing.
+- **§3, point 1, is now enforced.** "T3's store directory is never named as `<store>`" was a statement; it is now a refusal on two counts. Named as `<store>`, T3's store directory fails on where it sits (the seal home) and on its plan (it names `EDGE-REGIME-DIAG-W1`).
+- **The judge's store passes.** The store made at E6 sits outside the seal home, and its plan names this round's wave: `storeRefusal` called on it at the write-time clock returns no refusal, both as the judge asks it and as `--init-store` asks it.
+
+### F2. The pre-score never reaches the judge window (code)
+
+`prescoreRun` refuses any record whose outcome months overlap the judge window, 2026-01 … 2026-10. The refusal comes before it creates its output directory, writes a log line or builds a frame. Until now an injected study naming such a record was read like any other: outcomes and both arms, with no guard, no registration and no seal. The registered pre-score record, 2024-01 … 2025-12, does not overlap. Its result stands (§2, E5), because the refusal sits on a path the pre-score did not take.
+
+### F3. T9's window
+
+A correction to round 1 never uses T9's window, 2026-11 … 2027-05.
+
+### Re-pin
+
+The sha256 of `challenge-run.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so this row replaces the earlier row of the same name; every other pin of §10 stands. The pinned file is byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-challenge/challenge-run.ts` | `de19cacd2d2f32feeee080660c2143895700c80e101742de34d2d950dd8ccb18` | the CLI: the pre-score and its selection, its refusal of a record that reaches the judge window (F2), `--init-store`, the judge, the store refusal both ask before they write (F1), the refusals, the order, the pre-seal `identifiability` line and the result |
+
+The test file that carries the fixes is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-challenge-run.test.ts, sha256 `f675231d5a51f05430d1e2e7d04c7aba6f4cb94507226ab485a951e76551771e`. For F1: the judge refuses its seal home and a store inside it, with the seal home's listing unchanged; it refuses a store made under T3's record and a store with no plan, with nothing written; `--init-store` refuses T3's record's store and rewrites nothing; and this round's store is accepted. For F2: the judge's record, and a record whose last outcome month is the window's first, are refused with nothing written, and the synthetic pre-score is read.
+
+Each fix was written test-first, and each test failed before its fix. F1's tests also fail with the check removed: removing it from both runs fails the judge's two tests, and removing it from `--init-store` alone fails the `--init-store` assertion.
