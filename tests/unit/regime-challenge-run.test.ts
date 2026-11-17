@@ -698,6 +698,57 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
     }
   });
 
+  // F7 (amendment 4): a name the judge writes only after its seal is shown writable in place before the seal is
+  // claimed. A directory, or a file the run may not write, at the result or its `.tmp` is no link, so F6 passes it;
+  // the write then throws after the seal, and the one read is spent with no result. Root ignores permissions, so the
+  // read-only cell runs only as another user.
+  const F7_FORMS = (process.getuid?.() === 0 ? ['dir-at-tmp', 'dir-at-result'] : ['dir-at-tmp', 'readonly-file-at-tmp', 'dir-at-result']) as readonly string[];
+  /** Puts a form at a run's result name `file` in `out`, and returns the name it took. */
+  const plantF7 = (out: string, file: string, form: string): string => {
+    const name = form === 'dir-at-result' ? file : `${file}.tmp`, at = path.join(out, name);
+    fs.mkdirSync(out, { recursive: true });
+    if (form === 'readonly-file-at-tmp') { fs.writeFileSync(at, 'old\n'); fs.chmodSync(at, 0o444); } else fs.mkdirSync(at);
+    return name;
+  };
+  const writableReason = (name: string, form: string): string =>
+    `the output directory's ${name} is ${form === 'readonly-file-at-tmp' ? 'a file the run cannot write' : 'a directory'}: a name the run writes there must be absent, or a plain file the run can write`;
+  /** A run's verdict, or what it threw. */
+  const outcome = (fn: () => run.RunResult): string => { try { const r = fn(); return `${r.verdict} — ${r.reason}`; } catch (e) { return `THROW ${(e as Error).message.split(':')[0]}`; } };
+
+  it('F7: a directory or a read-only file at the result or its .tmp is refused before the seal, by the judge and by the pre-score, with nothing written; a plain, writable result passes', { timeout: 180_000 }, () => {
+    const leaked: string[] = [];
+    for (const form of F7_FORMS) {
+      // the judge, with a store and a seal home of its own: refused before its first guard line, so no seal is claimed
+      const cell = `judge-${form}`, s = path.join(dir, 'f7-store', cell), h = path.join(dir, 'f7-seal', cell), out = path.join('f7-out', cell);
+      guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+      const name = plantF7(path.join(dir, out), JUDGE_FILE, form), at = path.join(dir, out, name);
+      const state = (): string => JSON.stringify([treeOf(path.join(dir, out)), treeOf(s), fs.lstatSync(at).mode & 0o777]);
+      const before = state();
+      const got = outcome(() => judge(out, { store: s, study: judgeStudy({ sealHome: h }) }));
+      const row = [got, lines.length, fs.existsSync(path.join(h, JUDGE.seal as string)), fs.existsSync(h), fs.existsSync(guard.guardLog(s)), state() === before];
+      if (JSON.stringify(row) !== JSON.stringify([`REFUSED — ${writableReason(name, form)}`, 0, false, false, false, true])) leaked.push(`${cell}: ${JSON.stringify(row)}`);
+      // the pre-score asks the same rule of its own names, before its log is written
+      const pcell = `pre-${form}`, pout = path.join('f7-out', pcell);
+      const pname = plantF7(path.join(dir, pout), PRESCORE_FILE, form), pat = path.join(dir, pout, pname);
+      const pstate = (): string => JSON.stringify([treeOf(path.join(dir, pout)), fs.lstatSync(pat).mode & 0o777]);
+      const pbefore = pstate();
+      const pgot = outcome(() => prescore(pout));
+      const prow = [pgot, lines.length, pstate() === pbefore];
+      if (JSON.stringify(prow) !== JSON.stringify([`REFUSED — ${writableReason(pname, form)}`, 0, true])) leaked.push(`${pcell}: ${JSON.stringify(prow)}`);
+    }
+    expect(leaked).toEqual([]);
+    // a plain, writable result and .tmp left in the output directory pass, and the judge's result replaces them
+    const s = path.join(dir, 'f7-store', 'judge-plain'), h = path.join(dir, 'f7-seal', 'judge-plain'), out = path.join(dir, 'f7-out', 'judge-plain');
+    guard.initStore(s, archives, census.panel, judgeStudyRecord(''));
+    fs.mkdirSync(out, { recursive: true });
+    for (const n of [JUDGE_FILE, `${JUDGE_FILE}.tmp`]) fs.writeFileSync(path.join(out, n), 'old\n');
+    const r = judge(path.join('f7-out', 'judge-plain'), { store: s, study: judgeStudy({ sealHome: h }) });
+    expect([r.verdict, r.reason]).toEqual(['PASS', 'ok']);
+    expect(json(path.join(out, JUDGE_FILE)).kind).toBe('judge');
+    expect(fs.readdirSync(out)).toEqual([JUDGE_FILE]);
+    expect(fs.readdirSync(h)).toEqual([JUDGE.seal]);
+  });
+
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
     // the five files of this round and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
     expect(CHALLENGE_FILES.every((f) => REQUIRED_PINS.includes(f))).toBe(true);

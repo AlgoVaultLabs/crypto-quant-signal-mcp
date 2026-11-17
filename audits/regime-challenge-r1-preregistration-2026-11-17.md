@@ -508,3 +508,46 @@ The sha256 of `challenge-guard.ts` and of `challenge-run.ts` as committed with t
 The test file that carries the fixes and the matrix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
 
 - tests/unit/regime-challenge-run.test.ts, sha256 `a9a5e6910d5e6eec540c7f30e59dcd29428429472ecbdf6cd7b742096dfea51d`. For F6, three tests in a sandbox, together the final-component axis. The store test makes, per cell, a seal home and a store for this round outside it, puts the link in the store, and asks `storeRefusal` in both modes and the judge. The `--init-store` test asks `storeRefusal` as `--init-store` asks it at every name, and runs the CLI at three of them. The output test puts the links in output directories outside the repository, pointing at files inside it, and asks the pre-score and the judge; it then runs the pre-score twice into a plain output. For F5, two matrix tests in a sandbox, one per root. The seal-home test makes a seal home, a store inside it and a sibling store, all for this round; it asks every cell of the store inside of `storeRefusal` in both modes and of the judge, and then asks every form of the sibling and of a store outside the seal home. The repository test asks every cell of an output inside the repository of the pre-score and of the judge (with a store and a seal home of its own), and then asks every form of a sibling of the repository, and runs the pre-score into it.
+
+## Amendment 4 — 2026-11-17, before the read: a name written after the seal is shown writable before it, and two re-pins
+
+**Write-time clock (live `date -u`):** 2026-11-17T10:06Z (2026-11-17 local, the date in the file name).
+
+Below, "the body and Amendments 1, 2 and 3" is everything before this section, and the parts of this section are F7, the gate and the re-pin.
+
+**Ordering.** Before the read. The judge has not run. Its store holds the two manifests and the plan that `--init-store` wrote (§2, E6), and no guard log. The seal home holds T3's `holdout.seal` only, and no `challenge-r1.seal`. This round has computed no outcome of 2026-01 … 2026-10. The body and Amendments 1, 2 and 3 are unchanged: the first 93,627 bytes of this file (sha256 `19acd96eac3d7d2203e1ea621026a15da2193dba8ae631c05835922b94a2a481`) are byte-identical to the file as landed at commit `66f900b7023b9cb6cad22d93f0a2b01b96284da6`.
+
+**Reason.** A fresh auditor's re-check of Amendment 3, made before the read (CH4; the lead's ruling of 2026-11-17T09:51Z, 17:51 local), passed F5 and F6 and noted one case outside its delta, in code unchanged since before `f40b8667`. The lead ruled it a defect (F7): a one-shot read must never be spendable through a precondition that can be checked before the seal. §1 lets a run that fails after the seal is claimed leave the read spent, and T3's hold-out was lost to exactly such a throw (§2, E2). F7 is settled here, before any row of the judge window is read, so no result can choose it. It changes none of the read's statistics, months, seal or decision. PROCEDURE §7 does not apply: there is no result.
+
+### F7. A name written after the seal is writable in place before it (code)
+
+- **The finding.** After its seal the judge writes its result into the output directory: the result's `.tmp`, then renamed to the result. F6 refuses a link at either name, and the output directory's own write permission is asked before the seal is claimed. But a directory at either name, or a file the run may not write at the `.tmp`, is no link, and it passed every check made before the seal. In a sandbox the judge then claimed its seal, read the outcomes and threw on the write (EISDIR, EACCES), with no result: the read was spent.
+- **The fix.** One function, `writableRefusal` in `challenge-guard.ts`, beside `linkRefusal` and asked with it. Each name the run writes in its output directory must be absent, or a plain file the run can write. It is refused when it exists and is not a plain file (`lstat`, `!isFile()`), or when the run may not write it (`access`, `W_OK`). When it refuses, nothing is written.
+  - **The judge** asks it of the result and the result's `.tmp`, before its first guard line, and so before the seal is claimed.
+  - **The pre-score** asks it of its own names (its log, the result and the result's `.tmp`) before its output directory is made. The pre-score claims no seal, so it can spend no read; it asks so that one rule holds for both runs.
+  - A read-only file at the result itself does not stop the rename, but the rule is the same for every name a run writes, so it is refused too.
+  - T3's modules are unchanged.
+- **Scope.** As in F6: checked once, before the first write, against operator error — a directory or a read-only file left at one of these names. A full disk, and a writer that changes these names while the run is running, are outside it.
+- **The judge's store passes.** F7 asks the output directory, not the store. At the write-time clock, `storeRefusal` on the store made at E6 still returns no refusal, both as the judge asks it and as `--init-store` asks it. These checks read the store and write nothing.
+
+**The gate: three cells.** In `tests/unit/regime-challenge-run.test.ts`, the output directory sits outside the repository, and the judge has a store and a seal home of its own:
+- a directory at the result's `.tmp`;
+- a file of mode 0444 at the result's `.tmp`;
+- a directory at the result.
+
+Each is refused with `writableRefusal`'s reason. No seal is claimed (the seal home is never made), the store has no guard line, no log line is written, and the trees of the output directory and the store are byte-identical (every entry's kind, its sha256, and the mode of the planted entry). The pre-score, with the same three forms at its own result, is refused the same way, and writes no log. A plain, writable result and `.tmp` left in the output directory still pass: the judge claims its own seal, and its result replaces them. Every earlier test's plain outputs pass too. Root ignores file permissions, so the 0444 cell runs only as another user.
+
+The cells were written first. At `66f900b7` all six failed: the judge claimed its seal, wrote its guard lines and threw (EISDIR, EACCES, EISDIR) with no result, and the pre-score threw the same way after writing its log. With the fix, all six pass. With the check dropped (`writableRefusal` answering null), the same six fail and the judge's seal is claimed; restored, byte for byte, they pass.
+
+### Re-pin
+
+The sha256 of `challenge-guard.ts` and of `challenge-run.ts` as committed with this section, in the same commit. By §10's rule the last row for a name is its pin, so these rows replace the earlier rows of the same names; every other pin of §10 and of Amendments 1, 2 and 3 stands. The pinned files are byte-identical on the `origin/main` commit this section lands on; that is re-checked immediately before landing.
+
+| pin | sha256 | role |
+|---|---|---|
+| `src/scripts/regime-challenge/challenge-guard.ts` | `fb5868930a03d25efa016fcdcabf02ea4dba1c84367a2b821d65eff26b92eda2` | the record loader, the archive and skeleton checks, the landed source, the registration on `origin/main`, path containment by spelling, or by identity over the ancestors of the written path and of the resolved path (F4, F5), the refusal of a link at a name a run writes (F6), and the refusal of a name a run writes that is not a plain file it can write (F7) |
+| `src/scripts/regime-challenge/challenge-run.ts` | `d8bf902af4de5d4fd5464062a8421500fb38f1f908d50a1b047cca18bd35362f` | the CLI: the pre-score and its selection, its refusal of a record that reaches the judge window (F2), `--init-store`, the judge, the store refusal both ask before they write (F1, and F6: no entry of the store is a link), the refusal of an output directory where a name the run writes is a link (F6) or is not a plain file the run can write (F7), the refusals, the order, the pre-seal `identifiability` line and the result. F6 and F7 add refusals made before the first write, and change no computed quantity |
+
+The test file that carries the fix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
+
+- tests/unit/regime-challenge-run.test.ts, sha256 `db4f3a813b58cbad94d79ec3652efc368dc68b4ef96a3b2a65402aa4168a5c50`. For F7, one test in a sandbox. Per cell, the judge gets a store and a seal home of its own and an output directory outside the repository holding the planted form, and the pre-score gets an output directory holding the same form at its own result; each must refuse with nothing written. It then runs the judge into an output directory that holds a plain, writable result and `.tmp`, and it passes.

@@ -64,6 +64,23 @@ export function linkRefusal(dir: string, what: string, names?: readonly string[]
   return null;
 }
 
+/**
+ * Why a name the run writes in `dir` cannot be written there in place, or null (Amendment 4, F7). Each of `names`
+ * is absent, or a plain file the run can write: a directory, or a file the run may not write, at a name the judge
+ * writes only after its seal would throw there and spend the one read. Asked with `linkRefusal`, once, before the
+ * run's first write: against operator error, not against a full disk or a writer working beside the run.
+ */
+export function writableRefusal(dir: string, what: string, names: readonly string[]): string | null {
+  for (const rel of names) {
+    const p = path.join(dir, rel), s = fs.lstatSync(p, { throwIfNoEntry: false });
+    if (!s) continue;
+    let kind = s.isFile() ? null : s.isDirectory() ? 'a directory' : 'not a plain file';
+    if (!kind) try { fs.accessSync(p, fs.constants.W_OK); } catch { kind = 'a file the run cannot write'; }
+    if (kind) return `${what}'s ${rel} is ${kind}: a name the run writes there must be absent, or a plain file the run can write`;
+  }
+  return null;
+}
+
 /** The archive months a run opened, and how many files of each. */
 export type Opened = Map<string, number>;
 
