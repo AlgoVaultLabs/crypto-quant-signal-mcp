@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CALL_COLS, CENSUS_SHA256, FILES, NOT_BEFORE_MS, REGISTRATION, SEAM_HOST, SEAM_MARK, SERVED_FINGERPRINT, SNAP_COLS, TFS, VENUES, W0_MS, type Venue } from '../../src/scripts/regime-forward/forward-spec.js';
 import { FLOORS, LOG, RESULT, SEAL, claimSeal, clockRefusal, forwardHome, homeRefusal, insideByIdentity, leverRefusal, log, rehearse, seamHomeRefusal } from '../../src/scripts/regime-forward/forward-guard.js';
-import { censusRefusalFor, forwardRun, isPinnedSource, type Seam } from '../../src/scripts/regime-forward/forward-run.js';
+import { censusRefusalFor, forwardRun, isPinnedSource, sourceRefusal, type Seam } from '../../src/scripts/regime-forward/forward-run.js';
 import { MANIFEST, STORE } from '../../src/scripts/regime-forward/bar-store.js';
 import { RateLimitedError, UnreachedError, pagesOf, restSource, spanOf, type BarSource } from '../../src/scripts/regime-forward/venue-bars.js';
 import { pinsOf } from '../../src/scripts/sr-backtest/guard.js';
@@ -31,6 +31,7 @@ afterEach(() => new Promise<void>((done) => { setImmediate(done); }));
 /** Coin tokens come only from the synthetic generator (R6). */
 const C1 = SYNTH_COINS[0], C2 = SYNTH_COINS[1];
 const REPO = path.resolve(__dirname, '../..');
+const RUN_FILE = path.join(REPO, 'src/scripts/regime-forward/forward-run.ts');
 const sha = (b: Buffer | string): string => crypto.createHash('sha256').update(b).digest('hex');
 const git = (repo: string, ...args: string[]): string => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const LABEL_NAMES = ['RANGING', 'TRENDING_UP', 'TRENDING_DOWN', 'VOLATILE'];
@@ -264,6 +265,37 @@ describe('each guard leg refuses before the seal', () => {
   it('the harness refuses to run as a copy: only the pinned source in the repository is the registered read', () => {
     expect(isPinnedSource(path.join(REPO, 'src/scripts/regime-forward/forward-run.ts'), REPO)).toBe(true);
     expect(isPinnedSource(path.join(REPO, 'dist/scripts/regime-forward/forward-run.js'), REPO)).toBe(false);
+  });
+
+  /** A scratch tree whose forward-run.ts is a link to this checkout's (re-check N4); never a git repository. */
+  const linkedTree = (): string => {
+    const t = fs.mkdtempSync(path.join(os.tmpdir(), 'regime-forward-linked-'));
+    fs.mkdirSync(path.join(t, 'src/scripts/regime-forward'), { recursive: true });
+    fs.symlinkSync(RUN_FILE, path.join(t, 'src/scripts/regime-forward/forward-run.ts'));
+    return t;
+  };
+
+  it('N4: the read judges only the checkout that runs it — a tree linking to the running forward-run.ts is refused, by real path and identity', () => {
+    expect(sourceRefusal(RUN_FILE, REPO)).toBeNull();
+    const t = linkedTree();
+    expect(isPinnedSource(RUN_FILE, t)).toBe(true); // the file check alone is satisfied by the link
+    expect(sourceRefusal(RUN_FILE, t)).toMatch(/judges only the checkout that runs it/);
+    const alias = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'regime-forward-alias-')), 'repo');
+    fs.symlinkSync(REPO, alias); // the same checkout under another spelling is the same checkout
+    expect(sourceRefusal(RUN_FILE, alias)).toBeNull();
+    expect(sourceRefusal(path.join(REPO, 'dist/scripts/regime-forward/forward-run.js'), REPO)).toMatch(/pinned source|checkout that runs/);
+  });
+
+  it('N4: a run without a seam over a tree linking to the running forward-run.ts → REFUSED at source, logged, nothing else read', async () => {
+    const t = linkedTree(), home = forwardHome();
+    try {
+      const r = await forwardRun({ repo: t, censusFile: path.join(t, 'census.json'), snapshotDir: t, resultsLog: path.join(t, 'results.jsonl') });
+      expect(r.verdict).toBe('REFUSED');
+      expect(r.reason).toMatch(/judges only the checkout that runs it/);
+      expect(fs.readFileSync(path.join(home, LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l).leg)).toEqual(['source']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true }); // under the suite's own directory (isolate.ts)
+    }
   });
 });
 
@@ -562,7 +594,22 @@ describe('the pieces the order rests on', () => {
   });
 });
 
+/**
+ * F9's scope (ruling 23:14, N5): the modules T5 owns or freezes — its own, ops/ and T3's core it calls. A served
+ * module (src/lib) and whatever it reaches are the guard's to judge at the read, by their pins: never this test's
+ * (arc lesson 15), so another wave's refactor of an adapter cannot turn this suite red.
+ */
+const F9_SCOPE = /^(src\/scripts\/regime-forward\/|src\/scripts\/regime-diag\/|scripts\/regime-diag\/|ops\/)/;
+const unpinnedInScope = (called: Iterable<string>, pins: ReadonlyMap<string, string>): string[] => [...called].filter((m) => F9_SCOPE.test(m) && !pins.has(m)).sort();
+
 describe('F9: every repository module the read calls into is pinned (built from a trace, not from reading)', () => {
+  it('N5: its scope is the modules T5 owns or freezes — a new src/lib module reached by a symbol function is the guard\'s; an unpinned T5 or T3 module is red', () => {
+    const pins = new Map([['src/scripts/regime-forward/forward-run.ts', 'x'], ['src/lib/adapters/okx.ts', 'y']]);
+    expect(unpinnedInScope(['src/scripts/regime-forward/forward-run.ts', 'src/lib/adapters/okx.ts', 'src/lib/adapters/_norm.ts'], pins)).toEqual([]);
+    expect(unpinnedInScope(['src/scripts/regime-forward/planted.ts', 'src/scripts/regime-diag/planted.ts', 'ops/monitoring/planted.py', 'src/lib/planted.ts'], pins))
+      .toEqual(['ops/monitoring/planted.py', 'src/scripts/regime-diag/planted.ts', 'src/scripts/regime-forward/planted.ts']);
+  });
+
   it('a read traced by V8 call counts: each module with a function run during it has a pin in §10', async () => {
     const session = new inspector.Session();
     session.connect();
@@ -591,8 +638,8 @@ describe('F9: every repository module the read calls into is pinned (built from 
       if (s.functions.some((f) => f.ranges[0].count > 0)) called.add(rel);
     }
     const pins = pinsOf(fs.readFileSync(path.join(REPO, REGISTRATION), 'utf8'));
-    expect(called.size).toBeGreaterThan(10); // the trace saw the read: T5's, T3's and the served modules
-    for (const m of ['src/scripts/regime-forward/forward-run.ts', 'src/scripts/regime-diag/guard.ts', 'src/scripts/regime-diag/bars.ts', 'src/lib/adapters/okx.ts']) expect(called.has(m), m).toBe(true);
-    expect([...called].filter((m) => !pins.has(m)).sort()).toEqual([]);
+    expect(called.size).toBeGreaterThan(10); // the trace saw the read: T5's and T3's modules (and the served ones, out of scope)
+    for (const m of ['src/scripts/regime-forward/forward-run.ts', 'src/scripts/regime-forward/venue-bars.ts', 'src/scripts/regime-diag/guard.ts', 'src/scripts/regime-diag/bars.ts']) expect(called.has(m), m).toBe(true);
+    expect(unpinnedInScope(called, pins)).toEqual([]);
   }, 180_000);
 });

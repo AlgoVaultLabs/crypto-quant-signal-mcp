@@ -16,8 +16,9 @@ import { pinsOf } from '../../src/scripts/sr-backtest/guard.js';
 import {
   CALL_COLS, CENSUS_SHA256, EXPIRES_MS, FILES, LOOKAHEAD_BARS, NOT_BEFORE_MS, READ_ID, REGISTRATION, RULE_VERSION, SERVED_FINGERPRINT, SERVED_PRINTER, SNAP_COLS, TFS, VENUES, W0_MS, W1_MS, WAVE, windowEndMs,
 } from '../../src/scripts/regime-forward/forward-spec.js';
-import { SERVED_FILES, SERVED_NAMES, closureOf, fingerprintOf, firstPinsOf, servedRefusalOf, servedWant } from '../../src/scripts/regime-forward/served-fingerprint.js';
+import { FINGERPRINT_FORMS, SERVED_FILES, SERVED_NAMES, closureOf, fingerprintOf, firstPinsOf, servedRefusalOf, servedWant } from '../../src/scripts/regime-forward/served-fingerprint.js';
 import { SYNTH_COINS, SYNTH_COIN_FORM, SYNTH_PANEL, synthCoin, synthServedTree } from '../fixtures/regime-forward/synth.js';
+import { NON_COIN_WORDS } from '../fixtures/regime-forward/non-coin-words.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 const OWED = 'ops/monitoring/owed-read-regime-forward-30d.py';
@@ -178,6 +179,44 @@ describe('F15, R4, FP: the served code the read uses is fingerprinted by its sou
   });
 });
 
+describe('N6: the forms the fingerprint is tested to see are named once, each tested, and nothing else is claimed', () => {
+  const TREE = synthServedTree();
+  const B = SERVED_NAMES.BINANCE.file, O = SERVED_NAMES.OKX.file, A = SERVED_NAMES.ATR.file;
+  const [x, y] = [synthCoin(31), synthCoin(32)];
+  const fp = (edits: Record<string, string> = {}): string => fingerprintOf((f) => edits[f] ?? TREE[f]).sha256;
+  const sub = (f: string, from: string, to: string): Record<string, string> => { const t = TREE[f].replace(from, to); expect(t).not.toBe(TREE[f]); return { [f]: t }; };
+  /** One synthetic case per form at least; a form without a case, or a case without a form, is red. */
+  const CASES: Record<string, Array<Record<string, string>>> = {
+    body: [sub(B, 'export function toBinanceSymbol(coin: string): string {', `export function toBinanceSymbol(coin: string): string {\n  if (coin === '${x}') return '${y}USDT';`)],
+    declaration: [sub(O, 'const TRADFI_ALIASES: Record<string, string> = {', `const TRADFI_ALIASES: Record<string, string> = {\n  ${x}: '${y}',`),
+      { [O]: `${TREE[O]}\nconst EXTRA: Record<string, string> = { ${x}: '${y}' };\nObject.assign(TRADFI_ALIASES, EXTRA);\n` }],
+    import: [{ 'src/lib/adapters/suffix.ts': "export const SWAP_SUFFIX = 'USDC-SWAP';\n" }],
+    sigma: [sub(A, 'Math.sqrt(8 / Math.PI)', 'Math.sqrt(8 / Math.PI) * 1.000001')],
+    statement: [{ [B]: `${TREE[B]}\nTRADFI_ALIASES['${x}'] = '${y}';\n` }],
+  };
+  const section1 = (): string => { const r = read(REGISTRATION); return r.slice(r.indexOf('## 1. '), r.indexOf('## 2. ')); };
+
+  it('every form has a case on the synthetic tree, and every case moves the fingerprint', () => {
+    expect(Object.keys(CASES).sort()).toEqual(Object.keys(FINGERPRINT_FORMS).sort());
+    const base = fp();
+    for (const [form, edits] of Object.entries(CASES)) for (const e of edits) expect(fp(e), form).not.toBe(base);
+  });
+
+  it('§1 states each form verbatim and that the fingerprint sees nothing else; the decision rests on the byte pins and the amendment\'s audit', () => {
+    const s1 = section1();
+    for (const phrase of Object.values(FINGERPRINT_FORMS)) expect(s1).toContain(phrase);
+    expect(s1).toContain('it sees nothing else');
+    expect(s1).toMatch(/rests on the byte pins/);
+    expect(s1).toMatch(/pre-read audit judges .*diff in full/);
+  });
+
+  it('neither §1 nor the module lists what the fingerprint cannot see', () => {
+    const blind = /cannot see|can not see|does not see|never visits|called from elsewhere|blind spot/i;
+    expect(section1()).not.toMatch(blind);
+    expect(read('src/scripts/regime-forward/served-fingerprint.ts')).not.toMatch(blind);
+  });
+});
+
 describe('PRN: the guard\'s served check — bytes first, then the printer, then the fingerprint (pure core, synthetic tree)', () => {
   const TREE = synthServedTree();
   const O = SERVED_NAMES.OKX.file, B = SERVED_NAMES.BINANCE.file;
@@ -228,18 +267,16 @@ describe('PRN: the guard\'s served check — bytes first, then the printer, then
   });
 });
 
-describe('R6: every coin token in the harness tests and fixtures comes from the synthetic generator (by construction; RV1)', () => {
-  /** The words the harness tests quote that are not coins: venues, labels, verdicts, causes, leg and constant names. */
-  const VOCABULARY = new Set([
-    'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'HYPERLIQUID', 'RANGING', 'TRENDING_UP', 'TRENDING_DOWN', 'VOLATILE', 'BUY', 'HOLD', 'SELL',
-    'PASS', 'FAIL', 'REFUSED', 'INDETERMINATE', 'UNDEFINED', 'NOT_IDENTIFIABLE', 'USDT', 'USDC', 'SWAP', 'FUTURES', 'EIO', 'HOME', 'EDGE',
-    'WAVE', 'READ_ID', 'W0_MS', 'W1_MS', 'LOOKAHEAD_BARS', 'RULE_VERSION', 'NOT_BEFORE_S', 'CALLS_FROM', 'CALLS_TO', 'VENUES', 'FILES',
-    'SNAP_COLS', 'CALL_COLS', 'PSQL_TIMEOUT_S', 'OUT_DIR', 'MODERATE', 'WEAK', 'NEUTRAL', 'HIGHER_HIGHS', 'MARK', 'COMPLETE', 'PARTIAL',
-    'OK', 'EXTERNAL', 'README',
-  ]);
-  /** Quoted or pipe-delimited capitalised tokens that are neither the reserved synthetic form nor the vocabulary. */
-  const coinLike = (text: string): string[] =>
-    [...text.matchAll(/(?<=['"`|/])([A-Z][A-Z0-9_]{1,23})(?=['"`|/.-])/g)].map((m) => m[1]).filter((t) => !SYNTH_COIN_FORM.test(t) && !VOCABULARY.has(t));
+describe('R6: every coin token in the harness tests and fixtures comes from the synthetic generator (by construction; RV1, N7)', () => {
+  /**
+   * Every word with a venue symbol's shape — capitals and digits, in any position: quoted, an unquoted key, a comment,
+   * or after a digit prefix — that is neither the reserved form nor on the wave's committed allowlist. Reads no
+   * served file.
+   */
+  const coinLike = (text: string): string[] => [
+    ...[...text.matchAll(/(?<![A-Za-z0-9_])([A-Z][A-Z0-9]{1,15})(?![A-Za-z0-9_])/g)].map((m) => m[1]),
+    ...[...text.matchAll(/(?<![A-Za-z0-9_])([0-9]+[A-Z]{2,}[A-Z0-9]*)(?![A-Za-z0-9_])/g)].map((m) => m[1]),
+  ].filter((t) => !SYNTH_COIN_FORM.test(t.replace(/^[0-9]+/, '')) && !NON_COIN_WORDS.has(t));
   const files = (): string[] => fs.readdirSync(path.join(ROOT, 'tests/unit')).filter((f) => f.startsWith('regime-forward-')).map((f) => `tests/unit/${f}`)
     .concat(fs.readdirSync(path.join(ROOT, 'tests/fixtures/regime-forward')).map((f) => `tests/fixtures/regime-forward/${f}`));
   /** The host read's self-test fixture rows, the one fixture outside tests/. */
@@ -258,5 +295,13 @@ describe('R6: every coin token in the harness tests and fixtures comes from the 
     expect(coinLike(`snapLine({ coin: '${planted}' })`)).toEqual([planted]);
     expect(coinLike(`|BINANCE|1h|${planted}|`)).toEqual([planted]);
     expect(coinLike(`snapLine({ coin: '${synthCoin(7)}', venue: 'BINANCE' })`)).toEqual([]);
+  });
+
+  it('N7: an unquoted key, a digit-prefixed literal and a bare word outside the form are found; the form, with a digit prefix too, is not', () => {
+    const planted = ['Q', 'W', 'Z'].join('');
+    expect(coinLike(`const m = { ${planted}: 'x' };`)).toEqual([planted]);
+    expect(coinLike(`const s = '1000${planted}';`)).toEqual([`1000${planted}`]);
+    expect(coinLike(`// a comment naming ${planted} in passing`)).toEqual([planted]);
+    expect(coinLike(`const m = { ${synthCoin(8)}: '1000${synthCoin(9)}' };`)).toEqual([]);
   });
 });
