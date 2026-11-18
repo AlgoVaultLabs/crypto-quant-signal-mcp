@@ -1,4 +1,7 @@
 // regime-challenge/challenge-spec.ts — EDGE-REGIME-CHALLENGE-R1-W1 (T6, round 1): the challengers and the two records.
+// Round 2 (EDGE-REGIME-CHALLENGE-R2-W1) adds what both rounds share here — the arm of a challenger that reads the
+// served label under one changed confidence rule, and the shape of a round's pre-score — and keeps its own
+// constants in challenge-r2.ts. Every round-1 value below is unchanged.
 //
 // A challenger is the served rule with ONE input changed. Round 1 holds three, on the dials the component map
 // flagged: M01 (the ADX smoothing period), M08 (direction precedence) and M12 (the label timeframe).
@@ -29,13 +32,14 @@ export const PRESCORE_PIN = `carry:${PRESCORE_FILE}`;
 /** The judge's registration: the one file of this name on origin/main (its date is its landing date). */
 export const REGISTRATION_RE = /^audits\/regime-challenge-r1-preregistration-\d{4}-\d{2}-\d{2}\.md$/;
 /**
- * What a judge registration pins beyond T3's harness list (which the pinned guard asks for itself): the five files
- * of this round, and the fourteen modules outside that list which the harness and this round import — the same
- * fourteen T3's registration and its successor's pin. A file the registration does not pin is bound to nothing, so
- * the judge refuses a registration that leaves one out; a pinned one the pinned guard holds to its sha256.
+ * What a judge registration pins beyond T3's harness list (which the pinned guard asks for itself): the files of
+ * the rounds (round 1's five and round 2's one), and the fourteen modules outside that list which the harness and
+ * the rounds import — the same fourteen T3's registration and its successor's pin. A file the registration does not
+ * pin is bound to nothing, so the judge refuses a registration that leaves one out; a pinned one the pinned guard
+ * holds to its sha256.
  */
 export const REQUIRED_PINS: readonly string[] = Object.freeze([
-  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((m) => `src/scripts/regime-challenge/${m}.ts`),
+  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run', 'challenge-r2'].map((m) => `src/scripts/regime-challenge/${m}.ts`),
   ...['market-regime-core', 'indicators', 'candle-window', 'candle-guard', 'serving-windows', 'errors', 'pre-trade-calc', 'pre-trade-odds-calibration', 'venue-fees', 'funding-venues']
     .map((m) => `src/lib/${m}.ts`),
   'src/scripts/cluster-perm-stats.py',
@@ -59,13 +63,22 @@ export const dialRefusal = (d: Dial): string | null =>
 export const SERVED_TF = TFS.findIndex((t) => t.key === DEFAULT_TIMEFRAME);
 export const C3_TF = TFS.findIndex((t) => t.key === '1h');
 
+/**
+ * Round 2: the served label read under one changed confidence rule — no replay. `cap`: the strong tier's cap
+ * (`Math.min(90, …)` in classifyRegime, M05). `trigger`: the confidence at which a TRENDING row is read (the served
+ * `REGIME_AGAINST_MIN_CONFIDENCE`, 60, M10).
+ */
+export type Arm = { kind: 'cap'; cap: number } | { kind: 'trigger'; min: number };
+
 export interface Candidate {
-  id: 'C1.7' | 'C1.10' | 'C2' | 'C3';
-  challenger: 'C1' | 'C2' | 'C3';
+  id: 'C1.7' | 'C1.10' | 'C2' | 'C3' | 'C4.45' | 'C4.55' | 'C5.50' | 'C5.70';
+  challenger: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
   /** The component-map row whose dial this is. */
-  map: 'M01' | 'M08' | 'M12';
-  /** The rule replayed for the challenger's arm; null for C3, whose arm is the served rule at another timeframe. */
+  map: 'M01' | 'M05' | 'M08' | 'M10' | 'M12';
+  /** The rule replayed for the challenger's arm; null for C3, whose arm is the served rule at another timeframe, and for round 2's arms. */
   dial: Dial | null;
+  /** Round 2 only: the one confidence rule the arm changes on the served label. */
+  arm?: Arm;
   what: string;
 }
 export const CANDIDATES: readonly Candidate[] = Object.freeze([
@@ -93,7 +106,7 @@ export const COIN_DAYS_PER_MONTH = 450;
 // ── the records ──────────────────────────────────────────────────────────────────────────────────────────
 
 export interface ChallengeRecord {
-  id: 'challenge-r1-prescore' | 'challenge-r1';
+  id: 'challenge-r1-prescore' | 'challenge-r1' | 'challenge-r2-prescore';
   wave: string;
   /** The grid, and the window entries are drawn in. */
   span: Span; win: Win;
@@ -179,6 +192,23 @@ export function windowRefusal(rec: ChallengeRecord, f: { span: Span; win: Win; e
 
 /** Coin-days of a record's outcome months, at T3 §5's rate. */
 export const coinDaysOf = (rec: ChallengeRecord): number => COIN_DAYS_PER_MONTH * months(rec.outcomes.first, rec.outcomes.last).length;
+
+/**
+ * A round's in-sample read: its record, the seed label of its resamples, its log, its candidates, and the coin-days
+ * its power arithmetic moves a half-width with (the pre-score's, and the judge window's, at T3 §5's rate).
+ */
+export interface PrescoreRound {
+  rec: ChallengeRecord;
+  seed: string;
+  log: string;
+  candidates: readonly Candidate[];
+  coinDays: { prescore: number; judge: number };
+}
+/** Round 1's pre-score: the constants above, as round 1 ran them. */
+export const R1_ROUND: PrescoreRound = Object.freeze({
+  rec: PRESCORE, seed: CHALLENGE_SEED, log: 'regime-challenge-r1-prescore.log', candidates: CANDIDATES,
+  coinDays: Object.freeze({ prescore: coinDaysOf(PRESCORE), judge: coinDaysOf(JUDGE) }),
+});
 
 /**
  * The judge as the pinned guard reads a study: the registration that names it, T3's grid and T3's archive months
