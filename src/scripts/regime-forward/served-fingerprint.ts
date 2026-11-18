@@ -1,19 +1,15 @@
 // regime-forward/served-fingerprint.ts — EDGE-REGIME-FORWARD-W1: the fingerprint of the served code the read uses
-// (CH3 F15, re-check R4, review FP and PRN; audit lessons 1, 8 and 13).
+// (CH3 F15, re-check R4, review FP and PRN, re-check N6; audit lessons 1, 8, 13 and 15).
 //
 // The read calls four functions of served code that other waves edit — `toBinanceSymbol`, `toBybitSymbol`,
 // `toOKXInstId`, `toBitgetSymbol` (the instrument of a label) — and reads one constant, `ATR_RANGE_PER_SIGMA` (A5's
-// σ per bar, through T3's bars.ts). The registration pins their five files by sha256, so an unrelated edit before
-// the read needs a re-pin. This fingerprint is one check on such a re-pin: the source of exactly those four
-// functions and of every top-level declaration they read, found by name and followed transitively (through a
-// relative import too), of every top-level statement of a visited file that is not a declaration and reads or
-// writes a covered name (to a fixed point), and of the constant's declaration — each printed by the TypeScript
-// printer with comments removed, so formatting and comments do not move it. It is necessary, not sufficient: a
-// change it cannot see (a class or a function that changes a map, called from elsewhere; a file it never visits)
-// moves nothing, so a re-pin is an appended amendment whose audit judges the diff itself (registration §1).
-// The printer's output is the printer's: its version is registered beside the value (§10), and the guard reads a
-// served tree byte-identical to its registered pins whatever the printer, and refuses any other under a printer
-// that is not the registered one.
+// σ per bar, through T3's bars.ts). The registration pins their five files by sha256, and the decision rests on
+// those byte pins: an edit before the read needs a re-pin, an appended amendment whose pre-read audit judges the
+// diff in full. This fingerprint is a necessary check on such a re-pin, never proof of completeness. It is tested
+// to see the forms named in FINGERPRINT_FORMS, each on a synthetic tree, and it sees nothing else. Each covered
+// piece is printed by the TypeScript printer with comments removed, so formatting and comments do not move it;
+// the printer's version is registered beside the value (§10), and the guard reads a served tree byte-identical to
+// its registered pins whatever the printer, and refuses any other under a printer that is not the registered one.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,6 +31,19 @@ export const SERVED_NAMES: Readonly<Record<Venue | 'ATR', { file: string; name: 
 });
 
 const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
+
+/**
+ * The forms the fingerprint is tested to see (re-check N6): registration §1 states each phrase verbatim, and the spec
+ * suite moves the fingerprint with a synthetic case of each. It sees nothing else; the byte pins and the amendment's
+ * audit decide.
+ */
+export const FINGERPRINT_FORMS = Object.freeze({
+  body: 'the body of a symbol function',
+  declaration: 'a top-level declaration that covered code reads',
+  import: 'a declaration reached through a relative import',
+  sigma: "the declaration of σ_bar's constant",
+  statement: 'a top-level statement that is not a declaration and reads or writes a covered name',
+});
 
 /** The version of the printer whose output the fingerprint hashes (review PRN). */
 export const PRINTER: string = ts.version;

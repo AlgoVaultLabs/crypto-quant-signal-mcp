@@ -50,6 +50,19 @@ const real = (p: string): string => { try { return fs.realpathSync(p); } catch {
 /** The registered read runs the pinned source in the repository the guard reads: never a compiled or copied harness. */
 export const isPinnedSource = (file: string, repo: string): boolean => real(file) === real(path.join(repo, 'src/scripts/regime-forward/forward-run.ts'));
 
+const idOf = (p: string): string | null => { try { const s = fs.statSync(p); return `${s.dev}:${s.ino}`; } catch { return null; } };
+
+/**
+ * Re-check N4: the registered read judges only the checkout that runs it — `repo` is the root of the executing
+ * forward-run.ts by real path and by device and inode — and runs the pinned source there, never a compiled, copied
+ * or linked harness. A test seam judges its own sandbox and does not come here.
+ */
+export function sourceRefusal(file: string, repo: string): string | null {
+  const root = path.resolve(path.dirname(real(file)), '../../..');
+  if (real(repo) !== real(root) || idOf(repo) === null || idOf(repo) !== idOf(root)) return `the read judges only the checkout that runs it: ${repo} is not ${root}`;
+  return isPinnedSource(file, repo) ? null : 'the read runs the pinned source (tsx src/scripts/regime-forward/forward-run.ts), never a compiled or copied harness';
+}
+
 /** The label a caller received against the served label of the last close before the call (correction 2: a count only; CH3 F13). */
 export function labelParity(loaded: Loaded, calls: readonly Call[]): { calls: number; equal: number; differ: number; no_row: number } {
   const out = { calls: calls.length, equal: 0, differ: 0, no_row: 0 };
@@ -152,7 +165,8 @@ export async function forwardRun(input: RunInput): Promise<RunResult> {
     const bad = log(home, { ok: true, ...entry });
     return bad ? stop(verdict, `run.log refused: ${bad}`) : null;
   };
-  if (!seam && !isPinnedSource(__filename, input.repo)) return refuse('source', 'REFUSED', 'the read runs the pinned source (tsx src/scripts/regime-forward/forward-run.ts), never a compiled or copied harness');
+  const badSource = seam ? null : sourceRefusal(__filename, input.repo);
+  if (badSource) return refuse('source', 'REFUSED', badSource);
 
   const reg = registrationRefusal(input.repo, seam ? seam.fetch : true);
   if (reg.reason) return refuse('registration', 'REFUSED', reg.reason);
