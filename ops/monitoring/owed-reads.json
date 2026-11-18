@@ -438,6 +438,22 @@
       },
       "criteria": "Did the first weekend after the pins went page nothing? The earliest book-liveness record in [2026-11-17T19:09Z, +1 h): PASS = level_breaches 0 with the 2026-11-14..16 suppressions and the s2 counts carried; FAIL = level_breaches > 0; a missing record, an INDETERMINATE run or a record without those fields = INDETERMINATE.",
       "_expires_at_rule": "Spec CH3 T4: install #2 ran on 2026-11-12 UTC; the first Saturday on or after it is 2026-11-14 and the first Tuesday after that is 2026-11-17; not_before = 19:30:00Z that day (after the canary's 19:09Z cron run), expires_at = not_before + 72 h, inside the host results log's retention."
+    },
+    {
+      "id": "regime-forward-30d",
+      "wave": "EDGE-REGIME-FORWARD-W1",
+      "not_before": "2026-12-30T08:00:00Z",
+      "expires_at": "2027-01-13T08:00:00Z",
+      "script": "owed-read-regime-forward-30d.py",
+      "timeout_s": 1700,
+      "anchors": {
+        "w0_ms": 1794816000000,
+        "w1_ms": 1797408000000,
+        "lookahead_bars": 14,
+        "rule_version": 2
+      },
+      "criteria": "Did the served regime labels of [2026-11-16T08Z, 2026-12-16T08Z) plus each timeframe's 14-bar look-ahead reach the vault whole? PASS = one REPEATABLE READ READ ONLY pass as aoe_readonly wrote every counted row to regime-forward-30d/ with each file's sha256; FAIL = a rule-2 regime_since break; anything unread = INDETERMINATE. Scoring is the Mac read's.",
+      "_expires_at_rule": "Registration audits/regime-forward-preregistration-2026-11-18.md §1 (ruling Q2 = A, 2026-11-18): the window is [W0, W1) = [2026-11-16T08:00:00Z, 2026-12-16T08:00:00Z); not_before = W1 + 14 days, when the 1d look-ahead's last bar has closed; expires_at = not_before + 14 days. timeout_s 1700 > the read's own psql bound (1400 s), under the runner's 1800."
     }
   ]
 }
