@@ -105,13 +105,13 @@ describe('regime-challenge: the two records', () => {
     expect([spec.A4_GUARD_PP, spec.A5_GUARD_RATIO, spec.COVERAGE_FLOOR]).toEqual([-3, 1 / 1.1, 0.5]);
   });
 
-  // T3's control ("HARNESS_FILES is the harness directory, file for file"), on this round's own directory: a file
-  // there that a judge registration is not required to pin would run bound to nothing.
-  it('REQUIRED_PINS is this round\'s directory, file for file', { timeout: 60_000 }, () => {
+  // T3's control ("HARNESS_FILES is the harness directory, file for file"), on the rounds' own directory: a file
+  // there that a judge registration is not required to pin would run bound to nothing. Round 2 adds one file.
+  it('REQUIRED_PINS is the rounds\' directory, file for file', { timeout: 60_000 }, () => {
     const DIR = 'src/scripts/regime-challenge';
     const onDisk = fs.readdirSync(path.join(REPO, DIR)).map((f) => `${DIR}/${f}`).sort();
     expect(spec.REQUIRED_PINS.filter((f) => f.startsWith(`${DIR}/`)).slice().sort()).toEqual(onDisk);
-    expect(onDisk.length).toBe(5);
+    expect(onDisk.length).toBe(6);
     for (const f of spec.REQUIRED_PINS) expect(fs.existsSync(path.join(REPO, f)), f).toBe(true);
   });
 });
