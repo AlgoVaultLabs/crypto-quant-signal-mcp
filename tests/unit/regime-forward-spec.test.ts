@@ -84,10 +84,12 @@ describe('the registry row and the inventory rows', () => {
     expect(r.criteria.length).toBeLessThanOrEqual(400);
   });
 
-  it('the host read\'s inventory row is the committed bytes, pending, called by the runner', () => {
+  it('the host read\'s inventory row is the committed bytes, installed by the installer, called by the runner', () => {
     const r = inv('owed-read-regime-forward-30d');
-    expect([r.artifact, r.host, r.host_path, r.invoked_by, r.schedule, r.install_state, r.owner_wave]).toEqual([OWED, 'signal-1', `/opt/algovault-monitoring/${path.basename(OWED)}`, 'called-by:owed-read-runner', null, 'pending', WAVE]);
+    expect([r.artifact, r.host, r.host_path, r.invoked_by, r.schedule, r.install_state, r.owner_wave]).toEqual([OWED, 'signal-1', `/opt/algovault-monitoring/${path.basename(OWED)}`, 'called-by:owed-read-runner', null, 'installed', WAVE]);
     expect(r.pending_since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.first_install?.at).toMatch(/^\d{8}T\d{6}Z$/);
+    expect(r.first_install?.by).toBe('ops/scripts/install-monitoring-artifact.sh');
     expect(r.alert_ids).toEqual([]);
     expect(r.sha256, 'inventory sha256 is stale — re-stamp it in the same commit as the edit').toBe(sha256(OWED));
   });

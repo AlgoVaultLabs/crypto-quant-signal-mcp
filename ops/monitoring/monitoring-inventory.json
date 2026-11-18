@@ -2203,7 +2203,7 @@
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
       "first_install": {
-        "at": "20261024T171343Z",
+        "at": "20261118T165048Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -3800,12 +3800,16 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "pending_since": "2026-11-18",
       "sha256": "4e0d3416e2d667a930938e1db97801624ec8af74b2c8ac40097dd26f513a7143",
       "alert_ids": [],
       "owner_wave": "EDGE-REGIME-FORWARD-W1",
-      "notes": "The 30-day forward read of the served regime labels (EDGE-REGIME-FORWARD-W1, ruling Q1 = A, plan (b)): ONE registry row, regime-forward-30d, not_before 2026-12-30T08:00:00Z = W1 + 14 d, expires_at = not_before + 14 d. Pre-registered constants live HERE (W0 2026-11-16T08:00:00Z, W1 2026-12-16T08:00:00Z, 14-bar look-ahead per timeframe, rule_version 2); the anchors must equal them or the read refuses. One REPEATABLE READ READ ONLY bundle as aoe_readonly: per-venue counts, the regime_since checks, then regime_snapshots rows of the window, regime_snapshot_runs and the labelled get_market_regime calls (caller hashed, label-parity count only), streamed to /var/lib/algovault-monitoring/regime-forward-30d/ (0700) with a sha256 manifest; the Mac read wave scores them (src/scripts/regime-forward/forward-run.ts, registration audits/regime-forward-preregistration-2026-11-18.md). PASS = every counted row written; FAIL only on a rule-2 regime_since break; metrics <= 4 KiB. Stdlib only."
+      "notes": "The 30-day forward read of the served regime labels (EDGE-REGIME-FORWARD-W1, ruling Q1 = A, plan (b)): ONE registry row, regime-forward-30d, not_before 2026-12-30T08:00:00Z = W1 + 14 d, expires_at = not_before + 14 d. Pre-registered constants live HERE (W0 2026-11-16T08:00:00Z, W1 2026-12-16T08:00:00Z, 14-bar look-ahead per timeframe, rule_version 2); the anchors must equal them or the read refuses. One REPEATABLE READ READ ONLY bundle as aoe_readonly: per-venue counts, the regime_since checks, then regime_snapshots rows of the window, regime_snapshot_runs and the labelled get_market_regime calls (caller hashed, label-parity count only), streamed to /var/lib/algovault-monitoring/regime-forward-30d/ (0700) with a sha256 manifest; the Mac read wave scores them (src/scripts/regime-forward/forward-run.ts, registration audits/regime-forward-preregistration-2026-11-18.md). PASS = every counted row written; FAIL only on a rule-2 regime_since break; metrics <= 4 KiB. Stdlib only.",
+      "first_install": {
+        "at": "20261118T165033Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
