@@ -610,3 +610,20 @@ The sha256 of `challenge-run.ts` as committed with this section, in the same com
 The test file that carries the fix is recorded here with its bytes as committed in the same commit. It is not a pin: no test file is a pin of this registration, and no guard leg depends on one.
 
 - tests/unit/regime-challenge-run.test.ts, sha256 `81c7fb224be3d6b3408d16895b3a5e756cf438149b750ff757bd1b7e8f431170`. For F8, three tests in a sandbox: the four cells G1 to G4 (darwin, not as root); an output directory with no result and one with a 0600 result, which pass; and the trace of the judge's writes, split at its seal.
+
+## Amendment 6 — 2026-11-18, before the read: Amendment 5's inventory names two more call sites of the statistics bridge (text only)
+
+**Write-time clock (live `date -u`):** 2026-11-18T02:28Z (2026-11-18 10:28 local; the file name keeps the date it landed under).
+
+**Ordering.** Before the read. The judge has not run. Its store holds no guard log, and the seal home holds no `challenge-r1.seal`. Everything before this section is unchanged: the first 112,141 bytes of this file are byte-identical to the file as landed at commit `1cce70f68950b41b6bf669f193c0e0d1b1844003`.
+
+**Reason.** A fresh auditor re-checked Amendment 5 narrowly, before the read (CH4). F8 is closed, and there is one text defect, CONFIRMED MINOR. The inventory row "the statistics bridge" cites the calls to `bounds` and `kish` after the seal only at `paired-stats.ts:177`, `:179` and `:239`. The judge makes them after the seal in T3's pinned engine as well: at regime-diag `engine.ts:223` (`boundsOf`) and `:226` (`kishOf`), reached through `compute` (`paired-stats.ts:95`) from ΔΔ1 and from the A4 guard (`challenge-run.ts:139–140`). A call-stack trace split at the seal shows them.
+
+**Correction.** In Amendment 5's inventory, the row "the statistics bridge" gains these call sites: `bounds` and `kish` are also called at regime-diag `engine.ts:223` and `:226`. Its right-hand cell stands. The same interpreter and script ran before the seal, and these calls pass only input the bridge accepts:
+- `boundsOf` gets only columns whose replicates are all finite (`engine.ts:219–221`), with `alpha = 0.025`;
+- `kishOf` gets only positive cluster weights;
+- both skip the bridge when their list is empty (`prims.ts:79–81`).
+
+Amendment 5's conclusion is unchanged.
+
+**What this changes.** Nothing in the code, the statistics, the months, the seal or the decision. No file is re-pinned: every pin of §10 and of Amendments 1 to 5 stands (44 rows). PROCEDURE §7 does not apply, because there is no result.
