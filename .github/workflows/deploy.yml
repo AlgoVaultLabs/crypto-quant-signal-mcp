@@ -74,6 +74,14 @@ jobs:
     # concurrent session's deploy queued behind it.
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    # OPS-DEPLOY-LANE-NETWORK-FREE-W1 — every run: step goes through scripts/ci/deploy-lane-shell.sh.
+    # Outside the network-free gate window it execs exactly GitHub's own default (`bash -e {0}`).
+    # Between the lane_open and lane_close steps below it arms a network guard (a Node preload plus
+    # curl/wget shims) that refuses and records every non-loopback read. Never give a step inside
+    # that window its own `shell:` — scripts/check-deploy-lane-offline.mjs fails the deploy on it.
+    defaults:
+      run:
+        shell: bash scripts/ci/deploy-lane-shell.sh {0}
     steps:
       # ── Pre-deploy gate: catches landing-page drift BEFORE SSH-deploy ──
       # WELCOME-EMAIL-W1 fix-forward (2026-04-28): the original plan called for
@@ -250,6 +258,26 @@ jobs:
             esac
             echo "FLOOR OK [$label]: token=$V exit=$rc -> deploy correctly BLOCKED on a contention-shaped red."
           done
+
+      # OPS-DEPLOY-LANE-NETWORK-FREE-W1 — OPEN THE NETWORK-FREE GATE WINDOW.
+      #
+      # Every gate from here to lane_close runs with the network guard armed (see the job's
+      # `defaults.run.shell`). The law it enforces was already written in this file — "the deploy
+      # lane must be deterministic and network-free", "a wobbly network can never block a deploy
+      # here" — and it was prose: a gate that read npm and the live MCP endpoint from this window
+      # blocked 15 deploy attempts on transient stalls (2026-09-28..11-18, every one INDETERMINATE,
+      # 11 of the 12 re-runs that reached it green on the same SHA), each leaving prod behind main and
+      # paging
+      # DRIFT_INDETERMINATE. A live read belongs AFTER "Deploy via SSH", where it measures what was
+      # just shipped, or on a host cron.
+      - name: Open the network-free gate window
+        id: lane_open
+        run: |
+          L="$RUNNER_TEMP/deploy-lane-offline.ledger"
+          printf 'OPEN\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$L"
+          echo "DEPLOY_LANE_OFFLINE_LEDGER=$L" >> "$GITHUB_ENV"
+          echo "DEPLOY_LANE_OFFLINE=1" >> "$GITHUB_ENV"
+          echo "network-free gate window OPEN — ledger $L"
 
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check
@@ -764,16 +792,16 @@ jobs:
       # an MCP tool that is on the live tools/list. P16/full-3-tool-pipeline shipped an npx line for
       # a 404 scope and two bin:null stubs because no predicate in the org could express either.
       #
-      # 🛑 GATES ON THE TOKEN, NEVER THE BARE EXIT CODE. INDETERMINATE is 3, and a shell testing for
-      # "not 1" would read it as a pass — the fail-open this gate exists to prevent. A 404 is a
-      # measurement and FAILs; an unreachable npm or tools/list is INDETERMINATE and BLOCKS, because
-      # a deploy that verified nothing must not be indistinguishable from one that verified
-      # everything.
-      - name: Primitive resolution gate (fail-closed)
+      # OPS-DEPLOY-LANE-NETWORK-FREE-W1 moved its LIVE half out of this window. Here runs only the
+      # offline half: the two-way self-test, which also loads the REAL ops/primitive-registry.json
+      # (the vacuity guard, at the construction site), so a malformed or emptied registry still
+      # blocks the deploy. The live resolution against npm and tools/list is the step
+      # "Post-deploy primitive resolution gate" below — after the deploy, tools/list is the build
+      # this run shipped, not the one before it. Gated on the TOKEN, never the bare exit code.
+      - name: Primitive resolution self-test (offline, fail-closed)
         run: |
-          node scripts/check-primitive-resolution.mjs --self-test
           set +e
-          OUT="$(node scripts/check-primitive-resolution.mjs 2>&1)"
+          OUT="$(node scripts/check-primitive-resolution.mjs --self-test 2>&1)"
           set -e
           printf '%s\n' "$OUT"
           V="$(printf '%s\n' "$OUT" | grep -oE '^PRIMITIVE_RESOLUTION_VERDICT=[A-Z]+' | tail -1)"
@@ -995,6 +1023,25 @@ jobs:
         run: |
           node scripts/check-boot-readiness.mjs --self-test
           node scripts/check-boot-readiness.mjs
+
+      # OPS-DEPLOY-LANE-NETWORK-FREE-W1 — CLOSE THE WINDOW AND JUDGE IT. Fail-closed on the TOKEN.
+      # STRUCTURE: the guard is the job shell, nothing inside the window escapes it, and every step
+      # before the window is registered with the reason it is outside. LEDGER: every window step ran
+      # guarded, the guard armed, and no gate read the network. Every input is deterministic, so a
+      # red here reds EVERY run of that commit and names the script and the host — it lands on the
+      # wave that introduced the read, never as a 6% flake on everyone else's deploys.
+      # Must stay the step IMMEDIATELY before "Deploy via SSH"; the judge asserts it.
+      - name: Close the network-free gate window (fail-closed)
+        id: lane_close
+        run: |
+          node scripts/check-deploy-lane-offline.mjs --self-test
+          set +e
+          OUT="$(node scripts/check-deploy-lane-offline.mjs --judge "$DEPLOY_LANE_OFFLINE_LEDGER" 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          echo "DEPLOY_LANE_OFFLINE=0" >> "$GITHUB_ENV"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^DEPLOY_LANE_OFFLINE_VERDICT=[A-Z]+' | tail -1)"
+          test "$V" = "DEPLOY_LANE_OFFLINE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
 
       # Gated on the TOKEN, never on a raw exit code. The preceding step already aborts the job on
       # a blocking verdict — this condition is deliberately redundant, so the dependency is legible
@@ -1338,4 +1385,47 @@ jobs:
             PLUGIN_MANIFESTS_VERDICT=PASS) echo "plugin.json + mcp.json validate against the published schemas, and the declared origin serves tools" ;;
             PLUGIN_MANIFESTS_VERDICT=INDETERMINATE) echo "::warning::a published schema or the declared origin could not be read (transport, or a non-JSON response) — the gate verified nothing, so this is not a divergence signal" ;;
             *) echo "::error::a plugin manifest diverged from its published schema, its companion version, or the origin it declares — see the named reason(s) above"; exit 1 ;;
+          esac
+
+      # OPS-DEPLOY-LANE-NETWORK-FREE-W1 — the primitive-resolution gate's LIVE half, moved here from
+      # the pre-deploy window. Every row of ops/primitive-registry.json is resolved against npm and
+      # against the tools/list of the build THIS run just shipped. The pre-deploy position read the
+      # PREVIOUS build's tools/list, so a commit adding a tool together with its `live` row was
+      # blocked by its own predecessor, and a commit removing one was blamed on whoever deployed
+      # next.
+      #
+      # Gated on the TOKEN, the same contract as the post-deploy gates above. FAIL (a primitive was
+      # measured and does not resolve, or a planned/retired one now does) reds this step.
+      # INDETERMINATE (transport: it verified nothing) is a ::warning:: — the deploy has already
+      # happened and the next deploy re-measures. Measured trade: as a pre-deploy blocker it cost
+      # 15 blocked deploys in 7 weeks with zero FAILs. PRIMRES_BUDGET_MS is the gate's own knob:
+      # 15 s here against the pre-commit hook's 5 s, because CI runs that completed spent up to
+      # 4.4 s and the four budget overruns finished at 5.0–5.4 s.
+      - name: Post-deploy primitive resolution gate (fail-open on transport)
+        env:
+          PRIMRES_BUDGET_MS: '15000'
+        run: |
+          set +e
+          OUT="$(node scripts/check-primitive-resolution.mjs 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          TOKEN="$(printf '%s\n' "$OUT" | grep -oE '^PRIMITIVE_RESOLUTION_VERDICT=[A-Z]+' | tail -1)"
+          echo "primitive-resolution verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            PRIMITIVE_RESOLUTION_VERDICT=PASS) echo "every registry primitive resolves against npm and the deployed tools/list" ;;
+            PRIMITIVE_RESOLUTION_VERDICT=INDETERMINATE) echo "::warning::primitive resolution could not read npm or the deployed tools/list (transport) — it verified nothing, so this is not a divergence signal" ;;
+            *) echo "::error::a registry primitive does not resolve, or a planned/retired one now does — see the FAIL line(s) above"; exit 1 ;;
+          esac
+
+      # OPS-DEPLOY-LANE-NETWORK-FREE-W1 — build_theme's Tailwind CDN-pin leg (g), moved out of the
+      # pre-deploy window. The guard's first run caught it fetching cdn.tailwindcss.com from inside
+      # `build_theme.mjs --self-test`; it never failed that gate, so the read had been invisible.
+      # Advisory exactly as before — one THEME_CDN_PIN / THEME_CDN_DRIFT line, never a red — and a
+      # drift is now also raised as a ::warning:: annotation instead of a line buried in a log.
+      - name: Post-deploy Tailwind CDN pin check (advisory)
+        run: |
+          OUT="$(node scripts/build_theme.mjs --cdn-pin 2>&1)" || true
+          printf '%s\n' "$OUT"
+          case "$OUT" in
+            *THEME_CDN_DRIFT=*) echo "::warning::$(printf '%s\n' "$OUT" | grep -m1 'THEME_CDN_DRIFT=')" ;;
           esac

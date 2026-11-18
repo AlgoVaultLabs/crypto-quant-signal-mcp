@@ -3,7 +3,13 @@
 //
 //   node scripts/build_theme.mjs              # write: migrate un-migrated pages, inject the region
 //   node scripts/build_theme.mjs --check      # CI: 0 in sync · 1 drift/un-migrated/missing loader · 3 indeterminate
-//   node scripts/build_theme.mjs --self-test  # hermetic legs (a)-(g), two-way
+//   node scripts/build_theme.mjs --self-test  # hermetic legs (a)-(f),(h), two-way — no network
+//   node scripts/build_theme.mjs --cdn-pin    # leg (g) alone: the LIVE CDN banner check, advisory
+//
+// Leg (g) fetches cdn.tailwindcss.com, so it is NOT hermetic and left the self-test in
+// OPS-DEPLOY-LANE-NETWORK-FREE-W1: deploy.yml runs the self-test inside the network-free gate
+// window, whose guard caught this fetch on its first run. `--cdn-pin` runs it post-deploy instead,
+// still advisory — it prints a line and never fails anything.
 //
 // Renders the ONE canonical Tailwind theme region (src/lib/site-theme.ts renderThemeRegion(),
 // compiled to dist/) between `<!-- THEME:START -->` / `<!-- THEME:END -->` on every landing
@@ -633,12 +639,8 @@ export async function selfTest() {
     }
   }
 
-  // (g) CDN pin banner (never fails the gate).
-  {
-    const { TAILWIND_CDN_VERSION } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-theme.js'));
-    const res = await cdnBannerCheck(TAILWIND_CDN_VERSION);
-    console.log(`  ${res.state === 'ok' ? 'ok  ' : 'warn'}  (g) ${res.line}`);
-  }
+  // (g) CDN pin banner — LIVE, so it is not part of this hermetic self-test. It runs as
+  // `--cdn-pin` (see the CLI below), post-deploy. OPS-DEPLOY-LANE-NETWORK-FREE-W1.
 
   const failed = results.filter((r) => !r.pass);
   if (indeterminate) {
@@ -650,7 +652,19 @@ export async function selfTest() {
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+// `--cdn-pin`: leg (g) alone. Advisory by contract — it prints one THEME_CDN_PIN / THEME_CDN_DRIFT
+// line and leaves the exit code 0, exactly as it behaved inside the self-test.
+const CDN_PIN_MODE = process.argv.includes('--cdn-pin');
+if (CDN_PIN_MODE && import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  const siteTheme = path.join(REPO_ROOT, 'dist', 'lib', 'site-theme.js');
+  if (!fs.existsSync(siteTheme)) {
+    console.log('THEME_CDN_PIN=INDETERMINATE (dist/lib/site-theme.js missing — run npm run build)');
+  } else {
+    const { TAILWIND_CDN_VERSION } = require(siteTheme);
+    console.log((await cdnBannerCheck(TAILWIND_CDN_VERSION)).line);
+  }
+}
+if (!CDN_PIN_MODE && import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const check = process.argv.includes('--check');
   const wantSelfTest = process.argv.includes('--self-test');
   if (wantSelfTest) {

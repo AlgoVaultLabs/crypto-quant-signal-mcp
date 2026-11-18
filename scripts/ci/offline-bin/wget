@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# OPS-DEPLOY-LANE-NETWORK-FREE-W1 — wget refusal shim, on PATH only inside deploy.yml's network-free gate window.
+exec bash "$(dirname "$0")/../offline-net-shim.sh" wget "$@"
