@@ -15,6 +15,9 @@
  * for generator drift is to regenerate at 53ee499 — never to re-pin at HEAD, which would turn the guard
  * into a snapshot of whatever HEAD does.
  *
+ * One deliberate rule change since: EDGE-REGIME-PRETRADE-VOLATILE-W1 retired REGIME_VOLATILE, so the fixture
+ * is THIS generator through the 53ee499 engine with its VOLATILE `if` deleted (inputs and their hash unchanged).
+ *
  * Determinism: mulberry32 over 32-bit integer arithmetic; every magnitude is a uniform mantissa times an
  * exact power of ten (no Math.log / exp / pow), so each platform produces the same doubles.
  */

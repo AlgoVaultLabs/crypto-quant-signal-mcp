@@ -11,7 +11,6 @@ import {
   DEFAULT_MAX_FUNDING_BPS,
   DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME,
   REGIME_AGAINST_MIN_CONFIDENCE,
-  VOLATILE_MIN_CONFIDENCE,
   parseRules,
   activeRules,
   activeLimit,
@@ -70,7 +69,7 @@ describe('the table: ten rules, in the contract\'s order, v1\'s thresholds as th
     expect([DEFAULT_MAX_FUNDING_BPS, HIGH_CARRY_BPS]).toEqual([10, 10]);
     expect(DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME / 100).toBe(SIZE_MAX_PCT_OF_24H_VOLUME);
     expect(SIZE_MAX_PCT_OF_24H_VOLUME).toBe(0.001);
-    expect([REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE]).toEqual([60, 70]);
+    expect(REGIME_AGAINST_MIN_CONFIDENCE).toBe(60);
   });
 
   it('the declaration\'s rules.properties are the table\'s params — one source for zod, the Bazaar and the handler', () => {
@@ -133,7 +132,7 @@ describe('AC2.1 — each rule\'s boundary, from both sides', () => {
     });
   });
 
-  it('regimeCheck keeps v1\'s confidences: against the side from 60, VOLATILE from 70, either side', () => {
+  it('regimeCheck keeps v1\'s against-the-side confidence, 60 on either side; VOLATILE passes at any confidence (EDGE-REGIME-PRETRADE-VOLATILE-W1)', () => {
     const regime = (label: string, confidence: number, side: 'long' | 'short' = 'long') =>
       judge('regimeCheck', true, M({ side, regime: { label, confidence, timeframe: '4h' } }));
     expect(regime('TRENDING_DOWN', 59)).toMatchObject({ result: 'pass', value: 'TRENDING_DOWN' });
@@ -141,8 +140,13 @@ describe('AC2.1 — each rule\'s boundary, from both sides', () => {
     expect(regime('TRENDING_UP', 59, 'short').result).toBe('pass');
     expect(regime('TRENDING_UP', 60, 'short')).toMatchObject({ result: 'fail', failCode: 'REGIME_AGAINST_SIDE' });
     expect(regime('TRENDING_UP', 99).result, 'with the side is never against it').toBe('pass');
-    expect(regime('VOLATILE', 69).result).toBe('pass');
-    expect(regime('VOLATILE', 70)).toMatchObject({ result: 'fail', failCode: 'REGIME_VOLATILE', detail: 'The 4h regime is VOLATILE at confidence 70.' });
+    for (const side of ['long', 'short'] as const) {
+      for (const confidence of [69, 70, 85, 100]) {
+        expect(regime('VOLATILE', confidence, side), `${side} ${confidence}`).toMatchObject({
+          value: 'VOLATILE', result: 'pass', detail: `The 4h regime is VOLATILE at confidence ${confidence}.`, failCode: null,
+        });
+      }
+    }
   });
 
   it('a failed rule of YOURS carries the same failCode — `decide` reads the source, not the code, to tell them apart', () => {

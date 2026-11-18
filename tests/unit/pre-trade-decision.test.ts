@@ -1,8 +1,12 @@
 /**
  * DECISION-CALL-V1-W2 R3 — the `pre_trade_check` engine: exclusion order, ranking, split, every
  * threshold on both sides of its boundary, and the decision mapping.
+ *
+ * EDGE-REGIME-PRETRADE-VOLATILE-W1 (Mr.1, 2026-11-17, "Remove it"): REGIME_VOLATILE is retired. A VOLATILE
+ * regime, at any confidence, adds no reason and moves no decision; REGIME_AGAINST_SIDE is unchanged.
  */
 import { describe, it, expect } from 'vitest';
+import * as engine from '../../src/lib/pre-trade-decision.js';
 import {
   rankVenues,
   decide,
@@ -15,7 +19,6 @@ import {
   FUNDING_SOON_MINUTES,
   MIN_TIMING_SAVING_BPS,
   REGIME_AGAINST_MIN_CONFIDENCE,
-  VOLATILE_MIN_CONFIDENCE,
   SIZE_MAX_PCT_OF_24H_VOLUME,
   type VenueMarketInput,
   type RankVenuesInput,
@@ -67,14 +70,18 @@ describe('constants — the versioned rule', () => {
   it('rule version 2 (DECISION-CALL-V2-W1: your rules) with v1\'s thresholds unchanged', () => {
     expect(PRE_TRADE_RULE_VERSION).toBe(2);
     expect([MIN_VENUE_LIQUIDITY_USD, WIDE_SPREAD_BPS, HIGH_CARRY_BPS, FUNDING_SOON_MINUTES, MIN_TIMING_SAVING_BPS,
-      REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE, SIZE_MAX_PCT_OF_24H_VOLUME])
-      .toEqual([1e6, 50, 10, 30, 1, 60, 70, 0.001]);
+      REGIME_AGAINST_MIN_CONFIDENCE, SIZE_MAX_PCT_OF_24H_VOLUME])
+      .toEqual([1e6, 50, 10, 30, 1, 60, 0.001]);
+  });
+  it('REGIME_VOLATILE is retired, not reused: no reason code, and the engine exports no VOLATILE threshold', () => {
+    expect(Object.keys(PRE_TRADE_REASONS)).not.toContain('REGIME_VOLATILE');
+    expect(Object.keys(engine)).not.toContain('VOLATILE_MIN_CONFIDENCE');
   });
   it('exclusion order and reason severities are the contract\'s (v2 adds five codes and v2.1 one, each at its contract place)', () => {
     expect([...VENUE_EXCLUSIONS]).toEqual(['feed_unavailable', 'not_listed', 'thin_liquidity', 'wide_book', 'funding_unavailable', 'fee_unknown', 'volume_unavailable']);
     expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'block').map(([c]) => c)).toEqual(['NO_TRADABLE_VENUE', 'YOUR_RULE_FAILED']);
     expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'adjust').map(([c]) => c)).toEqual(
-      ['SIZE_ABOVE_VENUE_LIMIT', 'SIZE_ABOVE_TOTAL_CAPACITY', 'FUNDING_COST_HIGH', 'FUNDING_DUE_SOON', 'REGIME_AGAINST_SIDE', 'REGIME_VOLATILE',
+      ['SIZE_ABOVE_VENUE_LIMIT', 'SIZE_ABOVE_TOTAL_CAPACITY', 'FUNDING_COST_HIGH', 'FUNDING_DUE_SOON', 'REGIME_AGAINST_SIDE',
         'LIQUIDATION_BEFORE_STOP', 'YOUR_RULE_NOT_CHECKED', 'SAVED_RULES_UNAVAILABLE', 'UNDERLYING_CLOSED']);
     expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'info').map(([c]) => c)).toEqual(
       ['REGIME_UNAVAILABLE', 'VENUES_UNAVAILABLE', 'NEXT_FUNDING_UNKNOWN', 'FUNDING_INCOME', 'FEE_TABLE_STALE', 'VOLATILITY_UNAVAILABLE', 'LIQUIDATION_UNAVAILABLE']);
@@ -245,9 +252,32 @@ describe('decide — every threshold, both sides of the boundary', () => {
       expect(at('TRENDING_UP', 99)).toEqual([]);
       expect(at('TRENDING_DOWN', 99, 'short')).toEqual(['FUNDING_INCOME']);
     });
-    it(`REGIME_VOLATILE from ${VOLATILE_MIN_CONFIDENCE}`, () => {
-      expect(at('VOLATILE', 70)).toEqual(['REGIME_VOLATILE']);
-      expect(at('VOLATILE', 69)).toEqual([]);
+    describe('VOLATILE is retired (EDGE-REGIME-PRETRADE-VOLATILE-W1): no reason, and the decision does not move', () => {
+      const read = (label: string, confidence: number, side: 'long' | 'short', over: Partial<DecideInput> = {}) =>
+        judge([venue()], { side, regime: { label, confidence, timeframe: '4h', asOfMs: NOW, sourceExchange: 'BINANCE' } satisfies RegimeRead, ...over });
+      for (const side of ['long', 'short'] as const) {
+        for (const confidence of [70, 85, 100]) {
+          it(`${side}, VOLATILE at ${confidence}: no REGIME_VOLATILE, and the reasons and decision RANGING at ${confidence} gives`, () => {
+            const d = read('VOLATILE', confidence, side);
+            const same = read('RANGING', confidence, side);
+            expect(codes(d)).not.toContain('REGIME_VOLATILE');
+            expect(d.reasons).toEqual(same.reasons);
+            expect(d.decision).toBe(same.decision);
+            expect(d.decision, 'VOLATILE was the only adjust it could have raised').toBe('GO');
+          });
+          it(`${side}, VOLATILE at ${confidence} beside another adjust: CAUTION from that adjust alone`, () => {
+            const d = read('VOLATILE', confidence, side, { underlyingClosed: true });
+            expect(codes(d).filter((c) => PRE_TRADE_REASONS[c as keyof typeof PRE_TRADE_REASONS] === 'adjust')).toEqual(['UNDERLYING_CLOSED']);
+            expect(d.decision).toBe('CAUTION');
+          });
+        }
+      }
+      it(`a regime against the side at ${REGIME_AGAINST_MIN_CONFIDENCE} still gives REGIME_AGAINST_SIDE and CAUTION, long and short`, () => {
+        const long = read('TRENDING_DOWN', 60, 'long');
+        const short = read('TRENDING_UP', 60, 'short');
+        expect([codes(long), long.decision]).toEqual([['REGIME_AGAINST_SIDE'], 'CAUTION']);
+        expect([codes(short), short.decision]).toEqual([['REGIME_AGAINST_SIDE', 'FUNDING_INCOME'], 'CAUTION']);
+      });
     });
     it('REGIME_UNAVAILABLE is info only: GO stays GO', () => {
       const d = judge([venue()], { regime: null });

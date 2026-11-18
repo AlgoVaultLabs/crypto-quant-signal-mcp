@@ -63,8 +63,8 @@ export const HIGH_CARRY_BPS = DEFAULT_MAX_FUNDING_BPS;
 export const FUNDING_SOON_MINUTES = 30;
 /** …when entering after it saves at least this many bps. */
 export const MIN_TIMING_SAVING_BPS = 1;
-/** A regime against the side counts from these confidences — the `regimeCheck` default, defined in the rules table. */
-export { REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE } from './pre-trade-rules.js';
+/** A regime against the side counts from this confidence — the `regimeCheck` default, defined in the rules table. */
+export { REGIME_AGAINST_MIN_CONFIDENCE } from './pre-trade-rules.js';
 /** A venue's size limit: this FRACTION of its 24h USD volume (0.001 = 0.1%) — the `maxSizePctOf24hVolume` default. */
 export const SIZE_MAX_PCT_OF_24H_VOLUME = DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME / 100;
 
@@ -92,7 +92,6 @@ export const PRE_TRADE_REASONS = {
   FUNDING_COST_HIGH: 'adjust',
   FUNDING_DUE_SOON: 'adjust',
   REGIME_AGAINST_SIDE: 'adjust',
-  REGIME_VOLATILE: 'adjust',
   LIQUIDATION_BEFORE_STOP: 'adjust',
   YOUR_RULE_NOT_CHECKED: 'adjust',
   SAVED_RULES_UNAVAILABLE: 'adjust',
@@ -520,10 +519,6 @@ export function decide(input: DecideInput): DecideResult {
   if (regime && defaultFailed('REGIME_AGAINST_SIDE')) {
     reasons.push(reason('REGIME_AGAINST_SIDE',
       `The ${regime.timeframe} market regime is ${regime.label} (confidence ${regime.confidence}), against a ${side}.`));
-  }
-  if (regime && defaultFailed('REGIME_VOLATILE')) {
-    reasons.push(reason('REGIME_VOLATILE',
-      `The ${regime.timeframe} market regime is VOLATILE (confidence ${regime.confidence}); expect wide swings.`));
   }
   const liqFailed = defaultFailed('LIQUIDATION_BEFORE_STOP');
   if (best && liqFailed) {

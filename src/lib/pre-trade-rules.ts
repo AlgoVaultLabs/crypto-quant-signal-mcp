@@ -32,7 +32,11 @@ export const DEFAULT_MAX_FUNDING_BPS = 10;
 export const DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME = 0.1;
 /** A regime against the side fails `regimeCheck` from this confidence. */
 export const REGIME_AGAINST_MIN_CONFIDENCE = 60;
-/** VOLATILE fails `regimeCheck` from this confidence. */
+/**
+ * RETIRED as a rule (EDGE-REGIME-PRETRADE-VOLATILE-W1, Mr.1 2026-11-17): no rule reads it, and a VOLATILE regime
+ * passes `regimeCheck` at any confidence. Kept only because the regime-diag study pins this text as its
+ * registered A2 dial (`tests/unit/regime-diag-replay.test.ts`); never re-wire it into a rule.
+ */
 export const VOLATILE_MIN_CONFIDENCE = 70;
 
 // ── The table ───────────────────────────────────────────────────────────────────────────────────
@@ -43,7 +47,7 @@ type Comparator =
   | 'min'            // fails strictly below
   | 'capacity'       // fails when the venue's capacity at the limit is below the order (v1's size comparison)
   | 'liq_before_stop' // fails when liquidation is at or inside the stop
-  | 'regime';        // fails on a regime against the side, or VOLATILE, at v1's confidences
+  | 'regime';        // fails on a regime against the side, at v1's confidence (VOLATILE never fails it)
 
 /** A caller input a rule needs before it can be checked (the detail tells the caller to send it). */
 type CallerInput = 'leverage' | 'stop_pct' | 'equity_usd';
@@ -210,7 +214,7 @@ export interface PreTradeRuleMetrics {
 }
 
 /** The reason a FAILED default rule emits — v1's code where v1 had the check. */
-export type PreTradeDefaultFailCode = 'SIZE_ABOVE_VENUE_LIMIT' | 'FUNDING_COST_HIGH' | 'REGIME_AGAINST_SIDE' | 'REGIME_VOLATILE' | 'LIQUIDATION_BEFORE_STOP';
+export type PreTradeDefaultFailCode = 'SIZE_ABOVE_VENUE_LIMIT' | 'FUNDING_COST_HIGH' | 'REGIME_AGAINST_SIDE' | 'LIQUIDATION_BEFORE_STOP';
 
 export interface PreTradeRuleResult {
   id: PreTradeRuleId;
@@ -299,9 +303,6 @@ function evaluateOne(row: PreTradeRuleRow, rule: PreTradeActiveRule, m: PreTrade
       const against = (m.side === 'long' && r.label === 'TRENDING_DOWN') || (m.side === 'short' && r.label === 'TRENDING_UP');
       if (against && r.confidence >= REGIME_AGAINST_MIN_CONFIDENCE) {
         return judged(r.label, true, `The ${r.timeframe} regime is ${r.label} at confidence ${r.confidence}, against a ${m.side}.`, 'REGIME_AGAINST_SIDE');
-      }
-      if (r.label === 'VOLATILE' && r.confidence >= VOLATILE_MIN_CONFIDENCE) {
-        return judged(r.label, true, `The ${r.timeframe} regime is VOLATILE at confidence ${r.confidence}.`, 'REGIME_VOLATILE');
       }
       return judged(r.label, false, `The ${r.timeframe} regime is ${r.label} at confidence ${r.confidence}.`);
     }
