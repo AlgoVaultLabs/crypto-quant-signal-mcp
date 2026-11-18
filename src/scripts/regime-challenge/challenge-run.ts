@@ -3,7 +3,11 @@
 //   npx tsx src/scripts/regime-challenge/challenge-run.ts --prescore   --census F --cache C --overlay O --manifest M --out DIR
 //   npx tsx src/scripts/regime-challenge/challenge-run.ts --init-store --census F --cache C --overlay O --store S
 //   npx tsx src/scripts/regime-challenge/challenge-run.ts --judge      --census F --cache C --overlay O --store S --prescore-result FILE --out DIR
+//   npx tsx src/scripts/regime-challenge/challenge-run.ts --prescore --round r2 --census F --cache C --overlay O --manifest M --out DIR
 //
+// `--round r2` (EDGE-REGIME-CHALLENGE-R2-W1) is round 2's pre-score of C4 and C5 (challenge-r2.ts): the same read of
+// 2024-01 … 2025-12 under round 2's candidates, seed label and names. Round 2 has no judge here yet. No pre-score of
+// either round, and no judge but round 2's sealed one, reads an outcome of round 2's judge window 2020-01 … 2023-12.
 // `--prescore` reads 2024-01 … 2025-12 and no other month: in-sample, internal, selection only. It needs no
 // registration and claims no seal; `M` is T3's archive-store manifest, read and never written.
 // `--judge` is the one read of 2026-01 … 2026-10: behind the pinned guard (`checkDiagGuard`, asked of this round's
@@ -34,10 +38,11 @@ import { PARITY_FIXTURE, checkCoreParity } from '../regime-diag/parity.js';
 import { floorClusters, seedsFor } from '../regime-diag/prims.js';
 import { archivesRefusal, landedSource, linkRefusal, real, recordLoader, registrationOnMain, skeletonRefusal, within, writableRefusal, type Opened } from './challenge-guard.js';
 import {
-  CANDIDATES, CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE, PRESCORE_PIN, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, coinDaysOf, judgeStudyRecord, windowRefusal,
-  type Candidate, type ChallengeRecord, type Dial,
+  CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE_PIN, R1_ROUND, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, judgeStudyRecord, windowRefusal,
+  type Candidate, type ChallengeRecord, type Dial, type PrescoreRound,
 } from './challenge-spec.js';
-import { challengerColumns, checkChallengerParity } from './challenger-replay.js';
+import { R2_JUDGE_OUTCOMES, R2_ROUND } from './challenge-r2.js';
+import { armParity, challengerColumns, checkChallengerParity } from './challenger-replay.js';
 import {
   a4Difference, a4Guard, a5Guard, a5Ratio, armSums, coverageGuard, coverageRatio, deltaDelta1, holm, pairOf, powerAt, sameDial, supportOf,
   type ArmSums, type ArmSupport, type GuardState, type Pair, type PairedReading,
@@ -45,7 +50,6 @@ import {
 
 const REPO = path.resolve(__dirname, '../../..');
 const TOKEN = 'REGIME_CHALLENGE_RUN_VERDICT';
-const PRESCORE_LOG = 'regime-challenge-r1-prescore.log';
 
 export interface Counts { boot: number; shuffle: number }
 /**
@@ -94,6 +98,10 @@ export function storeRefusal(store: string, home: string | undefined, made: bool
 const judgeWindowRefusal = (rec: ChallengeRecord): string | null => (rec.outcomes.first <= JUDGE.outcomes.last && JUDGE.outcomes.first <= rec.outcomes.last
   ? `the record's outcome months ${rec.outcomes.first} … ${rec.outcomes.last} overlap the judge window ${JUDGE.outcomes.first} … ${JUDGE.outcomes.last}: the pre-score never reads it`
   : null);
+/** No record of this module reaches round 2's judge window: its one read is round 2's sealed judge's (arc lesson 10). */
+const r2WindowRefusal = (rec: ChallengeRecord): string | null => (rec.outcomes.first <= R2_JUDGE_OUTCOMES.last && R2_JUDGE_OUTCOMES.first <= rec.outcomes.last
+  ? `the record's outcome months ${rec.outcomes.first} … ${rec.outcomes.last} overlap round 2's judge window ${R2_JUDGE_OUTCOMES.first} … ${R2_JUDGE_OUTCOMES.last}: only round 2's sealed judge reads it`
+  : null);
 
 // ── before any outcome: the frame, its checks, the challenger columns, the support of each pair ────────────────
 
@@ -110,6 +118,12 @@ function prepare(rec: ChallengeRecord, census: Census, load: (pos: number) => Lo
   log('skeleton: equal');
   const win = windowRefusal(rec, f);
   if (win) return { stop: 'REFUSED', leg: 'window', reason: win };
+  // round 2's arms: C4's copy is the served confidence on every strong row of this frame, before any outcome
+  if (cands.some((c) => c.arm)) {
+    const ap = armParity(f);
+    if (!ap.ok) return { stop: 'REFUSED', leg: 'parity', reason: ap.reason };
+    log(`arms: parity ok on ${ap.calls} strong rows`);
+  }
   const dials: Dial[] = [];
   for (const c of cands) if (c.dial && !dials.some((d) => sameDial(d, c.dial as Dial))) dials.push(c.dial);
   const cols = dials.length ? challengerColumns(f, load, dials) : null;
@@ -122,11 +136,11 @@ function prepare(rec: ChallengeRecord, census: Census, load: (pos: number) => Lo
 // ── the outcomes: every paired reading of every identifiable pair ───────────────────────────────────────────────
 
 interface CandRead { dd: PairedReading | null; a4: PairedReading | null; a5: PairedReading | null }
-function readPairs(rec: ChallengeRecord, P: Prepared, load: (pos: number) => Loaded, counts: Counts, arms: boolean, log: (l: string) => void): Map<string, CandRead> {
+function readPairs(rec: ChallengeRecord, seedLabel: string, P: Prepared, load: (pos: number) => Loaded, counts: Counts, arms: boolean, log: (l: string) => void): Map<string, CandRead> {
   // the outcomes are formed only when a pair is identifiable: a round with none reads no path at all
   let fo: Frame | null = null;
   const names = [...P.items.flatMap((it) => ['ddelta1|bootstrap', 'a4|bootstrap', 'a5|bootstrap', 'a5|shuffle'].map((k) => `${rec.id}|${it.cand.id}|${k}`)), `${rec.id}|served|a5|shuffle`];
-  const values = seedsFor(CHALLENGE_SEED, names);
+  const values = seedsFor(seedLabel, names);
   const seed = (k: string): number => values[names.indexOf(`${rec.id}|${k}`)];
   // the served arm's per-bar sums depend on its sequences alone: one pass for the pairs that share them
   const servedArm = new Map<string, ArmSums>();
@@ -138,7 +152,7 @@ function readPairs(rec: ChallengeRecord, P: Prepared, load: (pos: number) => Loa
     const o = (k: string): { B: number; alpha: number; seed: number; arms: boolean } => ({ B: counts.boot, alpha: ALPHA, seed: seed(`${id}|${k}|bootstrap`), arms });
     const dd = deltaDelta1(fo, P.ctx, it.pair, o('ddelta1'));
     const g4 = a4Difference(fo, P.ctx, it.pair, o('a4'));
-    const kind = it.cand.dial ? 'rows' : 'timeframe';
+    const kind = it.cand.dial || it.cand.arm ? 'rows' : 'timeframe';
     let served = servedArm.get(kind);
     if (!served) { served = armSums(fo.census, it.pair.servSeqs, counts.shuffle, seed('served|a5|shuffle')); servedArm.set(kind, served); }
     const g5 = a5Ratio(fo.census, id, armSums(fo.census, it.pair.chalSeqs, counts.shuffle, seed(`${id}|a5|shuffle`)), served, o('a5'));
@@ -198,6 +212,8 @@ export interface PrescoreInput {
   /** Repo-relative path of the registration whose Tables 2a–2e the frame is checked against (T3's). */
   tables?: string;
   study?: ChallengeStudy;
+  /** The round whose pre-score this is: round 1's when absent. */
+  round?: PrescoreRound;
 }
 
 /**
@@ -208,15 +224,16 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-challenge: ${l}\n`); });
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   if (within(input.out, input.repo)) return stop('REFUSED', 'the output directory must sit outside the repository');
-  // the one-shot window is the judge's: a record that reaches it is refused before a directory, a log line or a frame
-  const rec = input.study?.rec ?? PRESCORE;
-  const reaches = judgeWindowRefusal(rec);
+  const round = input.round ?? R1_ROUND, PRE = round.rec;
+  // the one-shot windows are the judges': a record that reaches one is refused before a directory, a log line or a frame
+  const rec = input.study?.rec ?? PRE;
+  const reaches = judgeWindowRefusal(rec) ?? r2WindowRefusal(rec);
   if (reaches) return stop('REFUSED', reaches);
-  const names = [PRESCORE_LOG, PRESCORE.file, `${PRESCORE.file}.tmp`];
+  const names = [round.log, PRE.file, `${PRE.file}.tmp`];
   const linked = linkRefusal(input.out, 'the output directory', names) ?? writableRefusal(input.out, 'the output directory', names);
   if (linked) return stop('REFUSED', linked);
   fs.mkdirSync(input.out, { recursive: true });
-  const record = (entry: Record<string, unknown>): void => { fs.appendFileSync(path.join(input.out, PRESCORE_LOG), `${JSON.stringify({ at: new Date().toISOString(), wave: PRESCORE.wave, record: PRESCORE.id, ...entry })}\n`); };
+  const record = (entry: Record<string, unknown>): void => { fs.appendFileSync(path.join(input.out, round.log), `${JSON.stringify({ at: new Date().toISOString(), wave: PRE.wave, record: PRE.id, ...entry })}\n`); };
   const refuse = (leg: string, verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => { record({ ok: false, leg, reason }); return stop(verdict, reason); };
   if (MUTATE !== '') return refuse('mutation', 'REFUSED', `REGIME_DIAG_MUTATE is set (${MUTATE}): a deliberately broken harness computes no outcome`);
   if (!input.study && !isChallengeSource(__filename, input.repo)) return refuse('source', 'REFUSED', 'the pre-score is read by the landed sources of its repository (tsx src/scripts/regime-challenge/challenge-run.ts), never a compiled or copied harness');
@@ -244,16 +261,16 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const opened: Opened = new Map();
   const load = input.study?.load ?? recordLoader(rec, input.archives, census.panel, opened);
   const F = input.study?.floorClusters ?? floorClusters();
-  const P = prepare(rec, census, load, CANDIDATES, fs.readFileSync(tablesFile, 'utf8'), F, log);
+  const P = prepare(rec, census, load, round.candidates, fs.readFileSync(tablesFile, 'utf8'), F, log);
   if (isStop(P)) return refuse(P.leg, P.stop, P.reason);
   record({ ok: true, leg: 'frame', entries: P.f.nE, months_opened: [...opened.keys()].sort() });
 
   const counts = countsOf(input.study);
   record({ ok: true, leg: 'outcomes', outcome_read_at: new Date().toISOString() });
   log('outcomes: pre-score');
-  const reads = readPairs(rec, P, load, counts, true, log);
+  const reads = readPairs(rec, round.seed, P, load, counts, true, log);
 
-  const scale = Math.sqrt(coinDaysOf(PRESCORE) / coinDaysOf(JUDGE));
+  const scale = Math.sqrt(round.coinDays.prescore / round.coinDays.judge);
   const rows: PrescoreRow[] = [];
   const candidates: Record<string, unknown> = {};
   for (const it of P.items) {
@@ -269,14 +286,14 @@ export function prescoreRun(input: PrescoreInput): RunResult {
     };
   }
   const selection = selectionOf(rows);
-  const line = `${PRESCORE.line}=${Object.entries(selection.verdicts).map(([c, v]) => `${c}:${v}`).join(';')}`;
-  const file = path.join(input.out, PRESCORE.file);
+  const line = `${PRE.line}=${Object.entries(selection.verdicts).map(([c, v]) => `${c}:${v}`).join(';')}`;
+  const file = path.join(input.out, PRE.file);
   const months = [...opened.keys()].sort();
   const text = jsonText({
-    wave: PRESCORE.wave, kind: 'prescore', study: input.study ? 'injected' : 'registered', record: rec.id, seed: CHALLENGE_SEED, entry_seed: rec.entrySeed,
+    wave: PRE.wave, kind: 'prescore', study: input.study ? 'injected' : 'registered', record: rec.id, seed: round.seed, entry_seed: rec.entrySeed,
     source: { commit: source.commit }, pins: want, floor_clusters: F, alpha: ALPHA, counts,
     window: { outcomes: rec.outcomes, archives: rec.archives }, months_opened: months, entries: P.f.nE, challenger_calls: P.calls,
-    coin_days: { prescore: coinDaysOf(PRESCORE), judge: coinDaysOf(JUDGE), scale },
+    coin_days: { prescore: round.coinDays.prescore, judge: round.coinDays.judge, scale },
     line, selection, candidates, drops: P.f.drops,
   });
   writeAtomic(file, text);
@@ -371,6 +388,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   const log = input.study?.log ?? ((l: string): void => { process.stderr.write(`regime-challenge: ${l}\n`); });
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   const { store, repo } = input;
+  // round 2's window is round 2's sealed judge's: a record that reaches it is refused before any line or write
+  const sealed = r2WindowRefusal(input.study?.rec ?? JUDGE);
+  if (sealed) return stop('REFUSED', sealed);
   if (within(store, repo)) return stop('REFUSED', 'the store must sit outside the repository');
   // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
   const home = input.study ? input.study.sealHome : sealHome();
@@ -443,7 +463,7 @@ export function judgeRun(input: JudgeInput): RunResult {
   logGuard(store, JUDGE.wave, { mode: 'holdout', ok: true, leg: 'outcomes', outcome_read_at });
   log('outcomes: judge');
   const counts = countsOf(input.study);
-  const reads = readPairs(rec, P, load, counts, false, log);
+  const reads = readPairs(rec, CHALLENGE_SEED, P, load, counts, false, log);
 
   // Holm across the challengers judged: one that could not be read stays in the family and clears nothing
   const family = holm(P.items.map((it) => reads.get(it.cand.id)?.dd?.reps ?? []), ALPHA);
@@ -489,7 +509,10 @@ function main(): void {
   const val = (name: string): string | null => { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--') ? path.resolve(argv[i + 1]) : null; };
   const censusFile = val('--census'), cache = val('--cache'), overlay = val('--overlay'), store = val('--store'), out = val('--out'), manifest = val('--manifest'), prescore = val('--prescore-result');
   const mode = modes[0];
-  const usage = 'usage: challenge-run.ts --prescore --census F --cache C --overlay O --manifest M --out DIR | --init-store --census F --cache C --overlay O --store S | --judge --census F --cache C --overlay O --store S --prescore-result FILE --out DIR';
+  const r = argv.indexOf('--round'), roundArg = r >= 0 ? argv[r + 1] ?? '' : 'r1';
+  if (roundArg !== 'r1' && roundArg !== 'r2') return finish('INDETERMINATE', '--round is r1 or r2');
+  if (roundArg === 'r2' && modes.length === 1 && mode !== '--prescore') return finish('INDETERMINATE', 'round 2 has no judge yet: --round r2 takes --prescore only');
+  const usage = 'usage: challenge-run.ts --prescore [--round r1|r2] --census F --cache C --overlay O --manifest M --out DIR | --init-store --census F --cache C --overlay O --store S | --judge --census F --cache C --overlay O --store S --prescore-result FILE --out DIR';
   if (modes.length !== 1 || !censusFile || !cache || !overlay || (mode === '--prescore' ? !manifest || !out : !store) || (mode === '--judge' && (!out || !prescore))) return finish('INDETERMINATE', usage);
   if (!fs.existsSync(censusFile)) return finish('INDETERMINATE', 'the census file is absent');
   const archives: ArchiveStore = { cache, overlay };
@@ -501,12 +524,12 @@ function main(): void {
     process.stdout.write(`| \`${ARCHIVES_PIN}\` | \`${made.archivesSha256}\` |\n| \`store:manifest-${VENUE}.json\` | \`${made.guardStoreSha256}\` |\narchive_files=${made.archiveFiles}\n`);
     return finish('PASS');
   }
-  const r = mode === '--prescore'
-    ? prescoreRun({ repo: REPO, censusFile, archives, manifest: manifest as string, out: out as string })
+  const res = mode === '--prescore'
+    ? prescoreRun({ repo: REPO, censusFile, archives, manifest: manifest as string, out: out as string, round: roundArg === 'r2' ? R2_ROUND : R1_ROUND })
     : judgeRun({ repo: REPO, store: store as string, censusFile, archives, prescore: prescore as string, out: out as string });
-  if (r.line) process.stdout.write(`${r.line}\n`);
-  if (r.file) process.stdout.write(`result=${r.file}\n`);
-  finish(r.verdict, r.reason);
+  if (res.line) process.stdout.write(`${res.line}\n`);
+  if (res.file) process.stdout.write(`result=${res.file}\n`);
+  finish(res.verdict, res.reason);
 }
 
 if (require.main === module) {
