@@ -258,7 +258,7 @@ export const PRE_TRADE_RULE_PARAM_DESC: Readonly<Record<PreTradeRuleId, string>>
   maxAccuracyNeededPct: 'Highest direction accuracy, in percent, needed to break even.',
   maxFundingBps: 'Highest funding over the hold, in bps. Default 10.',
   maxSizePctOf24hVolume: "Largest order as a percent of a venue's 24h volume. Default 0.1.",
-  regimeCheck: 'Flag a regime against your side or a volatile one. Default on.',
+  regimeCheck: 'Flag a regime against your side. Default on.',
 });
 
 // ── GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the `plain` metadata projection ──────────────────────────

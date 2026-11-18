@@ -596,7 +596,7 @@
               },
               "regimeCheck": {
                 "type": "boolean",
-                "description": "Flag a regime against your side or a volatile one. Default on."
+                "description": "Flag a regime against your side. Default on."
               }
             },
             "additionalProperties": false,

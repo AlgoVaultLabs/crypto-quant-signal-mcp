@@ -167,7 +167,7 @@ describe('success — one decision, one unit', () => {
     expect(r.regime).toEqual({ label: 'RANGING', confidence: 50, timeframe: '4h', as_of: new Date(NOW - H).toISOString(), source_exchange: 'BINANCE' });
     expect(r.timing).toEqual({ exchange: 'BINANCE', next_funding_at: new Date(NOW + 4 * H).toISOString(), minutes_to_next_funding: 240, side_pays_next_funding: true, saving_bps_if_entered_after_next_funding: 0 });
     expect(r.underlying_session).toBe('ALWAYS_OPEN');
-    expect([r.rule_version, r.as_of, r.fee_table_verified_at]).toEqual([2, new Date(NOW).toISOString(), '2026-10-24']);
+    expect([r.rule_version, r.as_of, r.fee_table_verified_at]).toEqual([3, new Date(NOW).toISOString(), '2026-10-24']);
     expect(r.assumptions).toMatchObject({ funding: 'current rate held for the whole hold', fees: 'base-tier taker, no discounts; per-pair exceptions not modelled', size_guard_pct_of_24h_volume: 0.1 });
     expect(r._algovault).toMatchObject({ tool: 'pre_trade_check', exchange: 'BINANCE', venue_status: 'promoted', auth: expect.any(Object) });
     expect(r._algovault.quota).toBeDefined();
@@ -457,7 +457,7 @@ describe('v2 CH1 — a v1-shape call is a v1 call, plus the figures it can compu
     expect(r.decision).toBe('GO');
     expect(r.reasons).toEqual([]);
     expect(r.best_venue).toEqual({ exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 10_000_000 });
-    expect(r.rule_version).toBe(2);
+    expect(r.rule_version).toBe(3);
     expect(r.inputs).toEqual({ leverage: null, stop_pct: null, target_pct: null, equity_usd: null, order_type: 'market' });
     expect(r.calc).toEqual({
       sigma_1h_pct: 0.6267, sigma_hold_pct: 1.7725, expected_move_pct: 1.4142, round_trip_bps: 10, accuracy_needed_pct: 53.54,

@@ -359,7 +359,7 @@ describe('AC3.1 — one row per served, billed call, through the real pipeline',
     expect(inserts()).toHaveLength(1);
     const params = inserts()[0][1] as unknown[];
     expect(params.slice(0, 18)).toEqual([
-      new Date(NOW).toISOString(), 2, 'mcp', callerRef({ licenseKey: lic.key }), 'BTC', 'long', 10_000, 8, '4h', 'market',
+      new Date(NOW).toISOString(), 3, 'mcp', callerRef({ licenseKey: lic.key }), 'BTC', 'long', 10_000, 8, '4h', 'market',
       null, null, null, r.decision, 'BINANCE', 0.6267, null, 100_000,
     ]);
     expect(JSON.parse(params[18] as string)).toEqual(r.rules);

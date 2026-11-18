@@ -67,8 +67,8 @@ function judge(venues: VenueMarketInput[], over: Partial<DecideInput> & { rankOv
 const codes = (d: { reasons: { code: string }[] }) => d.reasons.map((r) => r.code);
 
 describe('constants — the versioned rule', () => {
-  it('rule version 2 (DECISION-CALL-V2-W1: your rules) with v1\'s thresholds unchanged', () => {
-    expect(PRE_TRADE_RULE_VERSION).toBe(2);
+  it('rule version 3 (2: DECISION-CALL-V2-W1 your rules; 3: REGIME_VOLATILE retired) with v1\'s other thresholds unchanged', () => {
+    expect(PRE_TRADE_RULE_VERSION).toBe(3);
     expect([MIN_VENUE_LIQUIDITY_USD, WIDE_SPREAD_BPS, HIGH_CARRY_BPS, FUNDING_SOON_MINUTES, MIN_TIMING_SAVING_BPS,
       REGIME_AGAINST_MIN_CONFIDENCE, SIZE_MAX_PCT_OF_24H_VOLUME])
       .toEqual([1e6, 50, 10, 30, 1, 60, 0.001]);

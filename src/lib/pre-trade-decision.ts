@@ -51,8 +51,11 @@ export type { PreTradeSide };
 
 // ── The rule (a change to any value here is a new PRE_TRADE_RULE_VERSION) ─────────────────────────
 
-/** 2: the caller's own rules, liquidation and break-even figures (DECISION-CALL-V2-W1). */
-export const PRE_TRADE_RULE_VERSION = 2;
+/**
+ * 2: the caller's own rules, liquidation and break-even figures (DECISION-CALL-V2-W1).
+ * 3: REGIME_VOLATILE retired — a VOLATILE regime no longer fails `regimeCheck` (EDGE-REGIME-PRETRADE-VOLATILE-W1).
+ */
+export const PRE_TRADE_RULE_VERSION = 3;
 /** A venue whose liquidity (OI, or 24h volume where the venue has no bulk OI) is below this is excluded. */
 export const MIN_VENUE_LIQUIDITY_USD = 1_000_000;
 /** A top-of-book spread above this many bps excludes the venue (only where a book is quoted). */

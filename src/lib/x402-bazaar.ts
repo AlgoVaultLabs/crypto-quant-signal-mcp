@@ -394,7 +394,8 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   // DECISION-CALL-V1-W2 AC5's measured live sample (BTC long $10,000, defaults) — no invented values.
   // DECISION-CALL-V2-W1: the description is v2's (`Prompt/pre-trade-check-contract-v2.md` § Copy, verbatim),
   // `rules` projects as a closed object, and the sample carries rule_version 2 — a call with no v2 input keeps
-  // every other v1 value.
+  // every other v1 value. EDGE-REGIME-PRETRADE-VOLATILE-W1: rule_version 3 (REGIME_VOLATILE retired); the
+  // sample's TRENDING_UP regime, GO and empty reasons are what rule 3 gives the same inputs.
   pre_trade_check: {
     toolName: 'pre_trade_check',
     description:
@@ -412,7 +413,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         reasons: [],
         best_venue: { exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 11661490.66 },
         regime: { label: 'TRENDING_UP', confidence: 46, timeframe: '4h', source_exchange: 'BINANCE' },
-        rule_version: 2,
+        rule_version: 3,
       },
     },
   },
