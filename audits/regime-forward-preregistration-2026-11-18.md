@@ -197,9 +197,9 @@ sha256 of the file bytes at the commit this file lands on. `pinsOf` (`src/script
 | `src/scripts/regime-forward/snapshot.ts` | `44a71a0618ab447e98cd84c96625b5402b2ef5ada90b462ccdc2c030cfca5dca` | the host record, the files' sha256 and the row filters of §3, with their drop names |
 | `src/scripts/regime-forward/venue-bars.ts` | `423368db9106b30cef6c7f9b4a17cf79e7c21dad709342fb24b18dd13614aad8` | the outcome source of §3: key A's span, the requests and their pacing, the reply classes, the network refusal, the guarded source and the venue grid |
 | `src/scripts/regime-forward/bar-store.ts` | `856b2b7d5f3afc035a5e2fb5155e547ddbbeadcfa2470f9c5d175b04444d6486` | the bar store of §1: every bar fetched before the seal, a stopped venue, the read-back and the manifest |
-| `src/scripts/regime-forward/served-fingerprint.ts` | `5110ed689bd9f6251ad8f5473c32a71fe12ac470da512e8bac9540654f9571af` | the served code's check (below): its first pins, the printer and the source fingerprint |
+| `src/scripts/regime-forward/served-fingerprint.ts` | `163aaa03a22353c2899b204e7535c70fd13c8c3761a79828a2b8d6ca0ef75519` | the served code's check (below): its first pins, the printer and the source fingerprint |
 | `src/scripts/regime-forward/score.ts` | `b2694b1d5bab7b1392c91cdb07fe543403b06a2626cbcca68a6e0f1a189a7006` | the served series, A4's rows, the run truncation of §4.3, the window lag and the calls into T3's statistics |
-| `src/scripts/regime-forward/forward-guard.ts` | `6dfee36fcac5dea6ad02a087f62d3d7881dadac8ad806e8c4d0277f81b2562aa` | the legs of §1: the clock, the levers, the registration and its pins, the census, the home, the run log, the rehearsal and the seal |
+| `src/scripts/regime-forward/forward-guard.ts` | `89b1fbadd4fe0c240011ee4512354cde14b73c583b050205dadf97388d71e236` | the legs of §1: the clock, the levers, the registration and its pins, the census, the home, the run log, the rehearsal and the seal |
 | `src/scripts/regime-forward/forward-run.ts` | `9d41a62d478898ab7918f062e87ea992d9681df1a080ee7d6fa2b4201517b026` | the one read, in §1's order, and its tokens |
 | `ops/monitoring/owed-read-regime-forward-30d.py` | `4e0d3416e2d667a930938e1db97801624ec8af74b2c8ac40097dd26f513a7143` | the host read: the transaction, the checks and the three files |
 

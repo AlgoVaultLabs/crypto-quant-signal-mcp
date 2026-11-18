@@ -14,7 +14,7 @@ import path from 'node:path';
 import { pinsOf } from '../sr-backtest/guard.js';
 import { sealHome as t3SealHome } from '../regime-diag/guard.js';
 import { MUTATE as T3_MUTATE } from '../regime-diag/mutate.js';
-import { CENSUS_SHA256, MUTATE, NOT_BEFORE_MS, REGISTRATION, WAVE } from './forward-spec.js';
+import { MUTATE, NOT_BEFORE_MS, REGISTRATION, WAVE } from './forward-spec.js';
 
 /** The read's one home: from the user database, never from an argument or HOME. Seal, run log and result live here. */
 export const forwardHome = (): string => path.join(os.userInfo().homedir, '.cache', 'algovault', 'regime-forward');
@@ -93,8 +93,6 @@ export function registrationRefusal(repo: string, fetch = true): { reason: strin
     return { reason: `git: ${(e as Error).message.split('\n')[0]}`, landed: null };
   }
 }
-
-export const censusRefusal = (bytes: Buffer): string | null => (sha256(bytes) === CENSUS_SHA256 ? null : 'the census does not hash to its pin');
 
 const idOf = (p: string): string | null => { try { const s = fs.statSync(p); return `${s.dev}:${s.ino}`; } catch { return null; } };
 

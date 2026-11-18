@@ -149,11 +149,6 @@ export function fingerprintOf(sourceOf: SourceOf): { sha256: string; declaration
   return { sha256: crypto.createHash('sha256').update(text).digest('hex'), declarations };
 }
 
-/** The fingerprint of the served code a checkout holds. */
-export function servedFingerprint(repo = REPO): { sha256: string; declarations: number } {
-  return fingerprintOf((f) => fs.readFileSync(path.join(repo, f), 'utf8'));
-}
-
 /** The FIRST pin row of each served file: the bytes the fingerprint was registered over (a re-pin appends a later row). */
 export function firstPinsOf(registrationText: string): Map<string, string> {
   const first = new Map<string, string>();
