@@ -34,6 +34,11 @@
  * served-rule study with a line starting `SERVED_RULE_STUDY:`. It must carry an answer-key ceiling
  * and a component map (`servedRuleVerdict`). Presence and shape only; no subprocess. Six worked
  * fixtures, one per outcome: tests/fixtures/served-rule/.
+ *
+ * PROCEDURE §4e (OPS-PREREG-FIT-VENUE-GATE-W1) is MANDATORY on every registration that is not
+ * grandfathered: one line starting `FIT_VENUE:` that names BINANCE as the fit venue, or NONE with a
+ * reason (`fitVenueVerdict`). Presence and shape only; no subprocess. Six worked fixtures:
+ * tests/fixtures/fit-venue/.
  */
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -497,6 +502,113 @@ export function servedRuleVerdict(md: string): ServedRuleVerdict {
   return { applies: true, ok: true, reason: '' };
 }
 
+/**
+ * PROCEDURE §4e — every registered fit is on Binance (OPS-PREREG-FIT-VENUE-GATE-W1).
+ *
+ * Mr.1's rule, 2026-11-18 (vault Cowork-Playbook.md → `## Backtest & forward test`): every backtest
+ * and forward test fits its settings on Binance data; every venue then runs the same settings, and
+ * the other venues are the check, never the fit. A playbook rule binds only the sessions that read
+ * it; this gate makes a non-Binance fit unlandable.
+ *
+ * MANDATORY on every registration that is not grandfathered. Exactly one line, at the start of a
+ * line, in one of two forms:
+ *   FIT_VENUE: BINANCE · from <YYYY-MM-DD> · check: <ALL_SERVED_VENUES | comma-separated venues>
+ *   FIT_VENUE: NONE — <reason of at least 20 characters>   (a measurement-only study)
+ * Presence and shape, never truth: whether the fit really ran on Binance, and whether every input
+ * is in venue-neutral units, is the readout's to show (PROCEDURE §4e, "What the gate cannot check").
+ */
+const FIT_VENUE_DECL_RE = /^FIT_VENUE:(.*)$/gm;
+const FIT_VENUE_REQUIRED = 'BINANCE';
+const FIT_VENUE_RULE = 'Cowork-Playbook "## Backtest & forward test" (Mr.1, 2026-11-18): every test fits on Binance; other venues are the check, never the fit';
+const FIT_FIXTURES = join(REPO_ROOT, 'tests/fixtures/fit-venue');
+
+/**
+ * Registrations on origin/main at this wave's base (82beec39), before §4e existed. Exact paths, one
+ * reason each; never a glob. A future registration is NEVER added here: it carries the line.
+ */
+const FIT_BEFORE = 'before §4e existed (2026-11-18); a landed registration is never edited, and its fit design stays as registered';
+export const FIT_GRANDFATHERED: ReadonlyMap<string, string> = new Map([
+  ['audits/ads1-scorecard-preregistration-2026-09-27.md', `landed 2026-09-27 by EDGE-ADS1-SCORECARD-W1-V2, ${FIT_BEFORE}`],
+  ['audits/aoe-ads1-objective-preregistration-2026-10-15.md', `landed 2026-10-15 by AOE-ADS1-OBJECTIVE-W1, ${FIT_BEFORE}; AOE's successors fit on Binance only`],
+  ['audits/attribution-gate-preregistration-2026-09-04.md', `landed 2026-09-04 by EDGE-ATTRIBUTION-CORPUS-DRAIN-W1, ${FIT_BEFORE}`],
+  ['audits/hold-decision-preregistration-2026-08-26.md', `landed 2026-08-26 by OPS-HOLD-DECISION-CAPTURE-W1, ${FIT_BEFORE}`],
+  ['audits/hurst-discrimination-preregistration-2026-09-22.md', `landed 2026-09-22 by EDGE-HURST-DISCRIMINATION-PROBE-W1, ${FIT_BEFORE}`],
+  ['audits/labeler-race-window-v2-preregistration-2026-09-28.md', `landed 2026-09-28 by EDGE-LABELER-RACE-WINDOW-V2-W1, ${FIT_BEFORE}`],
+  ['audits/regime-challenge-r1-preregistration-2026-11-17.md', `landed 2026-11-17 by EDGE-REGIME-CHALLENGE-R1-W1, ${FIT_BEFORE}; an in-flight read keeps its registered design`],
+  ['audits/regime-confirmation-preregistration-2026-11-17.md', `landed 2026-11-17 by EDGE-REGIME-CONFIRM-W1, ${FIT_BEFORE}; an in-flight read keeps its registered design`],
+  ['audits/regime-diagnostic-preregistration-2026-11-16.md', `landed 2026-11-16 by EDGE-REGIME-DIAG-W1, ${FIT_BEFORE}`],
+  ['audits/scorer-predictive-ceiling-preregistration-2026-09-21.md', `landed 2026-09-22 by EDGE-SCORER-PREDICTIVE-CEILING-W1, ${FIT_BEFORE}`],
+  ['audits/sell-attribution-centered-check-preregistration-2026-09-05.md', `landed 2026-09-06 by EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1, ${FIT_BEFORE}`],
+  ['audits/sell-attribution-collider-control-preregistration-2026-09-05.md', `landed 2026-09-05 by EDGE-SELL-ATTRIBUTION-COLLIDER-CONTROL-W1, ${FIT_BEFORE}`],
+  ['audits/sell-attribution-long-timeframe-check-preregistration-2026-09-09.md', `landed 2026-09-09 by EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W2, ${FIT_BEFORE}`],
+  ['audits/sell-feature-attribution-preregistration-2026-09-04.md', `landed 2026-09-04 by EDGE-SELL-FEATURE-ATTRIBUTION-W1, ${FIT_BEFORE}`],
+  ['audits/sr-htf-levels-preregistration-2026-11-13.md', `landed 2026-11-13 by EDGE-SR-HTF-LEVELS-W1, ${FIT_BEFORE}`],
+  ['audits/sr-level-backtest-preregistration-2026-11-12.md', `landed 2026-11-12 by EDGE-SR-LEVEL-BACKTEST-W1, ${FIT_BEFORE}`],
+  ['audits/sr-level-probe-preregistration-2026-11-10.md', `landed 2026-11-11 by EDGE-SR-LEVEL-PROBE-W1, ${FIT_BEFORE}`],
+  ['audits/verdict-rule-registry-preregistration-2026-10-02.md', `landed 2026-10-02 by SIGNAL-VERDICT-RULE-REGISTRY-W1, ${FIT_BEFORE}`],
+  ['audits/withheld-dwr-preregistration-2026-08-30.md', `landed 2026-08-30 by EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1, ${FIT_BEFORE}`],
+  ['audits/withheld-dwr-w2-preregistration-2026-09-10.md', `landed 2026-09-10 by EDGE-WITHHELD-COUNTERFACTUAL-DWR-W2, ${FIT_BEFORE}`],
+]);
+
+/** Exact, reasoned exemptions — the rule's own text is not a registration. Never a glob. */
+export const FIT_EXEMPT: ReadonlyMap<string, string> = new Map([
+  ['audits/PREREGISTRATION-PROCEDURE.md', 'the procedure DEFINES §4e and shows both FIT_VENUE forms as examples at line start; it is the rule, not a registration'],
+]);
+
+/** The fixture corpus is CONSTRUCTED here, so its vacuity guard lives here: exactly these six files. */
+const FIT_FIXTURE_EXPECT: ReadonlyMap<string, { ok: boolean; reason: RegExp | null }> = new Map([
+  ['compliant-binance.md', { ok: true, reason: null }],
+  ['compliant-none.md', { ok: true, reason: null }],
+  ['missing.md', { ok: false, reason: /no line starting "FIT_VENUE:"/ }],
+  ['other-venue.md', { ok: false, reason: /fits on OKX, not BINANCE .*Backtest & forward test/ }],
+  ['bad-date.md', { ok: false, reason: /"from 2023-02-30" is not a real calendar date/ }],
+  ['duplicate.md', { ok: false, reason: /declares FIT_VENUE more than once \(2 lines\)/ }],
+]);
+
+export interface FitVenueVerdict {
+  ok: boolean;
+  reason: string;
+}
+
+/** Pure predicate over the markdown text. Exported so the self-test runs the REAL parser over the fixtures. */
+export function fitVenueVerdict(md: string): FitVenueVerdict {
+  const fail = (reason: string): FitVenueVerdict => ({ ok: false, reason });
+  const decls = [...md.matchAll(FIT_VENUE_DECL_RE)];
+  if (decls.length === 0) return fail('no line starting "FIT_VENUE:" — declare the fit venue (PROCEDURE §4e)');
+  if (decls.length > 1) return fail(`declares FIT_VENUE more than once (${decls.length} lines) — one line, one fit`);
+  const line = decls[0][0].trim();
+  const value = decls[0][1].replace(/`/g, ' ').trim();
+
+  const venue = /^[A-Za-z][A-Za-z0-9_-]*/.exec(value)?.[0];
+  if (!venue) return fail(`FIT_VENUE names no venue: ${line}`);
+
+  // Second form: a measurement-only study that chooses no setting says so, and why.
+  if (venue === 'NONE') {
+    const why = value.slice(venue.length).replace(/^\s*[-–—:]?\s*/, '').trim();
+    if (why.length < 20) return fail(`FIT_VENUE: NONE needs a reason of at least 20 characters: ${line}`);
+    return { ok: true, reason: '' };
+  }
+
+  // First form: the fit venue is BINANCE, from a real calendar date, checked on a named venue set.
+  if (venue !== FIT_VENUE_REQUIRED) return fail(`FIT_VENUE fits on ${venue}, not ${FIT_VENUE_REQUIRED} — ${FIT_VENUE_RULE}: ${line}`);
+  const rest = value.slice(venue.length);
+  const check = /(?:^|[\s·,;|])check:(.*)$/.exec(rest);
+  const head = check ? rest.slice(0, check.index) : rest;
+  const from = /(?:^|[\s·,;|])from\s+([^\s·,;|]+)/.exec(head)?.[1];
+  if (!from) return fail(`FIT_VENUE names no "from <YYYY-MM-DD>" start of the Binance data: ${line}`);
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(from);
+  const real = ymd !== null && (() => {
+    const [y, m, d] = [Number(ymd[1]), Number(ymd[2]), Number(ymd[3])];
+    const t = new Date(Date.UTC(y, m - 1, d));
+    return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+  })();
+  if (!real) return fail(`"from ${from}" is not a real calendar date (YYYY-MM-DD): ${line}`);
+  if (!check || check[1].replace(/[\s,;·|]/g, '').length === 0) {
+    return fail(`"check:" clause is empty — name ALL_SERVED_VENUES or a comma-separated venue list: ${line}`);
+  }
+  return { ok: true, reason: '' };
+}
+
 function discoverPreregistrations(): string[] {
   return readdirSync(AUDITS_DIR)
     .filter((f) => PREREG_FILE_RE.test(f))
@@ -834,5 +946,102 @@ describe('PROCEDURE §4d — a served-rule study is a diagnosis (OPS-PREREG-SERV
     // Declared, never sniffed: the token mid-line, or indented, is a mention and not a declaration.
     expect(servedRuleVerdict(good.replace(DECL, `This is a ${DECL}`)).applies).toBe(false);
     expect(servedRuleVerdict(good.replace(DECL, `    ${DECL}`)).applies).toBe(false);
+  });
+});
+
+describe('PROCEDURE §4e — every registered fit is on Binance (OPS-PREREG-FIT-VENUE-GATE-W1)', () => {
+  const fixture = (name: string): string => readFileSync(join(FIT_FIXTURES, name), 'utf8');
+
+  it('§4e allowlists are non-empty, exact-matched, reasoned, disjoint, and every row names an existing file', () => {
+    expect(FIT_GRANDFATHERED.size).toBeGreaterThan(0);
+    expect(FIT_EXEMPT.size).toBeGreaterThan(0);
+    for (const map of [FIT_GRANDFATHERED, FIT_EXEMPT]) {
+      for (const [path, reason] of map) {
+        expect(path, 'rows are exact repo-relative paths, never globs').not.toMatch(/[*?[\]]/);
+        expect(path.startsWith('audits/'), `row outside audits/: ${path}`).toBe(true);
+        expect(reason.trim().length, `row has no reason: ${path}`).toBeGreaterThanOrEqual(40);
+        expect(existsSync(join(REPO_ROOT, path)), `stale row, the file is gone: ${path}`).toBe(true);
+      }
+    }
+    for (const path of FIT_EXEMPT.keys()) {
+      expect(FIT_GRANDFATHERED.has(path), `${path} is both exempt and grandfathered`).toBe(false);
+    }
+  });
+
+  it('every pre-registration declares FIT_VENUE: BINANCE (or NONE with a reason), or is grandfathered by an exact row', () => {
+    const files = discoverPreregistrations();
+    // Vacuity guard: the corpus is the repo, and it is known to hold pre-registrations.
+    expect(files.length, 'discovery found no audits/*preregistration*.md — the scan is broken').toBeGreaterThan(0);
+    const scanned = files.filter((f) => !FIT_EXEMPT.has(f));
+    const failures: string[] = [];
+    let declared = 0;
+    for (const rel of scanned) {
+      const v = fitVenueVerdict(readFileSync(join(REPO_ROOT, rel), 'utf8'));
+      const grandfathered = FIT_GRANDFATHERED.has(rel);
+      if (grandfathered && v.ok) {
+        failures.push(`${rel}: carries a valid FIT_VENUE line now — REMOVE its FIT_GRANDFATHERED row (stale exemption)`);
+      } else if (!grandfathered && !v.ok) {
+        failures.push(`${rel}: ${v.reason} — see audits/PREREGISTRATION-PROCEDURE.md §4e`);
+      } else if (!grandfathered) {
+        declared += 1;
+      }
+    }
+    // The corpus size beside the zero: "0 fail" is a fact about the scan only next to what it scanned.
+    // eslint-disable-next-line no-console
+    console.log(`FIT_VENUE_SCAN: ${files.length} file(s) found, ${files.length - scanned.length} exempt, ${scanned.length} scanned, ${FIT_GRANDFATHERED.size} grandfathered, ${declared} declare FIT_VENUE, ${failures.length} fail §4e`);
+    expect(failures, failures.join('\n')).toEqual([]);
+  });
+
+  it('self-test, §4e fixtures: exactly six, both compliant forms pass, each defect fails with its named reason', () => {
+    // Vacuity guard where the corpus is CONSTRUCTED: the fixture set is exactly the declared six.
+    const names = readdirSync(FIT_FIXTURES).filter((n) => !n.startsWith('.')).sort();
+    expect(names).toEqual([...FIT_FIXTURE_EXPECT.keys()].sort());
+    for (const [name, want] of FIT_FIXTURE_EXPECT) {
+      const v = fitVenueVerdict(fixture(name));
+      expect(v.ok, `${name}: ${v.reason}`).toBe(want.ok);
+      if (want.reason) expect(v.reason, name).toMatch(want.reason);
+      else expect(v.reason, name).toBe('');
+    }
+  });
+
+  it('self-test, §4e shapes: every other defect in the compliant fixtures fails with its named reason', () => {
+    const good = fixture('compliant-binance.md');
+    const DECL = 'FIT_VENUE: BINANCE · from 2020-01-01 · check: ALL_SERVED_VENUES';
+    expect(good).toContain(DECL);
+    const none = fixture('compliant-none.md');
+    const NONE_DECL = 'FIT_VENUE: NONE — a cardinality and coverage read that chooses no parameter, threshold, rule or cell';
+    expect(none).toContain(NONE_DECL);
+
+    // The separator is free, tokens may be backticked, and the check list may name venues.
+    for (const ok of [
+      good.replace(DECL, 'FIT_VENUE: `BINANCE` · from `2017-08-15` · check: `ALL_SERVED_VENUES`'),
+      good.replace(DECL, 'FIT_VENUE: BINANCE, from 2024-02-29, check: BYBIT, OKX, BITGET'),
+      none.replace(NONE_DECL, 'FIT_VENUE: NONE - reads coverage only; no setting is chosen'),
+    ]) expect(fitVenueVerdict(ok)).toEqual({ ok: true, reason: '' });
+
+    const defective: Array<[string, string, RegExp]> = [
+      ['venue in lower case', good.replace(DECL, DECL.replace('BINANCE', 'binance')), /fits on binance, not BINANCE/],
+      ['no venue at all', good.replace(DECL, 'FIT_VENUE: · from 2020-01-01 · check: ALL_SERVED_VENUES'), /names no venue/],
+      ['from missing', good.replace(DECL, 'FIT_VENUE: BINANCE · check: ALL_SERVED_VENUES'), /names no "from <YYYY-MM-DD>"/],
+      ['from not a date', good.replace(DECL, DECL.replace('2020-01-01', '2020-1-1')), /"from 2020-1-1" is not a real calendar date/],
+      ['from month 13', good.replace(DECL, DECL.replace('2020-01-01', '2020-13-01')), /not a real calendar date/],
+      ['from 29 Feb, not a leap year', good.replace(DECL, DECL.replace('2020-01-01', '2023-02-29')), /not a real calendar date/],
+      ['check clause missing', good.replace(DECL, 'FIT_VENUE: BINANCE · from 2020-01-01'), /"check:" clause is empty/],
+      ['check clause empty', good.replace(DECL, 'FIT_VENUE: BINANCE · from 2020-01-01 · check:'), /"check:" clause is empty/],
+      ['check clause only punctuation', good.replace(DECL, 'FIT_VENUE: BINANCE · from 2020-01-01 · check: ` , `'), /"check:" clause is empty/],
+      ['NONE without a reason', none.replace(NONE_DECL, 'FIT_VENUE: NONE'), /NONE needs a reason of at least 20 characters/],
+      ['NONE with a short reason', none.replace(NONE_DECL, 'FIT_VENUE: NONE — measurement only'), /NONE needs a reason of at least 20 characters/],
+      ['BINANCE and NONE twice', good.replace(DECL, `${DECL}\n${NONE_DECL}`), /more than once \(2 lines\)/],
+    ];
+    for (const [label, md, reason] of defective) {
+      const v = fitVenueVerdict(md);
+      expect(v.ok, `${label} must fail`).toBe(false);
+      expect(v.reason, label).toMatch(reason);
+    }
+
+    // Declared, never sniffed: the line mid-sentence, indented or quoted is a mention, not a declaration.
+    for (const mention of [`This is a ${DECL}`, `    ${DECL}`, `> ${DECL}`, `\`${DECL}\``]) {
+      expect(fitVenueVerdict(good.replace(DECL, mention)).reason, mention).toMatch(/no line starting "FIT_VENUE:"/);
+    }
   });
 });

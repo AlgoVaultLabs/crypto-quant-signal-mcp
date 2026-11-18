@@ -107,6 +107,31 @@ The value is one repo path ending `.ts` or `.py` and one `<NAME>VERSION = <integ
 
 _Origin: `OPS-PREREG-SERVED-RULE-GATE-W1` (ARC-REGIME-ACCURACY T1). get_trade_call's scorer went through repeated pre-registered studies that found no edge, and each scored only the served output, so none could say what to fix. Only the last, `audits/scorer-predictive-ceiling-preregistration-2026-09-21.md`, asked whether the scorer's inputs carried direction at all. This section asks the ceiling question first and makes a per-dial verdict part of every served-rule readout._
 
+## 4e. Fit venue — every registered fit is on Binance (GATED)
+
+**Every backtest and forward test fits its settings on Binance data, going back as far as the test needs. Every venue then runs the same settings, and the other venues are the check, never the fit.** A setting is anything the study picks: a parameter, a threshold, a rule, a cell. One setting set ships unchanged to every venue, with no per-venue tuning and no per-venue override.
+
+**What the registration carries.** Exactly one line, at the start of a line, in one of two forms:
+
+```
+FIT_VENUE: BINANCE · from 2020-01-01 · check: ALL_SERVED_VENUES
+FIT_VENUE: NONE — a cardinality read that chooses no parameter, threshold, rule or cell
+```
+
+The first form names the first day of Binance data the fit reads (`from`, a real calendar date) and the venues that run the frozen settings as the check (`check:`, either `ALL_SERVED_VENUES` or a comma-separated venue list). The second form is for a measurement-only study that chooses no setting; its reason is at least 20 characters. The separator is free and tokens may be backticked. A mention mid-line, indented or quoted is not a declaration.
+
+**What the gate checks** — presence and shape, never truth. `fitVenueVerdict` in `tests/unit/preregistration-support-stress-test.test.ts` scans every registration and fails one that has no line, more than one line, a venue other than `BINANCE` (the reason names the venue and cites the rule), a `from` that is missing or not a real calendar date, an empty `check:` clause, or `NONE` without a reason of at least 20 characters. Registrations landed before §4e are grandfathered by an exact, reasoned allowlist, never a glob; an in-flight read keeps its registered design. This file shows both forms and is exempt by an exact, reasoned row. Worked fixtures: `tests/fixtures/fit-venue/`.
+
+**What the gate cannot check, which the readout owns.**
+
+- **Units that travel.** A setting on an input that differs by venue is written in venue-neutral units: funding per hour, never per settlement; volume and open interest as a percentile of the coin's own history on that venue. A raw-unit threshold fitted on Binance is a spec defect.
+- **Venue facts stay per venue.** Fees, funding interval, tick size and the listing set are facts, not settings; each venue keeps its own.
+- **Every check venue is reported.** The readout reports each check venue's result on the frozen settings. A gap between venues is a finding, never an input to the fit.
+- **No Binance listing.** A coin Binance doesn't list runs the same settings, and its result is reported as `no Binance test`. Another venue is never fitted to fill the gap.
+- **Open interest history.** Binance's REST open-interest history (`/futures/data/openInterestHist`) serves only the latest month, so open interest older than one month comes from the bulk `data/futures/um/daily/metrics/` files on data.binance.vision.
+
+_Origin: `OPS-PREREG-FIT-VENUE-GATE-W1`. Mr.1's ruling of 2026-11-18 (vault `Cowork-Playbook.md` → `## Backtest & forward test`) made Binance the one fit venue for every backtest and forward test. A playbook rule binds only the sessions that read it, so this section makes a non-Binance fit an unlandable registration._
+
 ## 5. Floors and power — before the pull, in the independence unit
 
 State the cluster floor (never a row floor) and the power at the effect the study is powered for, with the instrument beside the number: the standard error's source, how it scales with the cluster count, and any calibration applied. An increment that cannot reach the floor returns `indeterminate — underpowered`, with the size and the date that would resolve it. That branch is registered, not improvised.
@@ -125,4 +150,4 @@ A deviation from the registration is recorded as a deviation with its reason, ne
 
 ## 9. Inheritors — named
 
-`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event · for §4c, every registration that declares a floor, every readout-canary contract, and per-cell floors such as `SIGNAL-VERDICT-RULE-REGISTRY-W1`'s · for §4d, ARC-REGIME-ACCURACY T3 (the regime diagnostic backtest) and each of T6's challenger rounds, and every future served-rule study: the get_trade_call scorer, the verdict rule, a served support or resistance level.
+`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event · for §4c, every registration that declares a floor, every readout-canary contract, and per-cell floors such as `SIGNAL-VERDICT-RULE-REGISTRY-W1`'s · for §4d, ARC-REGIME-ACCURACY T3 (the regime diagnostic backtest) and each of T6's challenger rounds, and every future served-rule study: the get_trade_call scorer, the verdict rule, a served support or resistance level · for §4e, every future backtest and forward test, first among them the regime-accuracy backtest behind the track record, the S/R zone-method replay test, verdict-rule registry cell flips, the odds recalibration rungs, and any AOE successor.
