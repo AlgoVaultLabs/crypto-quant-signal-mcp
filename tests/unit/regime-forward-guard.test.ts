@@ -288,13 +288,16 @@ describe('each guard leg refuses before the seal', () => {
 
   it('N4: a run without a seam over a tree linking to the running forward-run.ts → REFUSED at source, logged, nothing else read', async () => {
     const t = linkedTree(), home = forwardHome();
+    // the home this run writes, and the only path this test removes, lies inside the suite's own directory (re-check round 4)
+    const inside = (p: string): boolean => { const r = path.relative(TEST_HOMEDIR, p); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
+    expect(inside(home), `forwardHome() ${home} is not inside ${TEST_HOMEDIR}`).toBe(true);
     try {
       const r = await forwardRun({ repo: t, censusFile: path.join(t, 'census.json'), snapshotDir: t, resultsLog: path.join(t, 'results.jsonl') });
       expect(r.verdict).toBe('REFUSED');
       expect(r.reason).toMatch(/judges only the checkout that runs it/);
       expect(fs.readFileSync(path.join(home, LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l).leg)).toEqual(['source']);
     } finally {
-      fs.rmSync(home, { recursive: true, force: true }); // under the suite's own directory (isolate.ts)
+      if (inside(home)) fs.rmSync(home, { recursive: true, force: true });
     }
   });
 });
