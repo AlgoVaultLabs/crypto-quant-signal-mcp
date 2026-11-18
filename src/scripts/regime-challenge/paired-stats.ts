@@ -15,7 +15,7 @@ import { N_TF, dayOf, type Census, type Frame, type Lab } from '../regime-diag/f
 import { attainableOf, boundsOf, kishOf } from '../regime-diag/prims.js';
 import { mulberry32 } from '../regime-diag/rng.js';
 import { a4, delta1, trendDir } from '../regime-diag/stats.js';
-import type { ChallengerCols } from './challenger-replay.js';
+import { armLab, armTrigger, type ChallengerCols } from './challenger-replay.js';
 import { A4_GUARD_PP, A5_GUARD_RATIO, C3_TF, COVERAGE_FLOOR, HALF_WIDTH_Z, POWER_Z, SERVED_TF, type Candidate, type Dial } from './challenge-spec.js';
 
 // ── a pair: the two arms of one challenger on one frame ─────────────────────────────────────────────────────────
@@ -38,10 +38,22 @@ export const sameDial = (a: Dial, b: Dial): boolean => a.adxPeriod === b.adxPeri
 
 /**
  * The pair of a candidate. C1 and C2: every row, the challenger's column against the served column. C3: the
- * entries that have a call at all three timeframes (T3's M12 rows) — the 1h rows against the 4h rows.
+ * entries that have a call at all three timeframes (T3's M12 rows) — the 1h rows against the 4h rows. C4 and C5
+ * (round 2): every row, the served labels read under the arm's confidence rule against the served column — the
+ * same rows, labels and per-bar sequences on both sides, so only A1's TRENDING ≥ trigger rows differ.
  */
 export function pairOf(f: Frame, cand: Candidate, cols: ChallengerCols | null): Pair {
   const c60 = REGIME_AGAINST_MIN_CONFIDENCE;
+  if (cand.arm) {
+    const lab = armLab(f, cand.arm);
+    const seqs = f.coins.flatMap((c) => c.series.map((s, t) => barSeq(s, f.win, c.pos, t, 0)));
+    return {
+      id: cand.id,
+      chal60: trendDir(f, lab, armTrigger(cand.arm)), serv60: trendDir(f, f.S, c60), chalAny: trendDir(f, lab), servAny: trendDir(f, f.S),
+      chalRows: Uint8Array.from(f.has), servRows: Uint8Array.from(f.has), chalLab: lab, servLab: f.S,
+      chalSeqs: seqs, servSeqs: seqs,
+    };
+  }
   if (cand.dial) {
     const dial = cand.dial;
     const d = cols ? cols.dials.findIndex((x) => sameDial(x, dial)) : -1;
