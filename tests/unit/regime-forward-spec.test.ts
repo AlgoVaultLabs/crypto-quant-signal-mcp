@@ -98,7 +98,8 @@ describe('the registry row and the inventory rows', () => {
 });
 
 describe('the host read\'s self-test — judged by its token, counted against its own floor', () => {
-  it('passes every check it declares', () => {
+  // its budget is the options argument, which the repository's test-budget gate counts (re-check round 4, lesson 17)
+  it('passes every check it declares', { timeout: 150_000 }, () => {
     const floor = Number(read(OWED).match(/^_SELF_TEST_MIN_CHECKS = (\d+)$/m)?.[1]);
     expect(floor).toBeGreaterThan(0);
     const r = spawnSync('python3', [OWED, '--self-test'], { cwd: ROOT, encoding: 'utf8', timeout: 120_000 });
@@ -106,7 +107,7 @@ describe('the host read\'s self-test — judged by its token, counted against it
     expect(tokens, `${r.stdout}\n${r.stderr}`.slice(-3000)).toHaveLength(1);
     expect(Number(tokens[0].match(/^SELF_TEST_VERDICT=PASS — (\d+) checks /)?.[1])).toBe(floor);
     expect(r.status).toBe(0);
-  }, 150_000);
+  });
 });
 
 describe('this study\'s own files hash to their pins', () => {
