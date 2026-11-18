@@ -29,7 +29,8 @@ const REPO = path.resolve(__dirname, '../..');
 // One setImmediate per test lets the worker answer vitest between long synchronous tests (the measurement behind
 // this hook is in tests/unit/regime-diag-guard.test.ts).
 afterEach(() => new Promise<void>((done) => { setImmediate(done); }));
-const CHALLENGE_FILES = ['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run'].map((n) => `src/scripts/regime-challenge/${n}.ts`);
+// round 2 (EDGE-REGIME-CHALLENGE-R2-W1) adds its own file last: the indices of round 1's five are unchanged
+const CHALLENGE_FILES = ['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run', 'challenge-r2'].map((n) => `src/scripts/regime-challenge/${n}.ts`);
 // the harness list the pinned guard asks for, and what the judge asks for beyond it: this round's files and the
 // modules outside the harness list
 const COPIED = [...guard.HARNESS_FILES, ...REQUIRED_PINS];
@@ -854,9 +855,9 @@ describe('regime-challenge: the pre-score and the judge, in a sandbox repository
   });
 
   it('the judge runs the files its registration pins: one that is not pinned, or not the pinned bytes, refuses', { timeout: 60_000 }, () => {
-    // the five files of this round and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
+    // the six files of the two rounds and the fourteen modules outside the harness list: T3's and its successor's registrations pin the same fourteen
     expect(CHALLENGE_FILES.every((f) => REQUIRED_PINS.includes(f))).toBe(true);
-    expect(REQUIRED_PINS.length).toBe(19);
+    expect(REQUIRED_PINS.length).toBe(20);
     expect(REQUIRED_PINS.some((f) => guard.HARNESS_FILES.includes(f))).toBe(false);
     for (const reg of ['audits/regime-diagnostic-preregistration-2026-11-16.md', 'audits/regime-confirmation-preregistration-2026-11-17.md']) {
       const rows = [...fs.readFileSync(path.join(REPO, reg), 'utf8').matchAll(/^\| `([^`]+)` \| `[0-9a-f]{64}` \|/gm)].map((m) => m[1]).filter((k) => !/^(store|census|spec|carry):/.test(k));
