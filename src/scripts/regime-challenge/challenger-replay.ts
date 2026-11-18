@@ -8,18 +8,24 @@
 //             the core's trending branch falls through to ±DI. Nothing else is touched.
 //   C3 (M12)  no replay: the served rule at another timeframe (the frame's own 1h rows).
 // Every verdict goes through the core's `projectRegime` → `classifyRegime`: the rule is called, never rewritten.
+//
+// Round 2 (EDGE-REGIME-CHALLENGE-R2-W1) replays nothing: its arms read the served label with one confidence rule
+// changed (challenge-r2.ts). C4 (M05) rewrites the strong tier's confidence through `capConfidence`, the one line of
+// the core it copies, and `armParity` holds that copy to the frame's served confidence on every strong row before
+// any outcome. C5 (M10) reads the served column at another trigger.
 import { REQUIRED_CANDLES, computeRegimeIndicators, projectRegime, type RegimeIndicators } from '../../lib/market-regime-core.js';
 import { adx, atr, detectPriceStructure } from '../../lib/indicators.js';
 import { splitCandleWindow } from '../../lib/candle-window.js';
 import type { Candle } from '../../types.js';
 import { aggregate, type Bars, type Grid } from '../regime-diag/archive.js';
 import { LABELS, NO_LABEL, TFS, type Tf, type Win } from '../regime-diag/diag-spec.js';
-import { N_TF, posName, type Frame, type Lab, type Loaded } from '../regime-diag/frame.js';
+import { N_TF, isTrending, posName, type Frame, type Lab, type Loaded } from '../regime-diag/frame.js';
 import { MUTATE } from '../regime-diag/mutate.js';
 import { PARITY_FIXTURE } from '../regime-diag/parity.js';
 import { candlesAt, quietly, type CandleWindow, type Series } from '../regime-diag/replay.js';
 import { synthGrid } from '../regime-diag/synth.js';
-import { SERVED_ADX_PERIOD, SERVED_DIAL, dialRefusal, type Dial } from './challenge-spec.js';
+import { SERVED_ADX_PERIOD, SERVED_DIAL, dialRefusal, type Arm, type Dial } from './challenge-spec.js';
+import { SERVED_CAP, SERVED_TRIGGER, STRONG_ADX } from './challenge-r2.js';
 
 /**
  * The harness copy of `computeRegimeIndicators` (src/lib/market-regime-core.ts), taking the ADX smoothing period.
@@ -158,4 +164,53 @@ export function checkChallengerParity(text: string): ParityReport {
   return mismatches === 0
     ? { ok: true, calls: want.length, mismatches: 0, reason: 'ok' }
     : { ok: false, calls: want.length, mismatches, reason: `the challenger copy at period ${SERVED_ADX_PERIOD} differs from the served rule on ${mismatches} of ${want.length} fixture calls` };
+}
+
+// ── round 2: the served label under one changed confidence rule ─────────────────────────────────────────────────
+
+/**
+ * C4 (M05): the harness copy of the core's confidence on a STRONG trending row (classifyRegime,
+ * src/lib/market-regime-core.ts, ADX > 40), the cap given: `min(cap, round(2·ADX))`; then, when the ADX slope
+ * exists, the adjustment `round(5·slope)` clamped to −15 … +10, and the sum clamped to 20 … 95. The frame keeps an
+ * absent slope as NaN. At the served cap it IS the served confidence: `armParity` holds it to that.
+ */
+export function capConfidence(adx: number, adxSlope: number, cap: number): number {
+  // MUTATE=c4copy (tests only): the copy truncates where the core rounds
+  let c = Math.min(cap, MUTATE === 'c4copy' ? Math.floor(adx * 2) : Math.round(adx * 2));
+  if (!Number.isNaN(adxSlope)) c = Math.max(20, Math.min(95, c + Math.max(-15, Math.min(10, Math.round(adxSlope * 5)))));
+  return c;
+}
+
+/** The confidence at or above which an arm reads a TRENDING row for A1: C5's own value; C4 the served trigger. */
+export const armTrigger = (arm: Arm): number =>
+  // MUTATE=c5copy (tests only): the copy reads above the trigger where the rule reads at or above it
+  (arm.kind === 'trigger' ? arm.min + (MUTATE === 'c5copy' ? 1 : 0) : SERVED_TRIGGER);
+
+/** A row of the strong tier: a frame row TRENDING under the served label at ADX above 40. */
+const isStrong = (f: Frame, r: number): boolean => f.has[r] === 1 && isTrending(f.S.lab[r]) && f.adx[r] > STRONG_ADX;
+
+/** The label column an arm reads: the served labels; C4's confidence rewritten on the strong rows; C5 the served column. */
+export function armLab(f: Frame, arm: Arm): Lab {
+  if (arm.kind === 'trigger') return f.S;
+  const conf = Uint8Array.from(f.S.conf);
+  for (let r = 0; r < conf.length; r++) if (isStrong(f, r)) conf[r] = capConfidence(f.adx[r], f.adxSlope[r], arm.cap);
+  return { lab: f.S.lab, conf };
+}
+
+/**
+ * C4's parity on a frame, before any outcome: at the served cap the copy returns the frame's served confidence on
+ * every strong row. Not ok — reason named — on any difference, or on a frame that holds no strong row.
+ */
+export function armParity(f: Frame): ParityReport {
+  const lab = armLab(f, { kind: 'cap', cap: SERVED_CAP });
+  let calls = 0, mismatches = 0;
+  for (let r = 0; r < f.has.length; r++) {
+    if (!isStrong(f, r)) continue;
+    calls++;
+    if (lab.conf[r] !== f.S.conf[r]) mismatches++;
+  }
+  if (calls === 0) return { ok: false, calls, mismatches, reason: 'the frame holds no strong trending row: the C4 copy cannot be shown to be the core' };
+  return mismatches === 0
+    ? { ok: true, calls, mismatches, reason: 'ok' }
+    : { ok: false, calls, mismatches, reason: `the C4 copy at the served cap ${SERVED_CAP} differs from the served confidence on ${mismatches} of ${calls} strong rows` };
 }
