@@ -6,6 +6,7 @@
 // (T3 §2), the source against origin/main. None of them reads an outcome.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { archiveName, buildGrid, resolveArchive, sha256, type ArchiveManifest, type ArchiveStore } from '../regime-diag/archive.js';
 import { diffSkeleton, registeredSkeleton, skeletonOf, type Frame, type Loaded, type Skeleton } from '../regime-diag/frame.js';
@@ -43,6 +44,35 @@ export function within(p: string, root: string): boolean {
     }
   }
   return false;
+}
+
+/**
+ * The directories no run of the rounds writes into (EDGE-REGIME-CHALLENGE-R2-W1, review finding #2): the seal home
+ * (`home`; absent for a synthetic study that names none), round 1's tree, T3's two archive stores — each under the
+ * home the code resolves for the user (`os.userInfo`, as `sealHome()` does) — and the archive stores the run reads.
+ * Round 1's own runs (`roundOneTree` false) write in round 1's tree, so for them it is not one.
+ */
+export function protectedRoots(home: string | undefined, archives: ArchiveStore, roundOneTree: boolean): Array<{ what: string; root: string }> {
+  const cache = path.join(os.userInfo().homedir, '.cache', 'algovault');
+  return [
+    ...(home ? [{ what: 'the seal home', root: home }] : []),
+    ...(roundOneTree ? [{ what: 'round 1\'s tree', root: path.join(cache, 'regime-challenge') }] : []),
+    { what: 'T3\'s archive store', root: path.join(cache, 'odds-calibration-study') },
+    { what: 'T3\'s archive store', root: path.join(cache, 'regime-diag', 'archives') },
+    { what: 'an archive store the run reads', root: archives.cache },
+    { what: 'an archive store the run reads', root: archives.overlay },
+  ];
+}
+/**
+ * Why `out` may not be a run's output directory, or null: it is one of `roots`, lies inside one, or holds one —
+ * each decided by `within`, so by identity after every resolution step, never by spelling alone.
+ */
+export function outRefusal(out: string, roots: ReadonlyArray<{ what: string; root: string }>): string | null {
+  for (const { what, root } of roots) {
+    if (within(out, root)) return `the output directory is ${what} or lies inside it: no run writes there`;
+    if (within(root, out)) return `the output directory holds ${what}: no run writes there`;
+  }
+  return null;
 }
 
 /**
