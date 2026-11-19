@@ -19,9 +19,14 @@
 // Callers gate on the token: REGIME_CHALLENGE_R3_SCREEN_VERDICT=PASS | REFUSED — <reason> | INDETERMINATE — <reason>
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeAtomic } from '../sr-backtest/store.js';
 import { months, sha256, unzipSingle } from '../regime-diag/archive.js';
+import { sealHome } from '../regime-diag/guard.js';
+import { linkRefusal, outRefusal, within } from './challenge-guard.js';
 
 export const R3_SCREEN_WAVE = 'EDGE-REGIME-CHALLENGE-R3-W1';
+/** Round 3's home under `~/.cache/algovault`: its archives, its store and its outputs (the screen's too). */
+export const R3_HOME = 'regime-challenge-r3';
 /** The months the screen decides: every month either window of round 3 can read. */
 export const SCREEN_MONTHS = Object.freeze({ first: '2020-01', last: '2025-12' });
 /** The months a candidate's archives are listed from (spec §3): the bucket holds none before 2020-01. */
@@ -140,6 +145,19 @@ export function snapshotOf(info: ExchangeInfo): Record<string, SnapshotRow> {
 const TOKEN = 'REGIME_CHALLENGE_R3_SCREEN_VERDICT';
 const REPO = path.resolve(__dirname, '../../..');
 
+/**
+ * Why the screen may not write its panel file at `out`, or null. The file names coins, so never inside the
+ * repository; and round 2's allow-list (review 1, F5): never in the seal home or an archive store the screen reads,
+ * under `~/.cache/algovault` only in round 3's home. It is written in place (a temporary name, then a rename), so
+ * neither name may be a link.
+ */
+export function screenOutRefusal(out: string, archives1d: string, repo = REPO): string | null {
+  if (within(out, repo)) return 'the panel file names coins: it is written outside the repository';
+  const foreign = outRefusal(out, R3_HOME, sealHome(), { cache: archives1d, overlay: archives1d });
+  if (foreign) return foreign;
+  return linkRefusal(path.dirname(out), 'the panel file\'s directory', [path.basename(out), `${path.basename(out)}.tmp`]);
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   const VALUED = ['--listing', '--snapshot', '--rule', '--archives-1d', '--out'];
@@ -150,8 +168,8 @@ function main(): void {
   }
   if (VALUED.some((v) => !val[v])) return finish('INDETERMINATE', `usage: ${VALUED.map((v) => `${v} X`).join(' ')}`);
   const out = val['--out'];
-  const rel = path.relative(REPO, out);
-  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return finish('REFUSED', 'the panel file names coins: it is written outside the repository');
+  const refused = screenOutRefusal(out, val['--archives-1d']);
+  if (refused) return finish('REFUSED', refused);
   const listingBytes = fs.readFileSync(val['--listing']), snapBytes = fs.readFileSync(val['--snapshot']), ruleBytes = fs.readFileSync(val['--rule']);
   const rule = JSON.parse(ruleBytes.toString('utf8')) as R3Rule;
   const archiveMonths = candidatesOf(JSON.parse(listingBytes.toString('utf8')) as Listing);
@@ -181,7 +199,7 @@ function main(): void {
     months: SCREEN_MONTHS, snapshot: Object.fromEntries(Object.keys(archiveMonths).filter((s) => snapshot[s]).map((s) => [s, snapshot[s]])),
     archive_months: archiveMonths, table,
   }, null, 1)}\n`;
-  fs.writeFileSync(out, text);
+  writeAtomic(out, text);
   process.stdout.write(`panel_sha256=${sha256(text)}\n`);
   finish('PASS');
 }
