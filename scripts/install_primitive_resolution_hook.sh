@@ -38,48 +38,31 @@ done
 GATE_SCRIPT='scripts/check-primitive-resolution.mjs'
 hook_block_assert_publishable "$GATE_SCRIPT" "$ALLOW_UNPUBLISHED" || exit 1
 
-# The gate REFUSES (INDETERMINATE) without its corpus or its shared tools/list parser, so both are
-# asserted too. Asserting only the entry point is the hazard install_map_shape_hook.sh already paid
-# for: a block installed while its config is unreachable makes every gated commit refuse with an
-# INDETERMINATE the committer cannot act on.
+# The self-test loads the shipped registry, and the gate imports its shared tools/list parser at
+# module load, so both are asserted too. Asserting only the entry point is the hazard
+# install_map_shape_hook.sh already paid for: a block installed while its config is unreachable makes
+# every gated commit refuse with a verdict the committer cannot act on.
 hook_block_assert_publishable 'ops/primitive-registry.json' "$ALLOW_UNPUBLISHED" || exit 1
 hook_block_assert_publishable 'scripts/lib/mcp-tools-list.mjs' "$ALLOW_UNPUBLISHED" || exit 1
 
 # This comment deliberately does NOT restate the rows. The SoT is ops/primitive-registry.json, and
 # a duplicated fact goes stale.
 read -r -d '' COMMENT <<'EOF' || true
-# Blocks a commit while a primitive this estate NAMES does not RESOLVE. An `npm_package` row with
-# `invocation: cli` needs a non-empty `bin` on `dist-tags.latest`; `invocation: library` needs only
-# publication (bin is a CLI property, not an existence property — @modelcontextprotocol/sdk, zod and
-# express are all bin-less and all correct); an `mcp_tool` row must be on the live `tools/list`,
-# read through the shared scripts/lib/mcp-tools-list.mjs and exhausted via nextCursor.
-# Rows live in ops/primitive-registry.json (the SoT). A row declared `live` that stops resolving
-# FAILs, and so does a `planned` row that starts resolving — a stale registry is how this class
-# returns.
+# OFFLINE (OPS-EDITORIAL-PRIMITIVE-LIVE-AT-PUBLISH-W1): no npm, no MCP endpoint. Blocks a commit
+# while ops/primitive-registry.json (the SoT) no longer loads, or while the primitive-resolution
+# gate's own two-way self-test fails — the two things a commit can actually break. Runs
+# `--self-test`, which loads the shipped registry (every row needs its fields) and proves the gate
+# still tells PASS from FAIL. Deterministic: no INDETERMINATE state, so nothing to downgrade.
 #
-# THE TWO CALLERS DO NOT SHARE ONE FAILURE RESPONSE, and that is deliberate.
-#   FAIL          -> blocks here, and reds deploy.yml's post-deploy primitive step. The primitive
-#                    was measured; it does not resolve.
-#   INDETERMINATE -> HERE it prints the token and downgrades the EXIT CODE only; post-deploy in CI
-#                    it is a ::warning::. (Until OPS-DEPLOY-LANE-NETWORK-FREE-W1 CI ran this live
-#                    read PRE-deploy and blocked on INDETERMINATE: 15 blocked deploys in 7 weeks,
-#                    every one a transport stall or a budget overrun, never a FAIL.)
-# This is the FIRST network-dependent block in this hook — all six incumbents are local-only, so
-# none of them has an INDETERMINATE state to mirror. Failing closed here would make 146 checkouts'
-# ability to commit a function of npm's and api.algovault.com's uptime, with --no-verify forbidden;
-# install_forbidden_phrases_hook.sh's own header records 2026-08-02, when a block installed ahead
-# of its script left 69-70 checkouts unable to commit for over a day. This is the fast local
-# signal; CI's post-deploy step is the one that measures the build it just shipped.
-# The lever shape is ALGOVAULT_TEST_GATE=warn's, reused verbatim, not a second idiom: it downgrades
-# the CODE, never the TOKEN, and the outcome stays legible in the log. The gate law asks that
-# exit 0 never encode both "verified, clean" and "verified nothing" — the distinguishable token is
-# what carries that, and it is always printed and never suppressed.
-# A permanently-degraded read (a rotted URL, not a plane) surfaces as an INDETERMINATE here on
-# every commit and as a ::warning:: on every deploy. No local logger is needed and none is installed.
-# Network legs carry a TOTAL wall-clock budget of 5s (PRIMRES_BUDGET_MS); exhaustion is
-# INDETERMINATE. A refused port fails in milliseconds, but a blackholed route hangs — measured
-# 2026-09-19, one unbounded curl to a dropped route took 30,031ms while the gate returned
-# INDETERMINATE in 5,112ms.
+# The LIVE reads live where they measure something a commit cannot:
+#   - registry vs npm + the DEPLOYED tools/list: deploy.yml's post-deploy primitive step, on every
+#     deploy — FAIL reds the run, INDETERMINATE (transport) is a ::warning::
+#     (OPS-DEPLOY-LANE-NETWORK-FREE-W1);
+#   - a post vs the real tools/list at the moment it ships: algovault-editorial's G14 live leg.
+# Until this wave the block made those live reads on EVERY commit in every checkout. It could not
+# fail closed on a transport error (with --no-verify forbidden, every checkout's ability to commit
+# would follow npm's and api.algovault.com's uptime), so it was mostly network noise, measuring the
+# deployed build at the one moment nothing is being deployed.
 # Escape hatch: ALGOVAULT_SKIP_PRIMITIVE_RESOLUTION=1 git commit …  (logged to the skip ledger).
 EOF
 
@@ -87,15 +70,13 @@ EOF
 # line — passing the verdict check there would silently delete matching lines from the hook instead
 # of running it.
 read -r -d '' INVOCATION <<'EOF' || true
-ALGOVAULT_PR_OUT="$(node "$(git rev-parse --show-toplevel)/scripts/check-primitive-resolution.mjs" 2>&1)" || true
+ALGOVAULT_PR_OUT="$(node "$(git rev-parse --show-toplevel)/scripts/check-primitive-resolution.mjs" --self-test 2>&1)" || true
 ALGOVAULT_PR_TOK="$(printf '%s\n' "$ALGOVAULT_PR_OUT" | grep -oE '^PRIMITIVE_RESOLUTION_VERDICT=[A-Z]+' | tail -1)"
-case "$ALGOVAULT_PR_TOK" in
-  PRIMITIVE_RESOLUTION_VERDICT=PASS) : ;;
-  PRIMITIVE_RESOLUTION_VERDICT=INDETERMINATE)
-    printf '%s\n' "$ALGOVAULT_PR_OUT" >&2
-    printf '%s\n' "⚠️  primitive-resolution: $ALGOVAULT_PR_TOK downgraded to exit 0 here. Nothing is blocked locally; the post-deploy step re-measures against the build it ships." >&2 ;;
-  *) printf '%s\n' "$ALGOVAULT_PR_OUT" >&2; exit 1 ;;
-esac
+if [ "$ALGOVAULT_PR_TOK" != "PRIMITIVE_RESOLUTION_VERDICT=PASS" ]; then
+  printf '%s\n' "$ALGOVAULT_PR_OUT" >&2
+  printf '%s\n' "✖ primitive-resolution (offline): ${ALGOVAULT_PR_TOK:-no verdict token} — the registry or the gate's self-test is broken in this tree; run: node scripts/check-primitive-resolution.mjs --self-test" >&2
+  exit 1
+fi
 EOF
 
 hook_block_install pre-commit primitive-resolution OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 "$GATE_SCRIPT" "$COMMENT" "$INVOCATION"

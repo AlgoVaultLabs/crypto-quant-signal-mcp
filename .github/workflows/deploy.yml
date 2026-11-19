@@ -1399,7 +1399,7 @@ jobs:
       # INDETERMINATE (transport: it verified nothing) is a ::warning:: — the deploy has already
       # happened and the next deploy re-measures. Measured trade: as a pre-deploy blocker it cost
       # 15 blocked deploys in 7 weeks with zero FAILs. PRIMRES_BUDGET_MS is the gate's own knob:
-      # 15 s here against the pre-commit hook's 5 s, because CI runs that completed spent up to
+      # 15 s here against the gate's 5 s default, because CI runs that completed spent up to
       # 4.4 s and the four budget overruns finished at 5.0–5.4 s.
       - name: Post-deploy primitive resolution gate (fail-open on transport)
         env:
