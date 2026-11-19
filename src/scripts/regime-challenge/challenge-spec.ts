@@ -194,19 +194,21 @@ export function windowRefusal(rec: ChallengeRecord, f: { span: Span; win: Win; e
 export const coinDaysOf = (rec: ChallengeRecord): number => COIN_DAYS_PER_MONTH * months(rec.outcomes.first, rec.outcomes.last).length;
 
 /**
- * A round's in-sample read: its record, the seed label of its resamples, its log, its candidates, and the coin-days
- * its power arithmetic moves a half-width with (the pre-score's, and the judge window's, at T3 §5's rate).
+ * A round's in-sample read: its record, the seed label of its resamples, its log, its home (the one directory under
+ * `~/.cache/algovault` its runs may write in), its candidates, and the coin-days its power arithmetic moves a
+ * half-width with (the pre-score's, and the judge window's, at T3 §5's rate).
  */
 export interface PrescoreRound {
   rec: ChallengeRecord;
   seed: string;
   log: string;
+  home: string;
   candidates: readonly Candidate[];
   coinDays: { prescore: number; judge: number };
 }
 /** Round 1's pre-score: the constants above, as round 1 ran them. */
 export const R1_ROUND: PrescoreRound = Object.freeze({
-  rec: PRESCORE, seed: CHALLENGE_SEED, log: 'regime-challenge-r1-prescore.log', candidates: CANDIDATES,
+  rec: PRESCORE, seed: CHALLENGE_SEED, log: 'regime-challenge-r1-prescore.log', home: 'regime-challenge', candidates: CANDIDATES,
   coinDays: Object.freeze({ prescore: coinDaysOf(PRESCORE), judge: coinDaysOf(JUDGE) }),
 });
 
