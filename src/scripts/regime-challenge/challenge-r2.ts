@@ -44,6 +44,6 @@ export const R2_JUDGE_OUTCOMES: Readonly<{ first: string; last: string }> = Obje
  * sides; the judge window's panel is narrower than the nominal one, and the vault evidence rescales by it.
  */
 export const R2_ROUND: PrescoreRound = Object.freeze({
-  rec: R2_PRESCORE, seed: 'regime-challenge-r2', log: 'regime-challenge-r2-prescore.log', candidates: R2_CANDIDATES,
+  rec: R2_PRESCORE, seed: 'regime-challenge-r2', log: 'regime-challenge-r2-prescore.log', home: 'regime-challenge-r2', candidates: R2_CANDIDATES,
   coinDays: Object.freeze({ prescore: coinDaysOf(R2_PRESCORE), judge: COIN_DAYS_PER_MONTH * months(R2_JUDGE_OUTCOMES.first, R2_JUDGE_OUTCOMES.last).length }),
 });
