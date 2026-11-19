@@ -17,7 +17,7 @@ import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, isTrending, parseCensus, skeletonOf, type Census, type Frame, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { seedsFor } from '../../src/scripts/regime-diag/prims.js';
-import { outRefusal, protectedRoots } from '../../src/scripts/regime-challenge/challenge-guard.js';
+import { outRefusal } from '../../src/scripts/regime-challenge/challenge-guard.js';
 import * as run from '../../src/scripts/regime-challenge/challenge-run.js';
 import { R2_JUDGE_OUTCOMES, R2_ROUND, SERVED_CAP, SERVED_TRIGGER, STRONG_ADX } from '../../src/scripts/regime-challenge/challenge-r2.js';
 import { CANDIDATES, CHALLENGE_SEED, JUDGE, JUDGE_FILE, PRESCORE, R1_ROUND, REQUIRED_PINS, judgeStudyRecord, monthRefusal, monthsOpened, type Candidate, type ChallengeRecord } from '../../src/scripts/regime-challenge/challenge-spec.js';
@@ -433,6 +433,7 @@ describe('regime-challenge round 2: the pre-score, in a sandbox repository', () 
   };
   const isIn = (what: string): string => `the output directory is ${what} or lies inside it: no run writes there`;
   const holds = (what: string): string => `the output directory holds ${what}: no run writes there`;
+  const outsideOwn = (own: string): string => `the output directory lies under ~/.cache/algovault outside ${own}/, the running round's home: no run writes there`;
 
   it('#2 the seal home: as the output, inside it, through a link to it, or holding it — refused', { timeout: 60_000 }, () => {
     const home = guard.sealHome();
@@ -444,30 +445,30 @@ describe('regime-challenge round 2: the pre-score, in a sandbox repository', () 
       [path.join(HOME_CACHE, 'regime-diag'), holds('the seal home')], [TEST_HOMEDIR, holds('the seal home')]]);
   });
 
-  it('#2 round 1\'s tree: as the output, inside it, or holding it — refused; round 2\'s own home beside it is not', { timeout: 60_000 }, () => {
+  it('#2 round 1\'s tree: as round 2\'s output, or inside it — refused; round 2\'s home beside it is not; each round writes only in its own home', { timeout: 60_000 }, () => {
     const r1 = path.join(HOME_CACHE, 'regime-challenge');
     fs.mkdirSync(path.join(r1, 'judge-r1'), { recursive: true });
-    refusedOuts([[r1, isIn('round 1\'s tree')], [path.join(r1, 'judge-r1'), isIn('round 1\'s tree')], [path.join(r1, 'new'), isIn('round 1\'s tree')]]);
+    refusedOuts([[r1, outsideOwn('regime-challenge-r2')], [path.join(r1, 'judge-r1'), outsideOwn('regime-challenge-r2')], [path.join(r1, 'new'), outsideOwn('regime-challenge-r2')]]);
     // a sibling whose name starts with round 1's is not inside it, by spelling or by identity
-    const roots = protectedRoots(guard.sealHome(), archives, true);
-    expect(outRefusal(path.join(HOME_CACHE, 'regime-challenge-r2', 'out'), roots)).toBeNull();
-    // round 1's own runs write in round 1's tree: its roots leave that one out
-    expect(protectedRoots(guard.sealHome(), archives, false).map((x) => x.what)).not.toContain('round 1\'s tree');
-    expect(outRefusal(path.join(r1, 'judge-r1'), protectedRoots(guard.sealHome(), archives, false))).toBeNull();
+    expect(outRefusal(path.join(HOME_CACHE, 'regime-challenge-r2', 'out'), R2_ROUND.home, guard.sealHome(), archives)).toBeNull();
+    // round 1's own runs write in round 1's tree, and never in round 2's home
+    expect(outRefusal(path.join(r1, 'judge-r1'), R1_ROUND.home, guard.sealHome(), archives)).toBeNull();
+    expect(outRefusal(path.join(HOME_CACHE, 'regime-challenge-r2', 'out'), R1_ROUND.home, guard.sealHome(), archives)).toBe(outsideOwn('regime-challenge'));
+    expect([R1_ROUND.home, R2_ROUND.home]).toEqual(['regime-challenge', 'regime-challenge-r2']);
   });
 
   it('#2 T3\'s archive stores: either one as the output, inside it, or held by it — refused', { timeout: 60_000 }, () => {
     const odds = path.join(HOME_CACHE, 'odds-calibration-study'), diag = path.join(HOME_CACHE, 'regime-diag', 'archives');
     for (const d of [odds, diag]) fs.mkdirSync(d, { recursive: true });
-    refusedOuts([[odds, isIn('T3\'s archive store')], [path.join(odds, 'x'), isIn('T3\'s archive store')],
-      [diag, isIn('T3\'s archive store')], [path.join(diag, 'x'), isIn('T3\'s archive store')]]);
+    refusedOuts([[odds, outsideOwn('regime-challenge-r2')], [path.join(odds, 'x'), outsideOwn('regime-challenge-r2')],
+      [diag, outsideOwn('regime-challenge-r2')], [path.join(diag, 'x'), outsideOwn('regime-challenge-r2')]]);
   });
 
   it('#2 the archive stores the run reads: as the output, inside one, or holding one — refused; round 1\'s judge refuses an output in its seal home too', { timeout: 60_000 }, () => {
     refusedOuts([[archives.cache, isIn('an archive store the run reads')], [path.join(archives.overlay, 'x'), isIn('an archive store the run reads')]]);
     const both = path.join(dir, 'both');
     const twin: ArchiveStore = { cache: path.join(both, 'cache'), overlay: path.join(both, 'overlay') };
-    expect(outRefusal(both, protectedRoots(guard.sealHome(), twin, true))).toBe(holds('an archive store the run reads'));
+    expect(outRefusal(both, R2_ROUND.home, guard.sealHome(), twin)).toBe(holds('an archive store the run reads'));
     // round 1's judge: an injected study's seal home, by identity, before any line or write
     const home = path.join(dir, 'judge-home'), out = path.join(home, 'out');
     fs.mkdirSync(home);
@@ -476,6 +477,32 @@ describe('regime-challenge round 2: the pre-score, in a sandbox repository', () 
       study: { rec: { ...JUDGE, outcomes: { first: '2024-06', last: '2024-07' } }, counts: COUNTS, floorClusters: FLOOR, log: (l) => lines.push(l), sealHome: home } });
     expect([j.verdict, j.reason]).toEqual(['REFUSED', isIn('the seal home')]);
     expect([lines, fs.readdirSync(home), fs.existsSync(path.join(dir, 'judge-store'))]).toEqual([[], [], false]);
+  });
+
+  // #2, completed (review round 2, NOTE 1): under the cache the output is an allow-list — the running round's home only
+  const FOREIGN: ReadonlyArray<readonly [string, string]> = [
+    ['T3\'s results directory', path.join('regime-diag', 'out')], ['T3\'s r0 directory', path.join('regime-diag', 'r0')],
+    ['the census store', 'regime-census'], ['the forward store', 'regime-forward'],
+  ];
+  for (const [name, rel] of FOREIGN) {
+    it(`#2 allow-list: ${name} under the cache is refused as the output, and inside it`, { timeout: 60_000 }, () => {
+      const root = path.join(HOME_CACHE, rel);
+      fs.mkdirSync(root, { recursive: true });
+      refusedOuts([[root, outsideOwn('regime-challenge-r2')], [path.join(root, 'out'), outsideOwn('regime-challenge-r2')]]);
+    });
+  }
+
+  it('#2 allow-list: round 2\'s own home under the cache is accepted, and so is a temporary directory outside it', { timeout: 60_000 }, () => {
+    const own = path.join(HOME_CACHE, 'regime-challenge-r2', 'out-own');
+    lines.length = 0;
+    const r = run.prescoreRun({ repo, censusFile, archives, manifest: guard.archivesFile(store), out: own, tables: TABLES, round: R2_ROUND, study: study() });
+    expect([r.verdict, r.reason]).toEqual(['PASS', 'ok']);
+    expect(fs.readdirSync(own).sort()).toEqual(['regime-challenge-r2-prescore.json', 'regime-challenge-r2-prescore.log']);
+    // an output that holds the cache is refused even where no seal home lies in it
+    expect(outRefusal(path.join(TEST_HOMEDIR, '.cache'), R2_ROUND.home, undefined, archives)).toBe('the output directory holds ~/.cache/algovault: no run writes there');
+    expect(outRefusal(path.join(dir, 'tmp-out'), R2_ROUND.home, guard.sealHome(), archives)).toBeNull();
+    // the suite's own pre-score wrote in a temporary directory outside the cache
+    expect([pre.verdict, path.dirname(pre.file as string).startsWith(fs.realpathSync(os.tmpdir())) || path.dirname(pre.file as string).startsWith(os.tmpdir())]).toEqual(['PASS', true]);
   });
 });
 
