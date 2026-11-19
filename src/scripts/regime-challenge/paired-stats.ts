@@ -8,7 +8,7 @@
 //   A4    S4(challenger) − S4(served)                                    fails when the interval is wholly below −3.0 pp
 //   A5    R5(challenger) ÷ R5(served), on the per-closed-bar series       fails when the interval is wholly below 1/1.10
 //   cov   the challenger's TRENDING ≥ 60 row share over the served's      fails below 0.5
-import { runsOf, barSeq, type BarSeq, type Runs } from '../regime-diag/bars.js';
+import { runsOf, barSeq, type BarSeq, type Run, type Runs } from '../regime-diag/bars.js';
 import { ALPHA, FLOOR_PP, REGIME_AGAINST_MIN_CONFIDENCE, TFS } from '../regime-diag/diag-spec.js';
 import { bootstrap, compute, contrast, cwOfRows, effOfCw, shuffleBlocks, type Acc, type Ctx, type Stat } from '../regime-diag/engine.js';
 import { N_TF, dayOf, type Census, type Frame, type Lab } from '../regime-diag/frame.js';
@@ -154,15 +154,21 @@ function references(R: Runs, B: number, seed: number): Float64Array {
 
 /** One arm's A5 sums: per coin × UTC-day cluster of a run's first close, Σω·y, Σω·c and Σω; and R5 = Σω·y ÷ Σω·c. */
 export interface ArmSums { runs: number; censored: number; unreferenced: number; clusters: Map<number, { pos: number; y: number; c: number; w: number }>; point: number }
-export function armSums(census: Census, seqs: BarSeq[], shuffleB: number, shuffleSeed: number): ArmSums {
+/**
+ * How a run is weighed and clustered when it is not round 1's way (EDGE-REGIME-CHALLENGE-R3-W1, ruling Q1): its
+ * weight, its cluster key and the bootstrap stratum of that cluster. Absent: the census weight, the coin × UTC-day
+ * cluster of its first close, and the coin as the stratum — rounds 1 and 2 read A5 exactly so.
+ */
+export interface RunBy { weight: (r: Run) => number; key: (r: Run) => number; stratum: (r: Run) => number }
+export function armSums(census: Census, seqs: BarSeq[], shuffleB: number, shuffleSeed: number, by?: RunBy): ArmSums {
   const R = runsOf(seqs), c = references(R, shuffleB, shuffleSeed);
   const clusters = new Map<number, { pos: number; y: number; c: number; w: number }>();
   let N = 0, D = 0, unreferenced = 0;
   R.runs.forEach((r, i) => {
     if (!Number.isFinite(c[i])) { unreferenced++; return; }
-    const w = census.wCoin[r.pos] * census.wTf[r.t], key = r.pos * 100_000 + dayOf(r.j0 * TFS[r.t].min);
+    const w = by ? by.weight(r) : census.wCoin[r.pos] * census.wTf[r.t], key = by ? by.key(r) : r.pos * 100_000 + dayOf(r.j0 * TFS[r.t].min);
     let cl = clusters.get(key);
-    if (!cl) { cl = { pos: r.pos, y: 0, c: 0, w: 0 }; clusters.set(key, cl); }
+    if (!cl) { cl = { pos: by ? by.stratum(r) : r.pos, y: 0, c: 0, w: 0 }; clusters.set(key, cl); }
     cl.y += w * r.y; cl.c += w * c[i]; cl.w += w;
     N += w * r.y; D += w * c[i];
   });
