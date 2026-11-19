@@ -33,13 +33,13 @@ export const PRESCORE_PIN = `carry:${PRESCORE_FILE}`;
 export const REGISTRATION_RE = /^audits\/regime-challenge-r1-preregistration-\d{4}-\d{2}-\d{2}\.md$/;
 /**
  * What a judge registration pins beyond T3's harness list (which the pinned guard asks for itself): the files of
- * the rounds (round 1's five and round 2's one), and the fourteen modules outside that list which the harness and
+ * the rounds (round 1's five, round 2's one and round 3's three), and the fourteen modules outside that list which the harness and
  * the rounds import — the same fourteen T3's registration and its successor's pin. A file the registration does not
  * pin is bound to nothing, so the judge refuses a registration that leaves one out; a pinned one the pinned guard
  * holds to its sha256.
  */
 export const REQUIRED_PINS: readonly string[] = Object.freeze([
-  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run', 'challenge-r2'].map((m) => `src/scripts/regime-challenge/${m}.ts`),
+  ...['challenge-spec', 'challenger-replay', 'paired-stats', 'challenge-guard', 'challenge-run', 'challenge-r2', 'challenge-r3', 'challenge-r3-frame', 'challenge-r3-screen'].map((m) => `src/scripts/regime-challenge/${m}.ts`),
   ...['market-regime-core', 'indicators', 'candle-window', 'candle-guard', 'serving-windows', 'errors', 'pre-trade-calc', 'pre-trade-odds-calibration', 'venue-fees', 'funding-venues']
     .map((m) => `src/lib/${m}.ts`),
   'src/scripts/cluster-perm-stats.py',
@@ -106,7 +106,7 @@ export const COIN_DAYS_PER_MONTH = 450;
 // ── the records ──────────────────────────────────────────────────────────────────────────────────────────
 
 export interface ChallengeRecord {
-  id: 'challenge-r1-prescore' | 'challenge-r1' | 'challenge-r2-prescore';
+  id: 'challenge-r1-prescore' | 'challenge-r1' | 'challenge-r2-prescore' | 'challenge-r3-prescore';
   wave: string;
   /** The grid, and the window entries are drawn in. */
   span: Span; win: Win;
