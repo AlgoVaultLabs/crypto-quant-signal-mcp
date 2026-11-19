@@ -36,7 +36,7 @@ import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGu
 import { MUTATE } from '../regime-diag/mutate.js';
 import { PARITY_FIXTURE, checkCoreParity } from '../regime-diag/parity.js';
 import { floorClusters, seedsFor } from '../regime-diag/prims.js';
-import { archivesRefusal, landedSource, linkRefusal, real, recordLoader, registrationOnMain, skeletonRefusal, within, writableRefusal, type Opened } from './challenge-guard.js';
+import { archivesRefusal, landedSource, linkRefusal, outRefusal, protectedRoots, real, recordLoader, registrationOnMain, skeletonRefusal, within, writableRefusal, type Opened } from './challenge-guard.js';
 import {
   CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE_PIN, R1_ROUND, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, judgeStudyRecord, windowRefusal,
   type Candidate, type ChallengeRecord, type Dial, type PrescoreRound,
@@ -225,6 +225,9 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   if (within(input.out, input.repo)) return stop('REFUSED', 'the output directory must sit outside the repository');
   const round = input.round ?? R1_ROUND, PRE = round.rec;
+  // never the seal home, round 1's tree (but for round 1's own pre-score), or an archive store, by identity
+  const foreignOut = outRefusal(input.out, protectedRoots(sealHome(), input.archives, round !== R1_ROUND));
+  if (foreignOut) return stop('REFUSED', foreignOut);
   // the one-shot windows are the judges': a record that reaches one is refused before a directory, a log line or a frame
   const rec = input.study?.rec ?? PRE;
   const reaches = judgeWindowRefusal(rec) ?? r2WindowRefusal(rec);
@@ -394,6 +397,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   if (within(store, repo)) return stop('REFUSED', 'the store must sit outside the repository');
   // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
   const home = input.study ? input.study.sealHome : sealHome();
+  // the output is never the seal home or an archive store, by identity, before the first line or write anywhere
+  const foreignOut = outRefusal(input.out, protectedRoots(home, input.archives, false));
+  if (foreignOut) return stop('REFUSED', foreignOut);
   // the store is this round's own, before the first line is written to it: never the seal home, and made for this wave
   const foreign = storeRefusal(store, home, true);
   if (foreign) return stop('REFUSED', foreign);
@@ -503,9 +509,32 @@ function finish(verdict: 'PASS' | 'REFUSED' | 'INDETERMINATE', reason = ''): voi
   process.exitCode = verdict === 'PASS' ? 0 : verdict === 'REFUSED' ? 1 : 3;
 }
 
+const MODES: readonly string[] = ['--prescore', '--judge', '--init-store'];
+const VALUED: readonly string[] = ['--census', '--cache', '--overlay', '--store', '--out', '--manifest', '--prescore-result', '--round'];
+/**
+ * Why `argv` is not this CLI's, or null (review finding #1): every token is a mode, or a valued flag followed by its
+ * one value, and no flag comes twice. An `=` form, a typo or a stray word is refused, never read as a default.
+ */
+export function argvRefusal(argv: readonly string[]): string | null {
+  const seen = new Set<string>();
+  for (let i = 0; i < argv.length; i++) {
+    const t = argv[i];
+    if (!MODES.includes(t) && !VALUED.includes(t)) return `unknown argument '${t}'`;
+    if (seen.has(t)) return `${t} is given twice`;
+    seen.add(t);
+    if (!VALUED.includes(t)) continue;
+    const v = argv[i + 1];
+    if (v === undefined || v.startsWith('--')) return `${t} needs a value`;
+    i++;
+  }
+  return null;
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
-  const modes = ['--prescore', '--judge', '--init-store'].filter((m) => argv.includes(m));
+  const unknown = argvRefusal(argv);
+  if (unknown) return finish('INDETERMINATE', unknown);
+  const modes = MODES.filter((m) => argv.includes(m));
   const val = (name: string): string | null => { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--') ? path.resolve(argv[i + 1]) : null; };
   const censusFile = val('--census'), cache = val('--cache'), overlay = val('--overlay'), store = val('--store'), out = val('--out'), manifest = val('--manifest'), prescore = val('--prescore-result');
   const mode = modes[0];
