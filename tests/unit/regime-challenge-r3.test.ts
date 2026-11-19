@@ -14,16 +14,17 @@ import type { Run } from '../../src/scripts/regime-diag/bars.js';
 import { ALPHA, MIN_MS, TFS } from '../../src/scripts/regime-diag/diag-spec.js';
 import { context } from '../../src/scripts/regime-diag/engine.js';
 import { N_TF, buildFrames, dayOf, parseCensus, withOutcomes, type Frame, type Loaded } from '../../src/scripts/regime-diag/frame.js';
+import { N_CS } from '../../src/scripts/regime-diag/diag-spec.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { seedsFor } from '../../src/scripts/regime-diag/prims.js';
-import { synthCsv } from '../../src/scripts/regime-diag/synth.js';
+import { synthCsv, synthGrid } from '../../src/scripts/regime-diag/synth.js';
 import { outRefusal } from '../../src/scripts/regime-challenge/challenge-guard.js';
 import { REQUIRED_PINS, monthRefusal, type Candidate, type ChallengeRecord } from '../../src/scripts/regime-challenge/challenge-spec.js';
 import { challengerColumns } from '../../src/scripts/regime-challenge/challenger-replay.js';
 import * as stats from '../../src/scripts/regime-challenge/paired-stats.js';
 import type { PrescoreRow } from '../../src/scripts/regime-challenge/challenge-run.js';
-import { FRAME_KEYS, MAX_CHUNK, a5By, buildChunk, chunkRefusal, chunked, chunkedFrame, mergeFrames, r3Context, r3Pair, stintsOf, strataOf, type PanelMonths } from '../../src/scripts/regime-challenge/challenge-r3-frame.js';
-import { classOf, dayVolumes, nbaseOf, screen, stateOf, type R3Rule, type ScreenInput, type Snapshot } from '../../src/scripts/regime-challenge/challenge-r3-screen.js';
+import { FRAME_KEYS, MAX_CHUNK, a5By, batchedReadings, buildChunk, chunkRefusal, chunked, chunkedFrame, entryBatches, mergeFrames, panelFrame, r3Context, r3Pair, stintsOf, strataOf, type PanelMonths, type ReadSpec } from '../../src/scripts/regime-challenge/challenge-r3-frame.js';
+import { classOf, dayVolumes, nbaseOf, screen, screenOutRefusal, stateOf, type R3Rule, type ScreenInput, type Snapshot } from '../../src/scripts/regime-challenge/challenge-r3-screen.js';
 import * as r3 from '../../src/scripts/regime-challenge/challenge-r3.js';
 import { SYN_CENSUS_TEXT, SYN_FIT, SYN_PRESCORE, SYN_SPAN, synFullLoad, writeSynArchives } from '../fixtures/regime-challenge/synth-challenge.js';
 import { zipSingle } from '../fixtures/regime-diag/synth-study.js';
@@ -333,14 +334,14 @@ describe('regime-challenge round 3: at most three dials by largest point, then t
     const rho = 0.27, pre = { days: 700, meanInvN: 0.005 }, judge = { days: 1200, meanInvN: 0.02 };
     const seDay = Math.sqrt((rho + (1 - rho) * pre.meanInvN) / pre.days), seCd = Math.sqrt(pre.meanInvN / pre.days);
     const g = r3.gateOf({ point: 0.8, hDay: 1.96 * seDay, hCoinDay: 1.96 * seCd, pre, judge });
-    expect(g.rho).toBeCloseTo(rho, 12);
+    expect(g.rho_x_coverage).toBeCloseTo(rho, 12);
     const seJ = Math.sqrt((rho + (1 - rho) * judge.meanInvN) / judge.days);
     expect(g.power.se).toBeCloseTo(seJ, 12);
     expect(g.power.multiple).toBeCloseTo((2.8 * seJ / 0.4) ** 2, 9);
     expect(g.passes).toBe(g.power.multiple <= 1);
     // clamped to [0, 1], the raw value kept
     const lo = r3.gateOf({ point: 1, hDay: 0.1, hCoinDay: 0.2, pre, judge }), hi = r3.gateOf({ point: 1, hDay: 10, hCoinDay: 0.01, pre, judge });
-    expect([lo.rho, lo.rho_raw < 0, hi.rho, hi.rho_raw > 1]).toEqual([0, true, 1, true]);
+    expect([lo.rho_x_coverage, lo.rho_x_coverage_raw < 0, hi.rho_x_coverage, hi.rho_x_coverage_raw > 1]).toEqual([0, true, 1, true]);
     // a large point passes, a small one does not
     expect([r3.gateOf({ point: 100, hDay: 1.96 * seDay, hCoinDay: 1.96 * seCd, pre, judge }).passes, r3.gateOf({ point: 1e-6, hDay: 1.96 * seDay, hCoinDay: 1.96 * seCd, pre, judge }).passes]).toEqual([true, false]);
   });
@@ -364,7 +365,8 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
   let pre: { verdict: string; reason: string; line: string | null; file: string | null };
   const lines: string[] = [];
   const json = (file: string): any => JSON.parse(fs.readFileSync(file, 'utf8')); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const study = (more: Partial<r3.R3Study> = {}): r3.R3Study => ({ rec: SYN_R3, counts: { boot: 200, shuffle: 50 }, floorClusters: 5, log: (l) => lines.push(l), pins, ...more });
+  // batches of one entry's worth: every coin is a batch of its own, so the run's outcomes are read in batches
+  const study = (more: Partial<r3.R3Study> = {}): r3.R3Study => ({ rec: SYN_R3, counts: { boot: 200, shuffle: 50 }, floorClusters: 5, log: (l) => lines.push(l), pins, maxBatchEntries: 1, ...more });
   const input = (more: Partial<r3.R3Input> = {}): r3.R3Input => ({ repo, censusFile, panelFile, archives, manifest, out, study: study(), ...more });
   // SYNA in the panel every month; SYNB from February; SYNC January … March; SYND March … May; and 2020 counts for the gate
   const TABLE: Record<string, Record<string, string>> = {
@@ -420,6 +422,8 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
     const log = fs.readFileSync(path.join(out, r3.R3_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
     expect(log.map((e) => [e.record, e.ok, e.leg])).toEqual([['challenge-r3-prescore', true, 'frame'], ['challenge-r3-prescore', true, 'outcomes'], ['challenge-r3-prescore', true, 'result']]);
     expect(log[0].strata_sha256).toBe(o.strata_sha256);
+    // review 1, F2a: the outcomes are the panel's entries' only; the frame's other entries were dropped before them
+    expect([o.entries < o.entries_frame, log[0].entries, log[0].entries_frame, o.memory.batches]).toEqual([true, o.entries, o.entries_frame, 4]);
   });
 
   it('the selection is round 1\'s rule then the three largest; each member\'s gate is the arithmetic of its recorded inputs', { timeout: 60_000 }, () => {
@@ -427,7 +431,12 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
     const rows: PrescoreRow[] = r3.R3_CANDIDATES.map((c) => { const x = o.candidates[c.id]; return { id: c.id, challenger: c.challenger, identifiable: x.support.identifiable, point: x.ddelta1?.point ?? NaN, guards: [x.a4?.guard ?? 'unreadable', x.a5?.guard ?? 'unreadable', x.coverage.guard] }; });
     const m = r3.membersOf(rows);
     expect([o.selection.judged, o.selection.members]).toEqual([m.judged, m.members]);
+    expect(m.members.length).toBeGreaterThan(0);
     expect(Object.keys(o.gate)).toEqual(m.members);
+    // F3: the family is the powered members only; the registration and R3-W2 read it, never `members`
+    const d = r3.decide(m, Object.fromEntries(m.members.map((id) => [id, r3.gateOf(o.gate[id].inputs)])));
+    expect('family' in d && [o.family, o.selection.verdicts]).toEqual([(d as { family: string[] }).family, (d as { verdicts: Record<string, string> }).verdicts]);
+    expect(o.gate_note).toMatch(/ρ × coverage/);
     const judgeDays = r3.dayPanel(o.panel.sizes.judge);
     expect(judgeDays).toEqual({ days: 60, meanInvN: (29 + 31 / 2) / 60 });
     for (const id of m.members) {
@@ -444,11 +453,15 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
     const f = chunkedFrame(SYN_R3.span, SYN_R3.win, panel.names, WTF, r3.r3Loader(SYN_R3, archives, panel, new Map()), { outcomes: false, seed: SYN_R3.entrySeed });
     const fo = withOutcomes(f, r3.r3Loader(SYN_R3, archives, panel, new Map()));
     const id = r3.R3_CANDIDATES.find((c) => c.arm && o.candidates[c.id].support.identifiable)?.id as string;
-    const keys = [`${id}|ddelta1|bootstrap`, `${id}|a5|shuffle`, 'served|a5|shuffle', `${id}|a5|bootstrap`].map((k) => `challenge-r3-prescore|${k}`);
-    const [sDd, sCh, sSv, sA5] = seedsFor(r3.R3_SEED, keys);
-    const pair = r3Pair(f, cand(id), null, stintsOf(f, panel.months));
-    const want = stats.deltaDelta1(fo, r3Context(f, panel.months, 'day'), pair, { B: 200, alpha: ALPHA, seed: sDd, arms: true });
+    const keys = [`${id}|ddelta1|bootstrap`, `${id}|a5|shuffle`, 'served|a5|shuffle', `${id}|a5|bootstrap`, `${id}|a4|bootstrap`].map((k) => `challenge-r3-prescore|${k}`);
+    const [sDd, sCh, sSv, sA5, sA4] = seedsFor(r3.R3_SEED, keys);
+    const pair = r3Pair(f, cand(id), null, stintsOf(f, panel.months)), day = r3Context(f, panel.months, 'day');
+    const want = stats.deltaDelta1(fo, day, pair, { B: 200, alpha: ALPHA, seed: sDd, arms: true });
     expect([o.candidates[id].ddelta1.point, o.candidates[id].ddelta1.lb, o.candidates[id].ddelta1.ub, o.candidates[id].ddelta1.clusters]).toEqual([want.point, want.lb, want.ub, want.clusters]);
+    // review 1, F2: a pair's sequences and row shares are let go once its A5 and coverage are read — every reading stands
+    const a4 = stats.a4Difference(fo, day, pair, { B: 200, alpha: ALPHA, seed: sA4, arms: true });
+    expect([o.candidates[id].a4.point, o.candidates[id].a4.lb, o.candidates[id].a4.ub, o.candidates[id].a4.clusters]).toEqual([a4.point, a4.lb, a4.ub, a4.clusters]);
+    expect([o.candidates[id].coverage.ratio, o.candidates[id].support]).toEqual([stats.coverageRatio(day.w, pair), JSON.parse(JSON.stringify(stats.supportOf(f, day, pair, 5)))]);
     // the clusters are days: no more than the window's days
     expect(want.clusters).toBeLessThanOrEqual(SYN_FIT.hi / 1440);
     // A5 on the stints' series, the runs weighed per coin-month and clustered by UTC day in one stratum
@@ -495,6 +508,49 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
     expect(() => r3.r3Loader(SYN_R3, archives, narrow, new Map())(2)).toThrow(/an archive of position 3 at 2024-04 lies outside the months the panel table allows it/);
   });
 
+  it('review 1, F1: a member whose gate cannot be measured makes the run INDETERMINATE, with no member verdict, no family and no result', { timeout: 300_000 }, () => {
+    const o3 = path.join(TEST_HOMEDIR, '.cache', 'algovault', 'regime-challenge-r3', 'out', 'f1');
+    for (const v of [NaN, Infinity, -Infinity]) {
+      fs.rmSync(o3, { recursive: true, force: true });
+      const r = r3.r3PrescoreRun(input({ out: o3, study: study({ gateInputs: (_id, i) => ({ ...i, hDay: v }) }) }));
+      expect([r.verdict, r.reason, r.line, r.file]).toEqual(['INDETERMINATE', expect.stringMatching(new RegExp(`^the power gate of \\S+ cannot be measured: hDay is ${String(v)}`)), null, null]);
+      expect(fs.readdirSync(o3)).toEqual([r3.R3_LOG]);
+      const log = fs.readFileSync(path.join(o3, r3.R3_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+      expect([log[log.length - 1].ok, log[log.length - 1].leg]).toEqual([false, 'gate']);
+    }
+  });
+
+  it('review 1, F2d: a pre-score whose memory estimate is above the budget refuses before any outcome, naming both numbers', { timeout: 120_000 }, () => {
+    const o4 = path.join(TEST_HOMEDIR, '.cache', 'algovault', 'regime-challenge-r3', 'out', 'f2d');
+    const r = r3.r3PrescoreRun(input({ out: o4, study: study({ memoryBudget: 1000 }) }));
+    expect([r.verdict, r.reason]).toEqual(['INDETERMINATE', expect.stringMatching(/^the pre-score's memory estimate is \d+ B, above the budget of 1000 B/)]);
+    expect(fs.readdirSync(o4)).toEqual([r3.R3_LOG]);
+    const log = fs.readFileSync(path.join(o4, r3.R3_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(log.map((e) => [e.ok, e.leg])).toEqual([[false, 'memory']]);
+  });
+
+  it('review 1, F5: the strata run and --init-archives refuse a link where they write, before writing', { timeout: 300_000 }, () => {
+    const home = path.join(TEST_HOMEDIR, '.cache', 'algovault', 'regime-challenge-r3');
+    const victim = path.join(dir, 'victim.txt');
+    fs.writeFileSync(victim, 'v');
+    for (const name of [r3.STRATA_FILE, `${r3.STRATA_FILE}.tmp`]) {
+      const d = path.join(home, 'out', `strata-link-${name.length}`);
+      fs.mkdirSync(d, { recursive: true });
+      fs.symlinkSync(victim, path.join(d, name));
+      const r = r3.r3StrataRun(input({ out: d }));
+      expect([r.verdict, r.reason]).toEqual(['REFUSED', expect.stringMatching(new RegExp(`${name.replace(/\./g, '\\.')} is a symlink`))]);
+    }
+    const m = path.join(home, 'store', 'manifest-test.json');
+    const ok = r3.r3InitArchives(panelFile, archives, m, pins.panel);
+    expect([ok.verdict, fs.readFileSync(m, 'utf8')]).toEqual(['PASS', fs.readFileSync(manifest, 'utf8')]);
+    expect(r3.r3InitArchives(panelFile, archives, path.join(dir, 'manifest.json'), pins.panel)).toMatchObject({ verdict: 'REFUSED', reason: expect.stringMatching(/regime-challenge-r3\/store only/) });
+    expect(r3.r3InitArchives(panelFile, archives, m, '0'.repeat(64))).toMatchObject({ verdict: 'REFUSED', reason: 'the panel file is not the registered one' });
+    for (const name of ['manifest-link.json', 'manifest-tmp.json.tmp']) fs.symlinkSync(victim, path.join(home, 'store', name));
+    expect(r3.r3InitArchives(panelFile, archives, path.join(home, 'store', 'manifest-link.json'), pins.panel)).toMatchObject({ verdict: 'REFUSED', reason: expect.stringMatching(/manifest-link\.json is a symlink/) });
+    expect(r3.r3InitArchives(panelFile, archives, path.join(home, 'store', 'manifest-tmp.json'), pins.panel)).toMatchObject({ verdict: 'REFUSED', reason: expect.stringMatching(/manifest-tmp\.json\.tmp is a symlink/) });
+    expect(fs.readFileSync(victim, 'utf8')).toBe('v');
+  });
+
   it('the strata run writes the label-free tables the pre-score recorded', { timeout: 300_000 }, () => {
     const o = json(pre.file as string);
     const r = r3.r3StrataRun(input({ out: path.join(TEST_HOMEDIR, '.cache', 'algovault', 'regime-challenge-r3', 'out', 'strata') }));
@@ -503,5 +559,198 @@ describe('regime-challenge round 3: the pre-score, in a sandbox repository', () 
     expect(s.strata).toEqual(o.strata);
     expect(`${JSON.stringify(s.strata, null, 1)}\n`).toBe(`${JSON.stringify(o.strata, null, 1)}\n`);
     expect(sha256(`${JSON.stringify(s.strata, null, 1)}\n`)).toBe(o.strata_sha256);
+  });
+});
+
+// ── review 1 (rulings 2026-11-19T14:59+0800) ──────────────────────────────────────────────────────────────────────
+
+describe('regime-challenge round 3, review 1: an unmeasurable gate never decides; the family holds the powered members only', () => {
+  const pre = { days: 700, meanInvN: 0.005 }, judge = { days: 1200, meanInvN: 0.02 };
+  const base: r3.GateInputs = { point: 0.8, hDay: 0.05, hCoinDay: 0.01, pre, judge };
+  const plant = (key: string, v: number): r3.GateInputs => {
+    const i = JSON.parse(JSON.stringify(base)) as r3.GateInputs;
+    const [a, b] = key.split('.') as [keyof r3.GateInputs, string | undefined];
+    if (b) (i[a] as Record<string, number>)[b] = v; else (i as unknown as Record<string, number>)[a] = v;
+    return i;
+  };
+
+  it('F1: NaN or ±Infinity in any input of the gate leaves it unmeasured — neither a pass nor a fail', () => {
+    const ok = r3.gateOf(base);
+    expect([ok.unmeasured, typeof ok.passes]).toEqual([null, 'boolean']);
+    for (const k of ['point', 'hDay', 'hCoinDay', 'pre.days', 'pre.meanInvN', 'judge.days', 'judge.meanInvN']) {
+      for (const v of [NaN, Infinity, -Infinity]) {
+        const g = r3.gateOf(plant(k, v));
+        expect([g.unmeasured, g.passes], `${k} = ${v}`).toEqual([expect.stringContaining(k), null]);
+      }
+    }
+    // the derived terms: one coin every day says nothing of ρ; a zero coin × day width neither
+    for (const [i, what] of [[{ ...base, pre: { days: 700, meanInvN: 1 } }, 'rho_x_coverage_raw'], [{ ...base, hCoinDay: 0 }, 'deff']] as const) {
+      const g = r3.gateOf(i);
+      expect([g.unmeasured, g.passes]).toEqual([expect.stringContaining(what), null]);
+    }
+  });
+
+  it('F1: a day\'s n that is not a finite whole count leaves the days of the panel unmeasured', () => {
+    for (const n of [NaN, Infinity, -Infinity, -1, 1.5]) {
+      const d = r3.dayPanel({ '2024-02': 2, '2024-03': n });
+      expect([d.days, d.meanInvN], String(n)).toEqual([NaN, NaN]);
+      expect(r3.gateOf({ ...base, judge: d }).passes).toBeNull();
+    }
+  });
+
+  const M: r3.Members = {
+    judged: ['C1.10', 'C2', 'C3', 'C4.55'], members: ['C3', 'C1.10', 'C2'],
+    verdicts: { C1: 'JUDGE', C2: 'JUDGE', C3: 'JUDGE', C4: 'KEEP (pre-score)', C5: 'KEEP (pre-score)' },
+    causes: { C1: 'C1.10 goes to the judge', C2: 'C2 goes to the judge', C3: 'C3 goes to the judge', C4: 'C4.55: not among the 3 largest', C5: 'C5.50: a guard fails in-sample' },
+  };
+  const gate = (x: boolean | 'unmeasured'): r3.Gate => r3.gateOf(x === 'unmeasured' ? { ...base, hDay: NaN } : { ...base, point: x ? 100 : 1e-6 });
+
+  it('F1: one member whose gate is unmeasured makes the run\'s decision a refusal — no member verdict, no family', () => {
+    expect(r3.decide(M, { C3: gate(true), 'C1.10': gate('unmeasured'), C2: gate(false) })).toEqual({ refusal: expect.stringMatching(/^the power gate of C1\.10 cannot be measured: hDay is NaN/) });
+    expect(r3.decide(M, { C3: gate(true), C2: gate(true) })).toEqual({ refusal: expect.stringMatching(/^the power gate of C1\.10 was not read/) });
+  });
+
+  it('F3: the family is the powered members in listed order; an underpowered member leaves it, and is so recorded', () => {
+    const d = r3.decide(M, { C3: gate(true), 'C1.10': gate(false), C2: gate(true) });
+    expect(d).toEqual({
+      family: ['C2', 'C3'],
+      verdicts: { ...M.verdicts, C1: 'KEEP — underpowered before any read' },
+      causes: { ...M.causes, C1: expect.stringMatching(/^C1\.10: the power multiple at half its in-sample point is .* above 1$/), C2: expect.stringMatching(/^C2 is powered/), C3: expect.stringMatching(/^C3 is powered/) },
+    });
+    expect(r3.decide(M, { C3: gate(false), 'C1.10': gate(false), C2: gate(false) })).toMatchObject({ family: [] });
+  });
+});
+
+const SYN_LOAD4 = ((): ((pos: number) => Loaded) => {
+  const grids = new Map<number, Loaded>();
+  return (pos) => {
+    if (pos < 2) return synFullLoad(pos);
+    if (!grids.has(pos)) grids.set(pos, { g: synthGrid(SYN_SPAN, `r3|${'CD'[pos - 2]}`), noArchive: 0 });
+    return grids.get(pos) as Loaded;
+  };
+})();
+
+describe('regime-challenge round 3, review 1: outcomes for the panel\'s entries only, in batches, inside a memory budget', () => {
+  // SYNA every month, SYNB March and April, SYNC January … March, SYND March … May
+  const P4: PanelMonths = {
+    '2024-01': { pos: new Set([0, 2]), n: 2 }, '2024-02': { pos: new Set([0, 2]), n: 2 }, '2024-03': { pos: new Set([0, 1, 2, 3]), n: 4 },
+    '2024-04': { pos: new Set([0, 1, 3]), n: 3 }, '2024-05': { pos: new Set([0, 3]), n: 2 },
+  };
+  const NAMES = ['SYNA', 'SYNB', 'SYNC', 'SYND'];
+  let full: Frame;
+  beforeAll(() => { full = chunkedFrame(SYN_SPAN, SYN_FIT, NAMES, WTF, SYN_LOAD4, { outcomes: false, seed: 's' }, 2); }, 300_000);
+
+  it('F6: a chunk is built bare whatever its caller asks — no outcome is computed in a frame', { timeout: 120_000 }, () => {
+    const f = buildChunk(SYN_SPAN, SYN_FIT, ['SYNA'], WTF, () => synFullLoad(0), { outcomes: true, seed: 's' });
+    expect([f.outcomes, f.cells]).toEqual([false, null]);
+    expect(chunkedFrame(SYN_SPAN, SYN_FIT, ['SYNA', 'SYNB'], WTF, synFullLoad, { outcomes: true, seed: 's' }).outcomes).toBe(false);
+  });
+
+  it('F2a: the entries off the panel are dropped before any outcome, and every reading is byte-identical without them', { timeout: 600_000 }, () => {
+    const g = panelFrame(full, P4);
+    const on = (f: Frame, e: number): boolean => P4[monthAt(f.eM[e])].pos.has(f.ePos[e]);
+    let inside = 0;
+    for (let e = 0; e < full.nE; e++) if (on(full, e)) inside++;
+    expect([g.nE, inside < full.nE, g.outcomes, g.cells]).toEqual([inside, true, false, null]);
+    for (let e = 0; e < g.nE; e++) if (!on(g, e)) throw new Error(`entry ${e} is off the panel`);
+    expect(g.coins.map((c) => [c.pos, c.series])).toEqual(full.coins.map((c) => [c.pos, c.series]));
+    expect(g.coins.map((c) => c.e1 - c.e0).reduce((a, b) => a + b, 0)).toBe(g.nE);
+    expect(strataOf(g, P4)).toEqual(strataOf(full, P4));
+    const readAll = (f: Frame): unknown[] => {
+      const cols = challengerColumns(f, SYN_LOAD4, [cand('C2').dial as NonNullable<Candidate['dial']>]);
+      const fo = withOutcomes(f, SYN_LOAD4), day = r3Context(f, P4, 'day'), cd = r3Context(f, P4, 'coinday'), st = stintsOf(f, P4), by = a5By(f, P4);
+      return ['C4.45', 'C2', 'C3'].map((id, k) => {
+        const p = r3Pair(f, cand(id), cols, st), o = { B: 60, alpha: ALPHA, seed: 11 + k, arms: true };
+        return {
+          support: stats.supportOf(f, day, p, 5), coverage: stats.coverageRatio(day.w, p),
+          dd: stats.deltaDelta1(fo, day, p, o), cd: stats.deltaDelta1(fo, cd, p, o), a4: stats.a4Difference(fo, day, p, o),
+          a5: stats.a5Ratio(fo.census, id, stats.armSums(fo.census, p.chalSeqs, 20, 3, by), stats.armSums(fo.census, p.servSeqs, 20, 4, by), o),
+        };
+      });
+    };
+    expect(readAll(g)).toEqual(readAll(full));
+  });
+
+  it('F2c: in batches of whole coins, ΔΔ1 and A4 are byte-identical to the single pass, coins across two chunks', { timeout: 600_000 }, () => {
+    const f = panelFrame(full, P4);
+    expect(new Set(f.coins.map((c) => Math.floor(c.pos / 2)))).toEqual(new Set([0, 1]));
+    const sizes = f.coins.map((c) => c.e1 - c.e0), cap = Math.max(...sizes);
+    for (const max of [1, cap, f.nE]) {
+      const b = entryBatches(f, max);
+      expect(b[0].e0).toBe(0);
+      expect(b[b.length - 1].e1).toBe(f.nE);
+      b.forEach((x, i) => {
+        if (i) expect([x.e0, x.c0]).toEqual([b[i - 1].e1, b[i - 1].c1]);
+        expect([x.e0, x.e1]).toEqual([f.coins[x.c0].e0, f.coins[x.c1 - 1].e1]);
+        if (x.c1 - x.c0 > 1) expect(x.e1 - x.e0).toBeLessThanOrEqual(max);
+      });
+      if (max === 1) expect(b.length).toBe(f.coins.length);
+      if (max === f.nE) expect(b.length).toBe(1);
+    }
+    const day = r3Context(f, P4, 'day'), cd = r3Context(f, P4, 'coinday'), st = stintsOf(f, P4);
+    const cols = challengerColumns(f, SYN_LOAD4, [cand('C2').dial, cand('C1.7').dial] as Array<NonNullable<Candidate['dial']>>);
+    const specs: ReadSpec[] = ['C4.45', 'C2', 'C3', 'C1.7'].flatMap((id, k) => {
+      const pair = r3Pair(f, cand(id), cols, st);
+      return [
+        { key: `${id}|dd`, kind: 'ddelta1' as const, ctx: day, pair, o: { B: 60, alpha: ALPHA, seed: 100 + k, arms: true } },
+        { key: `${id}|a4`, kind: 'a4' as const, ctx: day, pair, o: { B: 60, alpha: ALPHA, seed: 200 + k, arms: true } },
+        { key: `${id}|cd`, kind: 'ddelta1' as const, ctx: cd, pair, o: { B: 60, alpha: ALPHA, seed: 300 + k, arms: true } },
+      ];
+    });
+    const single = withOutcomes(f, SYN_LOAD4);
+    const want = specs.map((s) => (s.kind === 'ddelta1' ? stats.deltaDelta1(single, s.ctx, s.pair, s.o) : stats.a4Difference(single, s.ctx, s.pair, s.o)));
+    expect(want.every((r) => Number.isFinite(r.point) && r.rows > 0)).toBe(true);
+    for (const max of [1, cap, f.nE]) {
+      const got = batchedReadings(f, SYN_LOAD4, specs, max);
+      expect(specs.map((s) => got.get(s.key)), `batches of at most ${max} entries`).toEqual(want);
+    }
+  });
+
+  it('F2d: the memory plan is the frame, contexts, pairs, columns, the largest batch\'s outcome cells and the accumulators; above the budget it refuses, naming both numbers', { timeout: 120_000 }, () => {
+    const f = panelFrame(full, P4);
+    const plan = r3.memoryPlan(f, { candidates: 8, armCandidates: 4, dials: 3, maxBatch: 1000, members: 3, fullFrameBytes: 12345, stintBars: 777 });
+    const largest = Math.max(...entryBatches(f, 1000).map((b) => b.e1 - b.e0));
+    expect([plan.batchEntries, plan.parts.cells, plan.parts.full_frame]).toEqual([largest, largest * N_CS * 33, 12345]);
+    // one candidate's bar sequences, blocks and runs at a time (both arms), counted per bar of the stints
+    expect(plan.parts.seqs).toBe(2 * 777 * r3.SEQ_BAR_BYTES);
+    const st = stintsOf(f, P4);
+    expect(r3.stintBars(st)).toBe(st.reduce((a, s) => a + TFS.reduce((b, t) => b + Math.floor((s.hi - s.lo) / t.min) + 1, 0), 0));
+    expect([r3.MAX_BATCH_ENTRIES, r3.SEQ_BAR_BYTES]).toEqual([25_000, 4 + 1 + 8 + 8 + 8 + 8 + 160]);
+    // the plan is its widest phase — the build, the pairs (one candidate's sequences at a time), the outcome passes
+    // (the wider of pass 1's day accumulators and pass 2's coin × day ones) — never parts that are not alive together
+    // the build holds the chunks beside their merge, then the merge beside the panel's frame (both at most twice the
+    // full frame); the pairs hold, besides the stints' sequences, the window's that pairOf builds before they are cut
+    const p = plan.parts, held = p.frame + p.contexts + p.pairs + p.columns + p.overhead;
+    expect(plan.phases).toEqual({ build: 2 * p.full_frame + p.overhead, pairs: held + p.seqs + p.window_seqs, outcomes: held + p.batch_frame + p.cells + p.accumulators });
+    expect(r3.windowBars(f)).toBe(f.coins.length * TFS.reduce((b, t) => b + Math.floor((f.win.hi - f.win.lo) / t.min) + 1, 0));
+    expect(p.window_seqs).toBe(2 * r3.windowBars(f) * (4 + 1 + 8 + 8 + 8));
+    expect(plan.bytes).toBe(Math.max(...Object.values(plan.phases)));
+    const days = new Set<number>(), coinDays = new Set<string>();
+    for (let e = 0; e < f.nE; e++) { days.add(Math.floor(f.eM[e] / 1440)); coinDays.add(`${f.ePos[e]}|${Math.floor(f.eM[e] / 1440)}`); }
+    expect(p.accumulators).toBe(Math.max(2 * 8 * days.size, 3 * coinDays.size) * r3.ACC_COLS * 8);
+    expect(plan.parts.overhead).toBe(r3.MEMORY_OVERHEAD);
+    expect([r3.MEMORY_BUDGET, r3.MAX_BATCH_ENTRIES > 0]).toEqual([9 * 2 ** 30, true]);
+    expect(r3.memoryRefusal(plan, plan.bytes)).toBeNull();
+    expect(r3.memoryRefusal(plan, plan.bytes - 1)).toBe(`the pre-score's memory estimate is ${plan.bytes} B, above the budget of ${plan.bytes - 1} B: it would not finish on this host, so it does not start`);
+  });
+});
+
+describe('regime-challenge round 3, review 1: F5 — the screen writes its panel file in place, never in a protected root or through a link', () => {
+  it('the panel file is refused inside the repository, the seal home, an archive store the screen reads, or the cache outside round 3\'s home', () => {
+    const cache = path.join(TEST_HOMEDIR, '.cache', 'algovault'), a1d = path.join(cache, 'regime-challenge-r3', 'archives', '1d');
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'r3-screen-'));
+    expect(screenOutRefusal(path.join(d, 'panel.json'), a1d)).toBeNull();
+    expect(screenOutRefusal(path.join(cache, 'regime-challenge-r3', 'out', 'panel.json'), a1d)).toBeNull();
+    expect(screenOutRefusal(path.join(REPO, 'panel.json'), a1d)).toMatch(/outside the repository/);
+    expect(screenOutRefusal(path.join(guard.sealHome(), 'panel.json'), a1d)).toMatch(/the seal home/);
+    expect(screenOutRefusal(path.join(a1d, 'panel.json'), a1d)).toMatch(/an archive store the run reads/);
+    expect(screenOutRefusal(path.join(cache, 'regime-challenge-r2', 'panel.json'), a1d)).toMatch(/outside regime-challenge-r3\//);
+    const victim = path.join(d, 'victim.txt');
+    fs.writeFileSync(victim, 'v');
+    for (const name of ['linked.json', 'linked-tmp.json.tmp']) fs.symlinkSync(victim, path.join(d, name));
+    expect(screenOutRefusal(path.join(d, 'linked.json'), a1d)).toMatch(/linked\.json is a symlink/);
+    expect(screenOutRefusal(path.join(d, 'linked-tmp.json'), a1d)).toMatch(/linked-tmp\.json\.tmp is a symlink/);
+    expect(fs.readFileSync(victim, 'utf8')).toBe('v');
+    fs.rmSync(d, { recursive: true, force: true });
   });
 });
