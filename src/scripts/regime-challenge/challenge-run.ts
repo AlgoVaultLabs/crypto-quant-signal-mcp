@@ -36,7 +36,7 @@ import { ARCHIVES_PIN, carryRefusal, checkDiagGuard, claimSeal, initStore, logGu
 import { MUTATE } from '../regime-diag/mutate.js';
 import { PARITY_FIXTURE, checkCoreParity } from '../regime-diag/parity.js';
 import { floorClusters, seedsFor } from '../regime-diag/prims.js';
-import { archivesRefusal, landedSource, linkRefusal, outRefusal, protectedRoots, real, recordLoader, registrationOnMain, skeletonRefusal, within, writableRefusal, type Opened } from './challenge-guard.js';
+import { archivesRefusal, landedSource, linkRefusal, outRefusal, real, recordLoader, registrationOnMain, skeletonRefusal, within, writableRefusal, type Opened } from './challenge-guard.js';
 import {
   CENSUS_SHA256, CHALLENGE_SEED, JUDGE, PRESCORE_PIN, R1_ROUND, REGISTRATION_RE, REQUIRED_PINS, T3_ARCHIVES_SHA256, candidateOf, judgeStudyRecord, windowRefusal,
   type Candidate, type ChallengeRecord, type Dial, type PrescoreRound,
@@ -225,8 +225,8 @@ export function prescoreRun(input: PrescoreInput): RunResult {
   const stop = (verdict: 'REFUSED' | 'INDETERMINATE', reason: string): RunResult => ({ verdict, reason, line: null, file: null });
   if (within(input.out, input.repo)) return stop('REFUSED', 'the output directory must sit outside the repository');
   const round = input.round ?? R1_ROUND, PRE = round.rec;
-  // never the seal home, round 1's tree (but for round 1's own pre-score), or an archive store, by identity
-  const foreignOut = outRefusal(input.out, protectedRoots(sealHome(), input.archives, round !== R1_ROUND));
+  // never the seal home or an archive store, and under the cache only the round's own home, by identity
+  const foreignOut = outRefusal(input.out, round.home, sealHome(), input.archives);
   if (foreignOut) return stop('REFUSED', foreignOut);
   // the one-shot windows are the judges': a record that reaches one is refused before a directory, a log line or a frame
   const rec = input.study?.rec ?? PRE;
@@ -397,8 +397,9 @@ export function judgeRun(input: JudgeInput): RunResult {
   if (within(store, repo)) return stop('REFUSED', 'the store must sit outside the repository');
   // The seal has one place, which the store argument does not move. Only a synthetic study names its own.
   const home = input.study ? input.study.sealHome : sealHome();
-  // the output is never the seal home or an archive store, by identity, before the first line or write anywhere
-  const foreignOut = outRefusal(input.out, protectedRoots(home, input.archives, false));
+  // the output is never the seal home or an archive store, and under the cache only round 1's home, by identity,
+  // before the first line or write anywhere
+  const foreignOut = outRefusal(input.out, R1_ROUND.home, home, input.archives);
   if (foreignOut) return stop('REFUSED', foreignOut);
   // the store is this round's own, before the first line is written to it: never the seal home, and made for this wave
   const foreign = storeRefusal(store, home, true);
