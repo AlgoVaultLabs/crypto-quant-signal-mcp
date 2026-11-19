@@ -47,31 +47,22 @@ export function within(p: string, root: string): boolean {
 }
 
 /**
- * The directories no run of the rounds writes into (EDGE-REGIME-CHALLENGE-R2-W1, review finding #2): the seal home
- * (`home`; absent for a synthetic study that names none), round 1's tree, T3's two archive stores — each under the
- * home the code resolves for the user (`os.userInfo`, as `sealHome()` does) — and the archive stores the run reads.
- * Round 1's own runs (`roundOneTree` false) write in round 1's tree, so for them it is not one.
+ * Why `out` may not be a run's output directory, or null (EDGE-REGIME-CHALLENGE-R2-W1, review finding #2 and its
+ * NOTE 1: an allow-list, since a list of what to refuse is incomplete by construction). Anywhere, an output that is,
+ * lies inside or holds the seal home (`home`; absent for a synthetic study that names none) or an archive store the
+ * run reads is refused. Under `~/.cache/algovault` — the cache under the home the code resolves for the user
+ * (`os.userInfo`, as `sealHome()` does) — the output may lie only in the running round's own home (`own`, a directory
+ * name in the cache); an output that holds the cache is refused. Every test is `within`, so by identity.
  */
-export function protectedRoots(home: string | undefined, archives: ArchiveStore, roundOneTree: boolean): Array<{ what: string; root: string }> {
-  const cache = path.join(os.userInfo().homedir, '.cache', 'algovault');
-  return [
-    ...(home ? [{ what: 'the seal home', root: home }] : []),
-    ...(roundOneTree ? [{ what: 'round 1\'s tree', root: path.join(cache, 'regime-challenge') }] : []),
-    { what: 'T3\'s archive store', root: path.join(cache, 'odds-calibration-study') },
-    { what: 'T3\'s archive store', root: path.join(cache, 'regime-diag', 'archives') },
-    { what: 'an archive store the run reads', root: archives.cache },
-    { what: 'an archive store the run reads', root: archives.overlay },
-  ];
-}
-/**
- * Why `out` may not be a run's output directory, or null: it is one of `roots`, lies inside one, or holds one —
- * each decided by `within`, so by identity after every resolution step, never by spelling alone.
- */
-export function outRefusal(out: string, roots: ReadonlyArray<{ what: string; root: string }>): string | null {
+export function outRefusal(out: string, own: string, home: string | undefined, archives: ArchiveStore): string | null {
+  const roots = [...(home ? [{ what: 'the seal home', root: home }] : []), { what: 'an archive store the run reads', root: archives.cache }, { what: 'an archive store the run reads', root: archives.overlay }];
   for (const { what, root } of roots) {
     if (within(out, root)) return `the output directory is ${what} or lies inside it: no run writes there`;
     if (within(root, out)) return `the output directory holds ${what}: no run writes there`;
   }
+  const cache = path.join(os.userInfo().homedir, '.cache', 'algovault');
+  if (within(out, cache) && !within(out, path.join(cache, own))) return `the output directory lies under ~/.cache/algovault outside ${own}/, the running round's home: no run writes there`;
+  if (within(cache, out)) return 'the output directory holds ~/.cache/algovault: no run writes there';
   return null;
 }
 
