@@ -2,7 +2,8 @@
 // arms on the served label — C4 (M05, the strong tier's confidence cap) and C5 (M10, the TRENDING ≥ 60 trigger) —
 // and their in-sample pre-score (AC3: parity at the served value, the month guard both ways, the sealed windows).
 // Synthetic archives and a sandbox repository with a bare origin; the suite's homes, network and clock are its own
-// (arc lesson 14: the isolate is imported first).
+// (arc lesson 14: the isolate is imported first). The C4 copy is held to a frozen table, never to the live served
+// core (arc lesson 15): the live check is `armParity` inside the run, on the frame it reads.
 import { FIXED_NOW, TEST_HOMEDIR, offlineFetch } from '../fixtures/regime-challenge/isolate.js';
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -10,13 +11,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { classifyRegime } from '../../src/lib/market-regime-core.js';
 import { months, sha256, type ArchiveStore } from '../../src/scripts/regime-diag/archive.js';
-import { ALPHA, L_UP, REGIME_AGAINST_MIN_CONFIDENCE } from '../../src/scripts/regime-diag/diag-spec.js';
+import { ALPHA, L_DOWN, L_UP, NO_LABEL, REGIME_AGAINST_MIN_CONFIDENCE } from '../../src/scripts/regime-diag/diag-spec.js';
 import { context } from '../../src/scripts/regime-diag/engine.js';
 import { buildFrames, isTrending, parseCensus, skeletonOf, type Census, type Frame, type Skeleton } from '../../src/scripts/regime-diag/frame.js';
 import * as guard from '../../src/scripts/regime-diag/guard.js';
 import { seedsFor } from '../../src/scripts/regime-diag/prims.js';
+import { outRefusal, protectedRoots } from '../../src/scripts/regime-challenge/challenge-guard.js';
 import * as run from '../../src/scripts/regime-challenge/challenge-run.js';
 import { R2_JUDGE_OUTCOMES, R2_ROUND, SERVED_CAP, SERVED_TRIGGER, STRONG_ADX } from '../../src/scripts/regime-challenge/challenge-r2.js';
 import { CANDIDATES, CHALLENGE_SEED, JUDGE, JUDGE_FILE, PRESCORE, R1_ROUND, REQUIRED_PINS, judgeStudyRecord, monthRefusal, monthsOpened, type Candidate, type ChallengeRecord } from '../../src/scripts/regime-challenge/challenge-spec.js';
@@ -52,26 +53,110 @@ const at = (id: string, value: number): Candidate => {
   const c = candOf(id), arm = c.arm as NonNullable<Candidate['arm']>;
   return { ...c, arm: arm.kind === 'cap' ? { kind: 'cap', cap: value } : { kind: 'trigger', min: value } };
 };
-/** The strong trending inputs of the core's ladder: ADX above 40 at many fractional parts, the slope absent or at many values. */
-const SLOPES: ReadonlyArray<number | null> = [null, -9, -3.1, -3, -2.9, -1.01, -0.5, -0.1, 0, 0.1, 0.3, 0.5, 0.99, 1, 1.5, 2, 2.1, 3, 9];
-const ADXS: readonly number[] = [...Array.from({ length: 170 }, (_, i) => 40.05 + i * 0.35), 40.25, 44.75, 45.25, 47.25, 47.75, 55.25];
-const core = (adx: number, slope: number | null): ReturnType<typeof classifyRegime> =>
-  classifyRegime({ adxVal: adx, adxSlope: slope, plusDI: 30, minusDI: 10, slopeCategory: 'FLAT', priceStructure: 'HIGHER_HIGHS', volatilityRatio: 0.01 });
-/** How many strong inputs the copy at `cap` disagrees with the core on (and how many it was asked). */
-const againstCore = (m: typeof replay, cap: number): { n: number; differ: number } => {
-  let n = 0, differ = 0;
-  for (const a of ADXS) {
-    for (const s of SLOPES) {
-      const c = core(a, s);
-      expect([c.regime, c.trendStrength === 'STRONG' || c.trendStrength === 'MODERATE']).toEqual(['TRENDING_UP', true]);
-      n++;
-      if (m.capConfidence(a, s === null ? NaN : s, cap) !== c.confidence) differ++;
-    }
-  }
-  return { n, differ };
-};
+/**
+ * The frozen table of C4's copy (arc lesson 15: no live served code). Each row is a STRONG trending input of the core's
+ * ladder — ADX, ADX slope (null: absent) — and the confidence the served core gave it at 0ef89d88 (cap 90), then the
+ * registered arm's confidence at cap 45 and at cap 55. The rows span the ladder's branches: an absent slope, the −15
+ * floor and the +10 ceiling of the slope adjustment, the 95 clamp, and ADX at .25 / .75 where `round(2·ADX)` rounds up.
+ */
+type Row = readonly [adx: number, slope: number | null, cap90: number, cap45: number, cap55: number];
+const FROZEN: readonly Row[] = [
+  [40.01, null, 80, 45, 55], [40.01, -9, 65, 30, 40], [40.01, -1.3, 74, 39, 49], [40.01, 0.1, 81, 46, 56], [40.01, 0.99, 85, 50, 60], [40.01, 2.1, 90, 55, 65], [40.01, 9, 90, 55, 65],
+  [40.25, null, 81, 45, 55], [40.25, -9, 66, 30, 40], [40.25, -1.3, 75, 39, 49], [40.25, 0.1, 82, 46, 56], [40.25, 0.99, 86, 50, 60], [40.25, 2.1, 91, 55, 65], [40.25, 9, 91, 55, 65],
+  [40.49, null, 81, 45, 55], [40.49, -9, 66, 30, 40], [40.49, -1.3, 75, 39, 49], [40.49, 0.1, 82, 46, 56], [40.49, 0.99, 86, 50, 60], [40.49, 2.1, 91, 55, 65], [40.49, 9, 91, 55, 65],
+  [41.3, null, 83, 45, 55], [41.3, -9, 68, 30, 40], [41.3, -1.3, 77, 39, 49], [41.3, 0.1, 84, 46, 56], [41.3, 0.99, 88, 50, 60], [41.3, 2.1, 93, 55, 65], [41.3, 9, 93, 55, 65],
+  [42.75, null, 86, 45, 55], [42.75, -9, 71, 30, 40], [42.75, -1.3, 80, 39, 49], [42.75, 0.1, 87, 46, 56], [42.75, 0.99, 91, 50, 60], [42.75, 2.1, 95, 55, 65], [42.75, 9, 95, 55, 65],
+  [44.75, null, 90, 45, 55], [44.75, -9, 75, 30, 40], [44.75, -1.3, 84, 39, 49], [44.75, 0.1, 91, 46, 56], [44.75, 0.99, 95, 50, 60], [44.75, 2.1, 95, 55, 65], [44.75, 9, 95, 55, 65],
+  [45, null, 90, 45, 55], [45, -9, 75, 30, 40], [45, -1.3, 84, 39, 49], [45, 0.1, 91, 46, 56], [45, 0.99, 95, 50, 60], [45, 2.1, 95, 55, 65], [45, 9, 95, 55, 65],
+  [45.25, null, 90, 45, 55], [45.25, -9, 75, 30, 40], [45.25, -1.3, 84, 39, 49], [45.25, 0.1, 91, 46, 56], [45.25, 0.99, 95, 50, 60], [45.25, 2.1, 95, 55, 65], [45.25, 9, 95, 55, 65],
+  [47.75, null, 90, 45, 55], [47.75, -9, 75, 30, 40], [47.75, -1.3, 84, 39, 49], [47.75, 0.1, 91, 46, 56], [47.75, 0.99, 95, 50, 60], [47.75, 2.1, 95, 55, 65], [47.75, 9, 95, 55, 65],
+  [52.6, null, 90, 45, 55], [52.6, -9, 75, 30, 40], [52.6, -1.3, 84, 39, 49], [52.6, 0.1, 91, 46, 56], [52.6, 0.99, 95, 50, 60], [52.6, 2.1, 95, 55, 65], [52.6, 9, 95, 55, 65],
+  [63.1, null, 90, 45, 55], [63.1, -9, 75, 30, 40], [63.1, -1.3, 84, 39, 49], [63.1, 0.1, 91, 46, 56], [63.1, 0.99, 95, 50, 60], [63.1, 2.1, 95, 55, 65], [63.1, 9, 95, 55, 65],
+  [88, null, 90, 45, 55], [88, -9, 75, 30, 40], [88, -1.3, 84, 39, 49], [88, 0.1, 91, 46, 56], [88, 0.99, 95, 50, 60], [88, 2.1, 95, 55, 65], [88, 9, 95, 55, 65],
+];
+/** Rows of a frozen frame that are not strong: [label, ADX, slope, confidence] — moderate, early trend, ranging, volatile. */
+const OTHER: ReadonlyArray<readonly [number, number, number, number]> = [[L_UP, 35, 1.2, 70], [L_DOWN, 22, 1, 44], [0, 50, 0, 80], [3, 45, NaN, 60], [L_UP, 31, -0.4, 60], [L_DOWN, 28, 0.6, 51]];
+/** A frame built from the frozen rows (strong rows alternate up and down; one row has no call): only what the arms read. */
+function frozenFrame(conf90: readonly number[] = FROZEN.map((r) => r[2]), adxOf = (a: number): number => a): Frame {
+  const n = FROZEN.length + OTHER.length + 1;
+  const has = new Uint8Array(n), lab = new Uint8Array(n).fill(NO_LABEL), conf = new Uint8Array(n), adx = new Float64Array(n).fill(NaN), adxSlope = new Float64Array(n).fill(NaN);
+  FROZEN.forEach(([a, sl], i) => { has[i] = 1; lab[i] = i % 2 ? L_DOWN : L_UP; conf[i] = conf90[i]; adx[i] = adxOf(a); adxSlope[i] = sl === null ? NaN : sl; });
+  OTHER.forEach(([l, a, sl, c], j) => { const i = FROZEN.length + j; has[i] = 1; lab[i] = l; conf[i] = c; adx[i] = a; adxSlope[i] = sl; });
+  return { has, S: { lab, conf }, adx, adxSlope, coins: [] } as unknown as Frame;
+}
+/** How many frozen rows the copy at `cap` disagrees with (column `col` of the table). */
+const againstTable = (m: typeof replay, cap: number, col: 2 | 3 | 4): number => FROZEN.filter((r) => m.capConfidence(r[0], r[1] === null ? NaN : r[1], cap) !== r[col]).length;
 
-describe('regime-challenge round 2: the C4 and C5 arms, before any outcome', () => {
+describe('regime-challenge round 2: C4 and C5 against frozen tables (no served code is called)', () => {
+  it('#4 C4 parity: the copy at the served cap is the frozen core table on every strong input, and at 45 and 55 the registered arm', { timeout: 60_000 }, () => {
+    expect(FROZEN.length).toBe(84);
+    expect([againstTable(replay, SERVED_CAP, 2), againstTable(replay, 45, 3), againstTable(replay, 55, 4)]).toEqual([0, 0, 0]);
+    // the table spans the ladder's branches, so a copy that drops one of them disagrees with it
+    const has = (f: (r: Row) => boolean): boolean => FROZEN.some(f);
+    expect([has((r) => r[1] === null), has((r) => r[1] !== null && Math.round(r[1] * 5) < -15), has((r) => r[1] !== null && Math.round(r[1] * 5) > 10),
+      has((r) => r[2] === 95), has((r) => (r[0] * 4) % 2 === 1), has((r) => r[2] < 90 && r[2] > 65)]).toEqual([true, true, true, true, true, true]);
+    // neither candidate value is the served rule
+    expect([againstTable(replay, 45, 2), againstTable(replay, 55, 2)].every((n) => n === FROZEN.length)).toBe(true);
+  });
+
+  it('#4 armParity on a frozen frame: ok on every strong row; one row it does not reproduce, or no strong row, refuses', { timeout: 60_000 }, () => {
+    const f = frozenFrame();
+    expect(replay.armParity(f)).toEqual({ ok: true, calls: FROZEN.length, mismatches: 0, reason: 'ok' });
+    const bad = replay.armParity(frozenFrame(FROZEN.map((r, i) => r[2] + (i === 5 ? 1 : 0))));
+    expect(bad).toEqual({ ok: false, calls: FROZEN.length, mismatches: 1, reason: `the C4 copy at the served cap ${SERVED_CAP} differs from the served confidence on 1 of ${FROZEN.length} strong rows` });
+    const none = replay.armParity(frozenFrame(undefined, () => 40));
+    expect([none.ok, none.calls, none.reason]).toEqual([false, 0, 'the frame holds no strong trending row: the C4 copy cannot be shown to be the core']);
+  });
+
+  it('#4 the pairs on a frozen frame: at the served cap and trigger the arm IS the served arm; at 45, 55, 50, 70 each reads its rule', { timeout: 60_000 }, () => {
+    const f = frozenFrame();
+    for (const c of [at('C4.45', SERVED_CAP), at('C5.50', SERVED_TRIGGER)]) {
+      const p = stats.pairOf(f, c, null);
+      expect(Buffer.from(p.chal60).equals(Buffer.from(p.serv60)), c.id).toBe(true);
+      expect(Buffer.from(p.chalLab.conf).equals(Buffer.from(f.S.conf))).toBe(true);
+    }
+    const dir = (r: number, lab: { lab: Uint8Array; conf: Uint8Array }, lo: number): number => (f.has[r] && isTrending(lab.lab[r]) && lab.conf[r] >= lo ? (lab.lab[r] === L_UP ? 1 : 2) : 0);
+    const strong = (r: number): boolean => r < FROZEN.length;
+    const want: Record<string, (r: number) => number> = {
+      'C4.45': (r) => (strong(r) ? (FROZEN[r][3] >= 60 ? dir(r, f.S, 0) : 0) : dir(r, f.S, 60)),
+      'C4.55': (r) => (strong(r) ? (FROZEN[r][4] >= 60 ? dir(r, f.S, 0) : 0) : dir(r, f.S, 60)),
+      'C5.50': (r) => dir(r, f.S, 50),
+      'C5.70': (r) => dir(r, f.S, 70),
+    };
+    for (const c of R2) {
+      const p = stats.pairOf(f, c, null);
+      expect([...p.chal60], c.id).toEqual([...p.chal60].map((_, r) => want[c.id](r)));
+      expect(Buffer.from(p.chal60).equals(Buffer.from(p.serv60)), `${c.id} moves rows`).toBe(false);
+    }
+  });
+
+  it('#4 a broken copy is caught on the frozen inputs: c4copy turns the table and armParity red, c5copy the C5 pair', { timeout: 60_000 }, async () => {
+    await mutated('c4copy', (m) => {
+      expect(againstTable(m.replay, SERVED_CAP, 2)).toBeGreaterThan(0);
+      expect(m.replay.armParity(frozenFrame()).ok).toBe(false);
+    });
+    await mutated('c5copy', (m) => {
+      const p = m.stats.pairOf(frozenFrame(), at('C5.50', SERVED_TRIGGER), null);
+      expect(Buffer.from(p.chal60).equals(Buffer.from(p.serv60))).toBe(false);
+    });
+    expect([againstTable(replay, SERVED_CAP, 2), replay.armParity(frozenFrame()).ok]).toEqual([0, true]);
+  });
+
+  it('#1 the CLI refuses every token outside its flags and their values: an = form, a typo, a stray word, a repeat, a missing value', { timeout: 60_000 }, () => {
+    const pre = ['--prescore', '--round', 'r2', '--census', 'c', '--cache', 'k', '--overlay', 'o', '--manifest', 'm', '--out', 'x'];
+    expect(run.argvRefusal(pre)).toBeNull();
+    expect(run.argvRefusal(['--judge', '--census', 'c', '--cache', 'k', '--overlay', 'o', '--store', 's', '--prescore-result', 'p', '--out', 'x'])).toBeNull();
+    expect(run.argvRefusal(['--init-store', '--census', 'c', '--cache', 'k', '--overlay', 'o', '--store', 's'])).toBeNull();
+    expect(run.argvRefusal(['--prescore', '--round=r2', ...pre.slice(3)])).toBe("unknown argument '--round=r2'");
+    expect(run.argvRefusal([...pre, '--ouT', 'y'])).toBe("unknown argument '--ouT'");
+    expect(run.argvRefusal([...pre, 'stray'])).toBe("unknown argument 'stray'");
+    expect(run.argvRefusal([...pre, '--out', 'y'])).toBe('--out is given twice');
+    expect(run.argvRefusal(['--prescore', '--round'])).toBe('--round needs a value');
+    expect(run.argvRefusal(['--prescore', '--out', '--census', 'c'])).toBe('--out needs a value');
+  });
+});
+
+describe('regime-challenge round 2: the C4 and C5 arms on a replayed synthetic frame, before any outcome', () => {
   let f: Frame;
   let strong: Uint8Array;
   beforeAll(() => {
@@ -97,31 +182,6 @@ describe('regime-challenge round 2: the C4 and C5 arms, before any outcome', () 
     // round 1's challengers carry no arm, and none of round 2's is a round-1 candidate
     expect(CANDIDATES.every((c) => c.arm === undefined)).toBe(true);
     expect(R2.some((c) => CANDIDATES.some((x) => x.id === c.id))).toBe(false);
-  });
-
-  it('C4 parity: at the served cap the copy is the core\'s confidence on every strong input; at 45 and 55 it is not', { timeout: 60_000 }, () => {
-    const served = againstCore(replay, SERVED_CAP);
-    expect(served.n).toBe(ADXS.length * SLOPES.length);
-    expect(served.differ).toBe(0);
-    // the dial moves the confidence: neither candidate value is the served rule
-    for (const cap of [45, 55]) expect(againstCore(replay, cap).differ).toBeGreaterThan(served.n / 2);
-  });
-
-  it('C4 parity on a frame: armParity holds at the served cap on every strong row, and refuses a frame it does not reproduce', { timeout: 60_000 }, () => {
-    const n = strong.reduce((s, x) => s + x, 0);
-    expect(n).toBeGreaterThan(1000);
-    expect(replay.armParity(f)).toEqual({ ok: true, calls: n, mismatches: 0, reason: 'ok' });
-    // one strong row whose served confidence the copy does not reproduce
-    const r = strong.indexOf(1);
-    const conf = Uint8Array.from(f.S.conf);
-    conf[r] += 1;
-    const bad = replay.armParity({ ...f, S: { lab: f.S.lab, conf } });
-    expect([bad.ok, bad.calls, bad.mismatches]).toEqual([false, n, 1]);
-    expect(bad.reason).toBe(`the C4 copy at the served cap ${SERVED_CAP} differs from the served confidence on 1 of ${n} strong rows`);
-    // a frame with no strong row cannot show the copy is the core
-    const none = replay.armParity({ ...f, adx: f.adx.map((a) => Math.min(a, 40)) });
-    expect([none.ok, none.calls]).toEqual([false, 0]);
-    expect(none.reason).toBe('the frame holds no strong trending row: the C4 copy cannot be shown to be the core');
   });
 
   it('C4 and C5 read the rows their registered words name, row for row', { timeout: 60_000 }, () => {
@@ -151,29 +211,6 @@ describe('regime-challenge round 2: the C4 and C5 arms, before any outcome', () 
     const kept = strong.reduce((s, x, r) => s + (x && slopeOk(r) ? 1 : 0), 0);
     expect(kept).toBeGreaterThan(0);
     expect(kept).toBeLessThan(strong.reduce((s, x) => s + x, 0));
-  });
-
-  it('parity of the pair: at the served cap and the served trigger the challenger arm IS the served arm', { timeout: 60_000 }, () => {
-    for (const c of [at('C4.45', SERVED_CAP), at('C5.50', SERVED_TRIGGER)]) {
-      const p = stats.pairOf(f, c, null);
-      expect(Buffer.from(p.chal60).equals(Buffer.from(p.serv60)), c.id).toBe(true);
-      expect(Buffer.from(p.chalLab.conf).equals(Buffer.from(f.S.conf))).toBe(true);
-      expect(p.serv60.some((x) => x > 0)).toBe(true);
-    }
-  });
-
-  it('a broken copy is caught: c4copy turns both C4 parity checks red, c5copy the C5 pair\'s', { timeout: 60_000 }, async () => {
-    await mutated('c4copy', (m) => {
-      expect(againstCore(m.replay, SERVED_CAP).differ).toBeGreaterThan(0);
-      const p = m.replay.armParity(f);
-      expect([p.ok, p.mismatches > 0]).toEqual([false, true]);
-    });
-    await mutated('c5copy', (m) => {
-      const p = m.stats.pairOf(f, at('C5.50', SERVED_TRIGGER), null);
-      expect(Buffer.from(p.chal60).equals(Buffer.from(p.serv60))).toBe(false);
-    });
-    // and unset, both are green again
-    expect(replay.armParity(f).ok).toBe(true);
   });
 
   it('the month guard, both ways: round 2\'s pre-score opens 2024-01 … 2025-12 and refuses every other month', { timeout: 60_000 }, () => {
@@ -367,14 +404,78 @@ describe('regime-challenge round 2: the pre-score, in a sandbox repository', () 
     const cli = (args: string[]): Promise<string> => tsx(path.join(REPO, 'node_modules/.bin/tsx'), [path.join(REPO, 'src/scripts/regime-challenge/challenge-run.ts'), ...args], { timeout: 60_000 })
       .then((r) => r.stdout, (e: { stdout?: string; code?: number }) => `${e.stdout ?? ''}exit=${e.code}`);
     const common = ['--census', censusFile, '--cache', archives.cache, '--overlay', archives.overlay];
-    const [judge, init, other] = await Promise.all([
+    const [judge, init, other, eq] = await Promise.all([
       cli(['--judge', '--round', 'r2', ...common, '--store', path.join(dir, 'cli-store'), '--prescore-result', path.join(dir, 'absent.json'), '--out', path.join(dir, 'cli-out')]),
       cli(['--init-store', '--round', 'r2', ...common, '--store', path.join(dir, 'cli-store')]),
       cli(['--prescore', '--round', 'r3', ...common, '--manifest', guard.archivesFile(store), '--out', path.join(dir, 'cli-out')]),
+      // #1: an = form is no flag of this CLI — it is refused, never read as round 1's pre-score
+      cli(['--prescore', '--round=r2', ...common, '--manifest', guard.archivesFile(store), '--out', path.join(dir, 'cli-eq-out')]),
     ]);
     for (const o of [judge, init]) expect(o).toBe('REGIME_CHALLENGE_RUN_VERDICT=INDETERMINATE — round 2 has no judge yet: --round r2 takes --prescore only\nexit=3');
     expect(other).toBe('REGIME_CHALLENGE_RUN_VERDICT=INDETERMINATE — --round is r1 or r2\nexit=3');
-    for (const p of ['cli-store', 'cli-out']) expect(fs.existsSync(path.join(dir, p))).toBe(false);
+    expect(eq).toBe("REGIME_CHALLENGE_RUN_VERDICT=INDETERMINATE — unknown argument '--round=r2'\nexit=3");
+    for (const p of ['cli-store', 'cli-out', 'cli-eq-out']) expect(fs.existsSync(path.join(dir, p))).toBe(false);
+  });
+
+  // ── #2: no output directory is, holds or lies inside a root no run writes into (identity: `within`) ────────────
+  const HOME_CACHE = path.join(TEST_HOMEDIR, '.cache', 'algovault');
+  /** Each form of `out` refused with `why`, before a directory, a log line or a frame — and nothing made where it pointed. */
+  const refusedOuts = (forms: ReadonlyArray<readonly [string, string]>): void => {
+    for (const [out, why] of forms) {
+      lines.length = 0;
+      const before = fs.existsSync(out);
+      const r = run.prescoreRun({ repo, censusFile, archives, manifest: guard.archivesFile(store), out, tables: TABLES, round: R2_ROUND, study: study() });
+      expect([r.verdict, r.reason], out).toEqual(['REFUSED', why]);
+      expect(lines, out).toEqual([]);
+      expect(fs.existsSync(out), out).toBe(before);
+      expect(fs.existsSync(path.join(out, 'regime-challenge-r2-prescore.log')), out).toBe(false);
+    }
+  };
+  const isIn = (what: string): string => `the output directory is ${what} or lies inside it: no run writes there`;
+  const holds = (what: string): string => `the output directory holds ${what}: no run writes there`;
+
+  it('#2 the seal home: as the output, inside it, through a link to it, or holding it — refused', { timeout: 60_000 }, () => {
+    const home = guard.sealHome();
+    expect(home.startsWith(TEST_HOMEDIR)).toBe(true);
+    fs.mkdirSync(home, { recursive: true });
+    const link = path.join(dir, 'link-to-seal-home');
+    fs.symlinkSync(home, link);
+    refusedOuts([[home, isIn('the seal home')], [path.join(home, 'out'), isIn('the seal home')], [path.join(link, 'out'), isIn('the seal home')],
+      [path.join(HOME_CACHE, 'regime-diag'), holds('the seal home')], [TEST_HOMEDIR, holds('the seal home')]]);
+  });
+
+  it('#2 round 1\'s tree: as the output, inside it, or holding it — refused; round 2\'s own home beside it is not', { timeout: 60_000 }, () => {
+    const r1 = path.join(HOME_CACHE, 'regime-challenge');
+    fs.mkdirSync(path.join(r1, 'judge-r1'), { recursive: true });
+    refusedOuts([[r1, isIn('round 1\'s tree')], [path.join(r1, 'judge-r1'), isIn('round 1\'s tree')], [path.join(r1, 'new'), isIn('round 1\'s tree')]]);
+    // a sibling whose name starts with round 1's is not inside it, by spelling or by identity
+    const roots = protectedRoots(guard.sealHome(), archives, true);
+    expect(outRefusal(path.join(HOME_CACHE, 'regime-challenge-r2', 'out'), roots)).toBeNull();
+    // round 1's own runs write in round 1's tree: its roots leave that one out
+    expect(protectedRoots(guard.sealHome(), archives, false).map((x) => x.what)).not.toContain('round 1\'s tree');
+    expect(outRefusal(path.join(r1, 'judge-r1'), protectedRoots(guard.sealHome(), archives, false))).toBeNull();
+  });
+
+  it('#2 T3\'s archive stores: either one as the output, inside it, or held by it — refused', { timeout: 60_000 }, () => {
+    const odds = path.join(HOME_CACHE, 'odds-calibration-study'), diag = path.join(HOME_CACHE, 'regime-diag', 'archives');
+    for (const d of [odds, diag]) fs.mkdirSync(d, { recursive: true });
+    refusedOuts([[odds, isIn('T3\'s archive store')], [path.join(odds, 'x'), isIn('T3\'s archive store')],
+      [diag, isIn('T3\'s archive store')], [path.join(diag, 'x'), isIn('T3\'s archive store')]]);
+  });
+
+  it('#2 the archive stores the run reads: as the output, inside one, or holding one — refused; round 1\'s judge refuses an output in its seal home too', { timeout: 60_000 }, () => {
+    refusedOuts([[archives.cache, isIn('an archive store the run reads')], [path.join(archives.overlay, 'x'), isIn('an archive store the run reads')]]);
+    const both = path.join(dir, 'both');
+    const twin: ArchiveStore = { cache: path.join(both, 'cache'), overlay: path.join(both, 'overlay') };
+    expect(outRefusal(both, protectedRoots(guard.sealHome(), twin, true))).toBe(holds('an archive store the run reads'));
+    // round 1's judge: an injected study's seal home, by identity, before any line or write
+    const home = path.join(dir, 'judge-home'), out = path.join(home, 'out');
+    fs.mkdirSync(home);
+    lines.length = 0;
+    const j = run.judgeRun({ repo, store: path.join(dir, 'judge-store'), censusFile, archives, prescore: path.join(dir, 'absent.json'), out, tables: TABLES,
+      study: { rec: { ...JUDGE, outcomes: { first: '2024-06', last: '2024-07' } }, counts: COUNTS, floorClusters: FLOOR, log: (l) => lines.push(l), sealHome: home } });
+    expect([j.verdict, j.reason]).toEqual(['REFUSED', isIn('the seal home')]);
+    expect([lines, fs.readdirSync(home), fs.existsSync(path.join(dir, 'judge-store'))]).toEqual([[], [], false]);
   });
 });
 
