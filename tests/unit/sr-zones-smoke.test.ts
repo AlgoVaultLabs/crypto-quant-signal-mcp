@@ -125,6 +125,47 @@ describe('sr-zones-smoke — SR-ZONES-W3 AC2.2: every venue, the key functions u
     expect(r.status).toBe(0);
   });
 
+  /**
+   * R9 #7: per venue but BINANCE, a lint violation in the BTC and young answers and a wrong `venue` in the ETH and young
+   * answers are each the run's FAIL. Each leg is proven able to fail: a copy of the script with that check confined to
+   * BINANCE (or judged against the body's own venue) prints the leg FAIL on all three venues, and the self-test FAIL.
+   */
+  const R9_VENUES = ['BYBIT', 'OKX', 'BITGET'];
+  const R9_LEGS = {
+    btcLint: (v: string) => `end to end: on ${v}, a forbidden word in the BTC summary is the run's FAIL`,
+    youngLint: (v: string) => `end to end: on ${v}, a forbidden word in the young-listing summary is the run's FAIL`,
+    ethVenue: (v: string) => `end to end: on ${v}, an ETH answer served from another venue is the run's FAIL`,
+    youngVenue: (v: string) => `end to end: on ${v}, a young-listing answer served from another venue is the run's FAIL`,
+  };
+
+  it('R9 #7: on every venue but BINANCE, BTC and young strings are linted and ETH and young answers judged against the venue asked', { timeout: 30_000 }, () => {
+    const r = run('--self-test');
+    for (const leg of Object.values(R9_LEGS)) for (const v of R9_VENUES) expect(r.stdout, leg(v)).toContain(`PASS  ${leg(v)}`);
+    expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=PASS');
+    expect(r.status).toBe(0);
+  });
+
+  it.each([
+    ['S7b: BTC strings linted on BINANCE only', "      lintAll(`${on}BTC 1d+4h`, btc, 'BTC');", "      if (venue === 'BINANCE') lintAll(`${on}BTC 1d+4h`, btc, 'BTC');", 'btcLint'],
+    ['S7c: young-listing strings linted on BINANCE only', '      lintAll(`${on}${coin} 1d`, yl, coin);', "      if (venue === 'BINANCE') lintAll(`${on}${coin} 1d`, yl, coin);", 'youngLint'],
+    ['S8: the ETH answer judged against its own venue', '(b, t) => shapeProblems(b, t, venue));', '(b, t) => shapeProblems(b, t, b?.venue));', 'ethVenue'],
+    ['S8c: the young answer judged against its own venue', '(b) => youngProblems(b, venue));', '(b) => youngProblems(b, b?.venue));', 'youngVenue'],
+  ] as const)('R9 #7 proven able to fail — %s', { timeout: 30_000 }, (_name, from, to, leg) => {
+    const src = readFileSync(SMOKE, 'utf8');
+    expect(src.split(from).length - 1).toBe(1);
+    const dir = mkdtempSync(join(tmpdir(), 'srz-smoke-r9-'));
+    try {
+      const copy = join(dir, 'sr-zones-smoke.mjs');
+      writeFileSync(copy, src.replace(from, to));
+      const r = spawnSync(process.execPath, [copy, '--self-test'], { encoding: 'utf8', timeout: 30_000 });
+      for (const v of R9_VENUES) expect(r.stdout, R9_LEGS[leg](v)).toContain(`FAIL  ${R9_LEGS[leg](v)}`);
+      expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=FAIL');
+      expect(r.status).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('parseArgs, readKey, rpc and callTool are sha256-identical to 4b3c3dc9 (Mr.1\'s sign-off): no CLI flag added', () => {
     const lines = readFileSync(SMOKE, 'utf8').split('\n');
     const hashOf = (name: string): string => {

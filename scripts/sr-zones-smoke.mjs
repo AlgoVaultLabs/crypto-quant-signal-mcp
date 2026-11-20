@@ -634,6 +634,23 @@ async function selfTest() {
     ['end to end: a tools/list venue enum of one value is the run\'s FAIL', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, async (p) => (p.method === 'tools/list'
         ? { tools: [{ ...TOOLS.tools[0], inputSchema: { properties: { venue: { enum: ['BINANCE'] } } } }] } : {}))) === '["FAIL",1]'],
+    // SR-ZONES-W3 R9 #7: on each venue but BINANCE, the BTC and young-listing strings are linted, and the ETH and young
+    // answers are judged against the venue asked: one planted defect per leg, each the run's FAIL.
+    ...SMOKE_VENUES.filter((v) => v !== 'BINANCE').flatMap((venue) => {
+      const young = YOUNG_LISTINGS[venue];
+      const lintBreak = (body) => edit(body, (b) => { b.results[0].summary += ' Price will hold.'; });
+      const clean = { BTC: [answer(btc)], ETH: ethOk, CT: ctOk };
+      return [
+        [`end to end: on ${venue}, a forbidden word in the BTC summary is the run's FAIL`, async () =>
+          (await endToEnd({ ...clean, [`${venue}:BTC`]: [answer(lintBreak(sampleBody('BTC', ['1d', '4h'], venue)))] })) === '["FAIL",1]'],
+        [`end to end: on ${venue}, a forbidden word in the young-listing summary is the run's FAIL`, async () =>
+          (await endToEnd({ ...clean, [`${venue}:${young}`]: [answer(lintBreak(sampleBody(young, ['1d'], venue)))] })) === '["FAIL",1]'],
+        [`end to end: on ${venue}, an ETH answer served from another venue is the run's FAIL`, async () =>
+          (await endToEnd({ ...clean, [`${venue}:ETH`]: [answer(sampleBody('ETH', ['1h']))] })) === '["FAIL",1]'],
+        [`end to end: on ${venue}, a young-listing answer served from another venue is the run's FAIL`, async () =>
+          (await endToEnd({ ...clean, [`${venue}:${young}`]: [answer(sampleBody(young, ['1d']))] })) === '["FAIL",1]'],
+      ];
+    }),
     ['the keyless reads carry no key: GET /tools and POST /x402/get_support_resistance_zones only, redirects refused', () => keylessIsPinned()],
   ];
   let failed = 0;
