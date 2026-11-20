@@ -4,11 +4,17 @@
  *
  * Venues (SR-ZONES-W3). `venue` is one of SR_ZONES_VENUES (BINANCE, the default, BYBIT, OKX, BITGET), and the formula
  * and SR_ZONES_PARAMS are the same on every one (R2: no per-venue tuning). Venue facts stay per venue:
- *   - timeframes: the SR_ZONES_TIMEFRAMES the venue's adapter serves at exactly the requested step
- *     (isTimeframeServedExactly, src/lib/tf-support.ts); any other is refused as unserved `timeframe` before any
- *     request, never served as another bar size (R5);
+ *   - timeframes (srZonesPlan): an SR timeframe the venue's adapter serves at exactly the requested step
+ *     (isTimeframeServedExactly, src/lib/tf-support.ts) is read natively; any other is BUILT from the venue's largest
+ *     native timeframe that divides it (R5: Bybit and OKX 8h from 2×4h, Bitget 2h from 2×1h and 8h from 2×4h; buckets on
+ *     UTC multiples of the step, src/lib/sr-zones/build-bars.ts). Both are derived from the adapters' served-interval
+ *     maps, never listed; an adapter's substituted interval (Bitget 2h→1H, 8h→6H) is never read. A timeframe with no
+ *     native divisor is refused as unserved `timeframe` before any request;
+ *   - UTC bars (R6): every read asks the adapter for UTC-anchored bars (SR_CANDLE_READ; OKX and Bitget 12h/1d otherwise
+ *     open on Hong Kong time), and a read holding a bar off the UTC multiples of its step is refused as unserved
+ *     `timeframe`, never served (OffUtcCandleError);
  *   - history page span: the bars one adapter getCandles(start, end) call returns contiguously, declared once by the
- *     adapter (`historyPageBars`, R0 P1), and MAX_PAGES follows it;
+ *     adapter (`historyPageBars`, R0 P1) for the timeframe read, and MAX_PAGES follows it;
  *   - tick: the adapter's own getPriceTick.
  * A later venue is one adapter declaration and one enum entry; tsc refuses SR_VENUE_PAGE_BARS without its row.
  *
@@ -45,7 +51,7 @@
  * step. A served zone is an allow-list of fields (served.ts): formed_from and formed_to stay internal, and the response
  * carries no `order` (Mr.1, R7).
  */
-import type { Candle, ExchangeId, LicenseInfo, QuotaState } from '../types.js';
+import type { Candle, CandleReadOptions, ExchangeId, LicenseInfo, QuotaState } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { assembleServingWindow } from '../lib/adapters/_history-plan.js';
 import { historyPageBars as binanceHistoryPageBars } from '../lib/adapters/binance.js';
@@ -54,6 +60,7 @@ import { historyPageBars as okxHistoryPageBars } from '../lib/adapters/okx.js';
 import { historyPageBars as bitgetHistoryPageBars } from '../lib/adapters/bitget.js';
 import { isTimeframeServedExactly } from '../lib/tf-support.js';
 import { SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES } from '../lib/tool-param-schema.js';
+import { TIMEFRAMES } from '../lib/capabilities.js';
 import { intervalMsFor } from '../lib/candle-guard.js';
 import { TRADE_CALL_CANDLE_COUNT } from '../lib/serving-windows.js';
 import { StaleUpstreamWindowError, TimeframeUnservedError, UpstreamRateLimitError, VenueMarketClosedError } from '../lib/errors.js';
@@ -69,6 +76,7 @@ import { computeSrZones, attachSrZoneOverlaps, type SrZoneFlag, type SrZonesFram
 import { buildSrZonesSummary } from '../lib/sr-zones/summary.js';
 import { priceLevelStep } from '../lib/sr-zones/rounding.js';
 import { serveSrZonesFrame, type SrServedZone } from '../lib/sr-zones/served.js';
+import { buildBars } from '../lib/sr-zones/build-bars.js';
 
 /** The served tool name (SR-ZONES-W2 R8: renamed from get_sr_zones, no alias); the module names stay. */
 const GET_SR_ZONES_TOOL = 'get_support_resistance_zones' as const;
@@ -92,8 +100,10 @@ const SR_VENUE_PAGE_BARS: Record<SrZonesVenue, (tf: string) => number | null> = 
 
 /** Candles a full window holds: H closed candles and the forming one. */
 const WINDOW_BARS = SR_ZONES_PARAMS.historyBars + 1;
-/** The head page, then enough history pages of the venue's span to reach WINDOW_BARS, plus one page of slack. */
-const maxPagesFor = (pageBars: number): number => 1 + Math.ceil((WINDOW_BARS - TRADE_CALL_CANDLE_COUNT) / pageBars) + 1;
+/** The head page, then enough history pages of the venue's span to reach `bars` read bars, plus one page of slack. */
+const maxPagesFor = (pageBars: number, bars: number): number => 1 + Math.ceil((bars - TRADE_CALL_CANDLE_COUNT) / pageBars) + 1;
+/** R6: the candle read option every get_support_resistance_zones read passes, and no other tool does — UTC-anchored bars. */
+const SR_CANDLE_READ: CandleReadOptions = Object.freeze({ utcBars: true });
 /** Windows held at once (~100 KB each); past this the oldest read is dropped first. */
 const MAX_CACHED_WINDOWS = 256;
 /** A cached window whose newest page is at least this old re-reads that page before it is served (R5 Q3). */
@@ -186,7 +196,8 @@ export interface SrZonesDeps {
 }
 
 export const DEFAULT_SR_ZONES_DEPS: SrZonesDeps = {
-  getCandles: (coin, timeframe, startTime, endTime, venue) => getAdapter(venue).getCandles(coin, timeframe, startTime, undefined, endTime),
+  getCandles: (coin, timeframe, startTime, endTime, venue) =>
+    getAdapter(venue).getCandles(coin, timeframe, startTime, undefined, endTime, SR_CANDLE_READ),
   nowMs: () => Date.now(),
   cache: new Map(),
   failures: new Map(),
@@ -202,9 +213,34 @@ function srZonesVenueOf(requested: string | undefined): SrZonesVenue | null {
   return (SR_ZONES_VENUES as readonly string[]).includes(requested) ? (requested as SrZonesVenue) : null;
 }
 
-/** §0.2: the SR timeframes `venue` serves — those its adapter serves at exactly the requested step, in schema order. */
+/** How a venue serves one timeframe: the native timeframe read, its step, and the native bars per served bar (1: native). */
+export interface SrTimeframePlan {
+  readTf: string;
+  readStepMs: number;
+  k: number;
+}
+
+/**
+ * §0.2 + R5: `timeframe` read natively where the venue's adapter serves it at exactly that step, else built from the
+ * largest product timeframe the adapter serves exactly whose step divides it. Null: no native divisor (refused).
+ * Derived from the adapter's own map through isTimeframeServedExactly, so a substituted interval is never chosen.
+ */
+export function srZonesPlan(venue: SrZonesVenue, timeframe: string): SrTimeframePlan | null {
+  const stepMs = intervalMsFor(timeframe);
+  if (stepMs === null) return null;
+  if (isTimeframeServedExactly(venue as ExchangeId, timeframe)) return { readTf: timeframe, readStepMs: stepMs, k: 1 };
+  let best: SrTimeframePlan | null = null;
+  for (const tf of TIMEFRAMES) {
+    const s = intervalMsFor(tf);
+    if (s === null || s >= stepMs || stepMs % s !== 0 || !isTimeframeServedExactly(venue as ExchangeId, tf)) continue;
+    if (best === null || s > best.readStepMs) best = { readTf: tf, readStepMs: s, k: stepMs / s };
+  }
+  return best;
+}
+
+/** The SR timeframes `venue` serves (native or built, §0.2 + R5), in schema order. */
 export function srZonesTimeframes(venue: SrZonesVenue): string[] {
-  return SR_ZONES_TIMEFRAMES.filter((tf) => isTimeframeServedExactly(venue as ExchangeId, tf));
+  return SR_ZONES_TIMEFRAMES.filter((tf) => srZonesPlan(venue, tf) !== null);
 }
 
 /** Concurrent reads of one key share one read: `<key>#full` for the whole window, `<key>#head` for the newest page. */
@@ -216,6 +252,24 @@ class EmptyCandleWindowError extends Error {
     super(`${venue} returned no candles`);
     this.name = 'EmptyCandleWindowError';
   }
+}
+
+/**
+ * R6: a read held a bar that does not open on a UTC multiple of its step (a venue serving that bar on another clock,
+ * such as OKX's and Bitget's default 12H/1D on Hong Kong time). Never served, never built from: the timeframe is
+ * unserved `timeframe`, as for a bar size the venue does not serve.
+ */
+class OffUtcCandleError extends Error {
+  constructor(venue: SrZonesVenue, timeframe: string) {
+    super(`${venue} served ${timeframe} bars that do not open on UTC multiples of the step`);
+    this.name = 'OffUtcCandleError';
+  }
+}
+
+/** The bars of one read, refused (OffUtcCandleError) when any opens off the UTC multiples of `stepMs`. */
+function onUtcGrid(bars: Candle[], stepMs: number, venue: SrZonesVenue, timeframe: string): Candle[] {
+  if (bars.some((c) => c.time % stepMs !== 0)) throw new OffUtcCandleError(venue, timeframe);
+  return bars;
 }
 
 /** This call stopped waiting for a full read that is still running. Not a failure: nothing is remembered (R8). */
@@ -273,12 +327,15 @@ async function tickWithin(read: Promise<number | null>): Promise<number | null> 
 }
 
 /**
- * One timeframe's window, newest WINDOW_BARS candles, ascending. The head page is a serving read (no endTime) of the
- * trade_call@100 window src/lib/serving-windows.ts already declares on every timeframe, so the getAdapter seam checks
- * its head and contract-suite S tests this exact read on every venue. Older candles come from history pages
- * (endTime set) stepping back `pageBars` candles at a time — the span the venue's adapter declares one call returns
- * contiguously (§0.3, SR_VENUE_PAGE_BARS; R0 P1 measured 0 holes over 1001 bars on every venue × timeframe) — assembled
- * by the shared serving-window assembler. The page facts are the assembler's alone (§0.3, one judge): it pages back
+ * One timeframe's window, newest WINDOW_BARS candles, ascending. It reads `plan.readTf` (the timeframe itself, or for a
+ * built timeframe its native divisor, R5) and every page read must open on the UTC multiples of its step (onUtcGrid,
+ * R6). The head page is a serving read (no endTime) of the trade_call@100 window src/lib/serving-windows.ts already
+ * declares on every timeframe, so the getAdapter seam checks its head and contract-suite S tests this exact read on
+ * every venue. Older candles come from history pages (endTime set) stepping back `pageBars` candles at a time — the span
+ * the venue's adapter declares one call returns contiguously (§0.3, SR_VENUE_PAGE_BARS; R0 P1 measured 0 holes over 1001
+ * bars on every venue × timeframe, and over the 2002 constituents of every built pair) — assembled by the shared
+ * serving-window assembler. A built window reads from the open of its oldest bucket (WINDOW_BARS buckets back) and is
+ * then built (buildBars: a closed bucket missing a constituent is left out, the forming one built from what was read). The page facts are the assembler's alone (§0.3, one judge): it pages back
  * while its accounting (accountPage) finds a front gap against the window start, and drops the direction once a page
  * adds no older candle. A page that comes back short of its span is therefore not the listing start (a venue gap
  * inside it; BITGET 12h/1d pages also leave out their start candle, which the next page returns); only the listing
@@ -295,33 +352,37 @@ async function fetchWindow(
   coin: string,
   timeframe: string,
   stepMs: number,
+  plan: SrTimeframePlan,
   pageBars: number,
 ): Promise<SrZonesWindow> {
   const now = deps.nowMs();
-  const first = await deps.getCandles(coin, timeframe, now - TRADE_CALL_CANDLE_COUNT * stepMs, undefined, venue);
+  const { readTf, readStepMs: s } = plan;
+  const first = onUtcGrid(await deps.getCandles(coin, readTf, now - TRADE_CALL_CANDLE_COUNT * s, undefined, venue), s, venue, timeframe);
+  const from = plan.k === 1 ? now - WINDOW_BARS * stepMs : Math.floor(now / stepMs) * stepMs - (WINDOW_BARS - 1) * stepMs;
   const { bars } = await assembleServingWindow({
     first,
-    servedStepMs: stepMs,
-    from: now - WINDOW_BARS * stepMs,
+    servedStepMs: s,
+    from,
     nowMs: now,
-    maxPages: maxPagesFor(pageBars),
+    maxPages: maxPagesFor(pageBars, Math.ceil((now - from) / s)),
     backward: async (oldestOpenMs) => {
       const page = await runAsBatch(
-        () => deps.getCandles(coin, timeframe, oldestOpenMs - pageBars * stepMs, oldestOpenMs - 1, venue),
+        () => deps.getCandles(coin, readTf, oldestOpenMs - pageBars * s, oldestOpenMs - 1, venue),
         processScopedTag('get_sr_zones'),
       );
       // Not `exhausted` on shortness: the assembler's own no-progress stop ends the walk when nothing older came back.
-      return { bars: page.filter((c) => c.time < oldestOpenMs), exhausted: false };
+      return { bars: onUtcGrid(page, s, venue, timeframe).filter((c) => c.time < oldestOpenMs), exhausted: false };
     },
   });
-  if (bars.length === 0) throw new EmptyCandleWindowError(venue);
-  return { candles: bars.slice(-WINDOW_BARS), readAtMs: now, validUntilMs: (Math.floor(now / stepMs) + 1) * stepMs };
+  const candles = plan.k === 1 ? bars : buildBars(bars, s, stepMs, now);
+  if (candles.length === 0) throw new EmptyCandleWindowError(venue);
+  return { candles: candles.slice(-WINDOW_BARS), readAtMs: now, validUntilMs: (Math.floor(now / stepMs) + 1) * stepMs };
 }
 
 /**
- * The newest page — the same serving read fetchWindow starts with — merged over a cached window's tail. The history and
- * its validity are kept; only `readAtMs` moves. A page that does not reach back to the cached tail would leave a hole,
- * so it is not merged and the cached window stands.
+ * The newest page — the same serving read fetchWindow starts with, built the same way for a built timeframe — merged
+ * over a cached window's tail. The history and its validity are kept; only `readAtMs` moves. A page that does not reach
+ * back to the cached tail would leave a hole, so it is not merged and the cached window stands.
  */
 async function refreshHead(
   deps: SrZonesDeps,
@@ -329,10 +390,13 @@ async function refreshHead(
   coin: string,
   timeframe: string,
   stepMs: number,
+  plan: SrTimeframePlan,
   cached: SrZonesWindow,
 ): Promise<SrZonesWindow> {
   const now = deps.nowMs();
-  const head = await deps.getCandles(coin, timeframe, now - TRADE_CALL_CANDLE_COUNT * stepMs, undefined, venue);
+  const { readTf, readStepMs: s } = plan;
+  const page = onUtcGrid(await deps.getCandles(coin, readTf, now - TRADE_CALL_CANDLE_COUNT * s, undefined, venue), s, venue, timeframe);
+  const head = plan.k === 1 ? page : buildBars(page, s, stepMs, now);
   const tail = cached.candles[cached.candles.length - 1];
   if (head.length === 0 || tail === undefined || head[0].time > tail.time) return cached;
   const kept = cached.candles.filter((c) => c.time < head[0].time);
@@ -359,6 +423,7 @@ async function windowFor(
   coin: string,
   timeframe: string,
   stepMs: number,
+  plan: SrTimeframePlan,
   pageBars: number,
 ): Promise<SrZonesWindow> {
   const key = `${venue}:${coin}:${timeframe}`;
@@ -368,7 +433,7 @@ async function windowFor(
   if (hit && hit.candles.length > 0 && now < hit.validUntilMs) {
     if (now - hit.readAtMs < HEAD_REFRESH_MS) return hit;
     return shared(deps, `${key}#head`, () =>
-      refreshHead(deps, venue, coin, timeframe, stepMs, hit).then(
+      refreshHead(deps, venue, coin, timeframe, stepMs, plan, hit).then(
         (w) => {
           // Store it only over the window it was merged from: a full read that landed meanwhile is newer.
           if (w !== hit && deps.cache.get(key) === hit) {
@@ -386,7 +451,7 @@ async function windowFor(
   if (failed && now < failed.untilMs) throw failed.error;
   // The store and the failure record live inside the shared read, so they happen whether or not a caller still waits.
   return boundedWait(shared(deps, `${key}#full`, () =>
-    fetchWindow(deps, venue, coin, timeframe, stepMs, pageBars).then(
+    fetchWindow(deps, venue, coin, timeframe, stepMs, plan, pageBars).then(
       (w) => {
         for (const [k, v] of deps.cache) if (v.validUntilMs <= w.readAtMs) deps.cache.delete(k);
         deps.cache.delete(key);
@@ -452,7 +517,7 @@ export function isTransientSrUnservedReason(reason: string): boolean {
 
 /** Why a timeframe was not served, from what its read threw. */
 function unservedReason(err: unknown, venue: SrZonesVenue, coin: string): string {
-  if (err instanceof TimeframeUnservedError) return reasonOf('timeframe', venue);
+  if (err instanceof TimeframeUnservedError || err instanceof OffUtcCandleError) return reasonOf('timeframe', venue);
   if (err instanceof VenueMarketClosedError) return reasonOf('marketClosed', venue, { coin });
   if (err instanceof StaleUpstreamWindowError) return reasonOf('staleWindow', venue, { n: err.headGapBars });
   if (err instanceof UpstreamRateLimitError) return reasonOf('rateLimited', venue);
@@ -496,20 +561,21 @@ export async function runGetSrZones(
   const tickRead = venue === null ? Promise.resolve(null) : readPriceTick(deps, coin, venue);
   const servable = venue === null ? [] : srZonesTimeframes(venue);
 
-  // 2. Windows, one per timeframe; each failure stays with its timeframe. A timeframe the venue does not serve at its
-  //    exact step (§0.2, R5) is refused here, before any request.
+  // 2. Windows, one per timeframe; each failure stays with its timeframe. A timeframe the venue can neither read nor
+  //    build (§0.2, R5: no native divisor) is refused here, before any request.
   const unserved: SrZonesUnserved[] = [];
   let transient = false;
   const windows: Array<{ timeframe: string; stepMs: number; window: SrZonesWindow }> = [];
   for (const timeframe of timeframes) {
     const stepMs = intervalMsFor(timeframe);
-    const pageBars = venue === null ? null : SR_VENUE_PAGE_BARS[venue](timeframe);
-    if (venue === null || stepMs === null || pageBars === null || !(pageBars > 0) || !servable.includes(timeframe)) {
+    const plan = venue === null || !servable.includes(timeframe) ? null : srZonesPlan(venue, timeframe);
+    const pageBars = venue === null || plan === null ? null : SR_VENUE_PAGE_BARS[venue](plan.readTf);
+    if (venue === null || stepMs === null || plan === null || pageBars === null || !(pageBars > 0)) {
       unserved.push({ timeframe, reason: reasonOf('timeframe', venueLabel) });
       continue;
     }
     try {
-      windows.push({ timeframe, stepMs, window: await windowFor(deps, venue, coin, timeframe, stepMs, pageBars) });
+      windows.push({ timeframe, stepMs, window: await windowFor(deps, venue, coin, timeframe, stepMs, plan, pageBars) });
     } catch (err) {
       const reason = unservedReason(err, venue, coin);
       // The status reads the reason through the predicate the docs-samples gate uses: a 503 exactly when it says transient.

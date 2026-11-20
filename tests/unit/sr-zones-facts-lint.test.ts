@@ -105,7 +105,7 @@ describe('SR-ZONES-W1 AC1.4 — facts lint: self-test', () => {
 
 describe('SR-ZONES-W1 AC1.4 — facts lint: emitted strings', () => {
   it('read the lib and the fixture (non-vacuity)', () => {
-    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['params.ts', 'rounding.ts', 'served.ts', 'summary.ts', 'zones.ts']);
+    expect(walk(LIB).map((f) => relative(LIB, f)).sort()).toEqual(['build-bars.ts', 'params.ts', 'rounding.ts', 'served.ts', 'summary.ts', 'zones.ts']); // SR-ZONES-W3 R5: + build-bars.ts
     expect(libLiterals.length).toBeGreaterThanOrEqual(20);
     expect(summaries).toHaveLength(365);
   });
