@@ -121,12 +121,22 @@ export interface FundingData {
   }[];
 }
 
+/**
+ * SR-ZONES-W3 R6: a candle read option only get_support_resistance_zones passes. `utcBars`: bars that open on UTC
+ * multiples of their step — OKX and Bitget open 12H and 1D on Hong Kong time unless asked for their `12Hutc` / `1Dutc`
+ * bars. An adapter whose bars already open on UTC ignores it; every other read omits it and is unchanged.
+ */
+export interface CandleReadOptions {
+  utcBars?: boolean;
+}
+
 export interface ExchangeAdapter {
   // OPS-HL-SEED-LOAD-W1: optional trailing `endTime` bounds the fetch window
   // (outcome backfill needs only [signalTime, signalTime+(evalCount+buffer)·candleMs],
   // not [startTime, now]). Trailing-optional → the 16 narrower adapter impls
   // remain assignable with no signature change; only the HL adapter honors it.
-  getCandles(coin: string, interval: string, startTime: number, dex?: DexType, endTime?: number): Promise<Candle[]>;
+  // SR-ZONES-W3 R6: optional trailing `opts` (CandleReadOptions), honoured by OKX and Bitget.
+  getCandles(coin: string, interval: string, startTime: number, dex?: DexType, endTime?: number, opts?: CandleReadOptions): Promise<Candle[]>;
   getAssetContext(coin: string, dex?: DexType): Promise<AssetContext>;
   getPredictedFundings(): Promise<FundingData[]>;
   getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]>;

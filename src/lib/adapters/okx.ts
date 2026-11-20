@@ -10,6 +10,7 @@ import type {
   AssetContext,
   FundingData,
   DexType,
+  CandleReadOptions,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
@@ -63,6 +64,13 @@ const INTERVAL_MAP: Record<string, string> = {
 
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms OKX fetches for `tf` (1H/1D notation; fully native). */
 export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
+
+/**
+ * SR-ZONES-W3 R6: OKX opens `12H` at 04:00/16:00 UTC and `1D` at 16:00 UTC (Hong Kong time; measured live 2026-11-20),
+ * and serves a UTC-anchored twin of each, same step. A read passing `{ utcBars: true }` (get_support_resistance_zones
+ * only) asks for the twin on every request it makes; INTERVAL_MAP and every other read are unchanged.
+ */
+const UTC_BAR: Readonly<Record<string, string>> = { '12H': '12Hutc', '1D': '1Dutc' };
 
 /** Page caps, named once: the request AND the contract/canary read these (never a third literal). */
 export const RECENT_PAGE_CAP = 100;
@@ -306,9 +314,10 @@ export class OKXAdapter implements ExchangeAdapter {
    * and a page the routing guard rejects goes to the serving assembler (`branch: 'A'`), never to the history
    * fallback. The `endTime` path is byte-identical (R0 P9 differential).
    */
-  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
+  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number, opts?: CandleReadOptions): Promise<Candle[]> {
     const instId = toOKXInstId(coin);
-    const bar = resolveVenueInterval(INTERVAL_MAP, interval, 'OKX');
+    const mapped = resolveVenueInterval(INTERVAL_MAP, interval, 'OKX');
+    const bar = opts?.utcBars === true && Object.hasOwn(UTC_BAR, mapped) ? UTC_BAR[mapped] : mapped;
     // REQUESTED step: the routing guard's unit only (kept byte-identical — it decides which branch serving reads).
     const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.

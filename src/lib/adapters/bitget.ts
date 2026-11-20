@@ -10,6 +10,7 @@ import type {
   AssetContext,
   FundingData,
   DexType,
+  CandleReadOptions,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
@@ -56,6 +57,14 @@ const INTERVAL_MAP: Record<string, string> = {
 
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Bitget fetches for `tf`. 2h→1H/8h→6H are FINER (faithful). */
 export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
+
+/**
+ * SR-ZONES-W3 R6: Bitget opens `12H` at 04:00/16:00 UTC and `1D` at 16:00 UTC (Hong Kong time; measured live
+ * 2026-11-20), and serves a UTC-anchored twin of each, same step. A read passing `{ utcBars: true }`
+ * (get_support_resistance_zones only) asks for the twin on every request it makes; INTERVAL_MAP and every other read
+ * are unchanged.
+ */
+const UTC_GRANULARITY: Readonly<Record<string, string>> = { '12H': '12Hutc', '1D': '1Dutc' };
 
 /** Page caps, named once: the request AND the contract/canary read these (never a third literal). The history
  *  endpoint refuses limit > 200 (code 40053, measured from two vantages 2026-09-29). */
@@ -257,9 +266,10 @@ export class BitgetAdapter implements ExchangeAdapter {
    * when clipped) is its window, `branch: 'A'`; F, the closed-only history endpoint, is a history-read branch and
    * stamps `headClosedOnly`, which the getAdapter seam refuses on a serving read.
    */
-  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
+  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number, opts?: CandleReadOptions): Promise<Candle[]> {
     const symbol = toBitgetSymbol(coin);
-    const granularity = resolveVenueInterval(INTERVAL_MAP, interval, 'BITGET');
+    const mapped = resolveVenueInterval(INTERVAL_MAP, interval, 'BITGET');
+    const granularity = opts?.utcBars === true && Object.hasOwn(UTC_GRANULARITY, mapped) ? UTC_GRANULARITY[mapped] : mapped;
     // REQUESTED step: the routing guard's unit only (kept byte-identical — it decides which branch serving reads).
     const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
