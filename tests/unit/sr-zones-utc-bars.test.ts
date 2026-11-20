@@ -7,7 +7,10 @@
  * R7 (Q1 A): the getAdapter seam's two getCandles wrappers forward the option; a 5-argument read through the seam asks
  * exactly what the bare adapter asks.
  */
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import type { Candle } from '../../src/types.js';
+import { runGetSrZones, type SrZonesDeps, type GetSrZonesOutcome } from '../../src/tools/get-sr-zones.js';
+import { _resetCallTrackersForTest, resetLicenseCache } from '../../src/lib/license.js';
 
 const NOW = Date.parse('2026-11-20T04:30:00.000Z');
 const D = 86_400_000;
@@ -128,5 +131,110 @@ describe('SR-ZONES-W3 AC1.7 — BINANCE and BYBIT open on UTC already: the optio
       expect(urls.splice(0).map(String)).toEqual(opt);
       expect(opt.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * SR-ZONES-W3 R9 #4 — the UTC guard (onUtcGrid) at each of its three call sites, alone: one off-UTC bar planted in the
+ * head page, in one backward page, or in the head refresh. The first two refuse the timeframe ("{venue} does not serve
+ * this timeframe"); a refused head refresh is a failed re-read, so the cached window stands unmerged (by design, R7).
+ */
+describe('SR-ZONES-W3 R9 #4 — the UTC guard holds at the head page, a backward page and the head refresh, each alone', () => {
+  const series = (n: number): Candle[] => {
+    const forming = Math.floor(NOW / D) * D;
+    return Array.from({ length: n }, (_, i) => ({ time: forming - (n - 1 - i) * D, open: 100 + (i % 17), high: 103 + (i % 17), low: 97 + (i % 17), close: 101 + (i % 17), volume: 1 }));
+  };
+  const shift = (bars: Candle[], at: number): Candle[] => bars.map((c, i) => (i === at ? { ...c, time: c.time + 3_600_000 } : c));
+  /** OKX 1d over a clean UTC series; `plant` rewrites one read's answer (by its kind and its index among that kind). */
+  function deps(plant: (kind: 'serving' | 'backward', n: number, bars: Candle[]) => Candle[], now: { ms: number }): SrZonesDeps {
+    const s = series(1200);
+    const n = { serving: 0, backward: 0 };
+    return {
+      nowMs: () => now.ms,
+      cache: new Map(),
+      failures: new Map(),
+      getCandles: async (_coin, _tf, start, end) => {
+        const kind = end === undefined ? 'serving' : 'backward';
+        const bars = s.filter((c) => c.time >= start && (end === undefined ? c.time <= now.ms : c.time <= end));
+        return plant(kind, n[kind]++, bars);
+      },
+      getPriceTick: async () => null,
+    };
+  }
+  const run = (d: SrZonesDeps) => runGetSrZones({ coin: 'BTC', timeframes: ['1d'], venue: 'OKX' }, { tier: 'free', key: 'av_srz_utc_guard' }, d);
+  const refusedFor = (o: GetSrZonesOutcome) => (o.kind === 'refused' ? [o.status, (o.payload as { unserved?: unknown }).unserved] : [o.kind]);
+
+  beforeEach(() => {
+    _resetCallTrackersForTest();
+    resetLicenseCache();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(NOW));
+  });
+
+  it('a clean read is served (the control)', async () => {
+    expect((await run(deps((_k, _n, b) => b, { ms: NOW }))).kind).toBe('ok');
+  });
+
+  it('an off-UTC bar in the head page only refuses the timeframe', async () => {
+    const o = await run(deps((k, n, b) => (k === 'serving' && n === 0 ? shift(b, b.length - 2) : b), { ms: NOW }));
+    expect(refusedFor(o)).toEqual([422, [{ timeframe: '1d', reason: 'OKX does not serve this timeframe' }]]);
+  });
+
+  it('an off-UTC bar in one backward page only refuses the timeframe', async () => {
+    const o = await run(deps((k, n, b) => (k === 'backward' && n === 1 ? shift(b, Math.floor(b.length / 2)) : b), { ms: NOW }));
+    expect(refusedFor(o)).toEqual([422, [{ timeframe: '1d', reason: 'OKX does not serve this timeframe' }]]);
+  });
+
+  it('an off-UTC bar in the head refresh only is refused: the cached window stands, nothing off-UTC is merged', async () => {
+    const now = { ms: NOW };
+    let refreshed = false;
+    const d = deps((k, n, b) => {
+      if (k !== 'serving' || n !== 1) return b;
+      refreshed = true;
+      return shift(b, b.length - 2);
+    }, now);
+    expect((await run(d)).kind).toBe('ok');
+    const cached = d.cache.get('OKX:BTC:1d');
+    expect(cached?.candles).toHaveLength(1001);
+    now.ms = NOW + 61_000; // past the head-refresh interval, inside the window's validity
+    vi.setSystemTime(new Date(now.ms));
+    expect((await run(d)).kind).toBe('ok');
+    expect(refreshed).toBe(true); // the second call re-read the head
+    expect(d.cache.get('OKX:BTC:1d')).toBe(cached);
+    expect(d.cache.get('OKX:BTC:1d')!.candles.every((c) => c.time % D === 0)).toBe(true);
+  });
+});
+
+/**
+ * SR-ZONES-W3 R9 #5 — R7: BOTH getAdapter seam wrappers forward the trailing option. guardClosedMarkets wraps BINGX only
+ * (the one venue declaring readsRefusedWhileOff, with a venueSymbol), so the read goes through a stub BINGX adapter
+ * that records what reaches it, in both admission modes.
+ */
+describe('SR-ZONES-W3 R9 #5 — guardClosedMarkets forwards the sixth argument', () => {
+  afterEach(() => {
+    vi.doUnmock('../../src/lib/adapters/bingx.js');
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['enforce', 'legacy'] as const)('UNIVERSE_ADMISSION_MODE=%s: the option reaches the BINGX adapter through both wrappers', async (mode) => {
+    vi.stubEnv('UNIVERSE_ADMISSION_MODE', mode);
+    vi.spyOn(global, 'fetch').mockImplementation((async () => new Response('{}', { status: 503 })) as typeof fetch);
+    const seen: unknown[][] = [];
+    vi.resetModules();
+    vi.doMock('../../src/lib/adapters/bingx.js', async (orig) => {
+      const real = await orig<typeof import('../../src/lib/adapters/bingx.js')>();
+      class StubBingx extends real.BingxAdapter {
+        override async getCandles(...args: Parameters<InstanceType<typeof real.BingxAdapter>['getCandles']>) {
+          seen.push(args);
+          return [];
+        }
+      }
+      return { ...real, BingxAdapter: StubBingx };
+    });
+    const { getAdapter } = (await import('../../src/lib/exchange-adapter.js')) as { getAdapter: (v: string) => Adapter };
+    const opts = { utcBars: true };
+    await getAdapter('BINGX').getCandles('BTC', '1d', NOW - 400 * D, undefined, NOW - 300 * D, opts);
+    expect(seen).toEqual([['BTC', '1d', NOW - 400 * D, undefined, NOW - 300 * D, opts]]);
+    expect(seen[0][5]).toBe(opts);
   });
 });
