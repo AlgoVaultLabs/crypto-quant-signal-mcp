@@ -77,8 +77,8 @@ describe('BitgetAdapter.getCandles historical fallback', () => {
  * and the lead's probe: 1D → 90 bars for limit 200). Anchored at start + 200 bars, a 12H or 1D fallback page came back
  * with its front uncovered: near a listing it held nothing the page asked for (ASTER 1D: 90 bars from 2025-12-08 for a
  * page from 2025-08-20), so get_support_resistance_zones' walk ended 61 bars short of the listing. The bodies are the
- * venue's own, read once each (tests/fixtures/sr-zones/w3-bitget-fallback-20261120.json): each case's recent request
- * and its history request at both anchors.
+ * venue's own, read once each (tests/fixtures/sr-zones/w3-bitget-fallback-20261120.json): each case's recent request,
+ * its history request at every anchor the fallback has used, and (R9) the recent-endpoint reads that serve as the oracle.
  */
 interface RecordedCase {
   name: string;
@@ -87,7 +87,7 @@ interface RecordedCase {
   stepMs: number;
   startTime: number;
   reachBars: number;
-  requests: Array<{ path: string; query: Record<string, string>; body: { data: string[][] } }>;
+  requests: Array<{ role?: 'oracle'; path: string; query: Record<string, string>; body: { data: string[][] } }>;
 }
 const FALLBACK = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'sr-zones', 'w3-bitget-fallback-20261120.json'), 'utf8')) as { cases: RecordedCase[] };
 const caseOf = (name: string): RecordedCase => FALLBACK.cases.find((c) => c.name === name)!;
@@ -101,23 +101,49 @@ const opensOf = (c: RecordedCase, path: string, endTime?: number): number[] =>
   c.requests.find((r) => r.path.endsWith(path) && (endTime === undefined || r.query.endTime === String(endTime)))!.body.data.map((row) => Number(row[0]));
 const historyEnds = () => calls.filter((u) => u.includes('/market/history-candles')).map((u) => Number(new URL(u).searchParams.get('endTime')));
 
-describe('SR-ZONES-W3 R8 — the Bitget history fallback is anchored so its answer covers the page start', () => {
+/**
+ * SR-ZONES-W3 R9 #1: the fallback covers the whole old window, [start, start + HISTORY_PAGE_CAP bars), by walking
+ * reach-sized pages forward (1D: ends at 90, 180, 200 bars; 12H: 180, 200) and returning their union. One reach-sized
+ * page alone answered empty when it lay wholly before a listing (ASTER 1D from L-150d, 12H from L-95d), so a walker
+ * stepping 200 bars skipped the listing's first bars with no hole reported.
+ */
+const walkEnds = (c: RecordedCase): number[] => {
+  const ends: number[] = [];
+  for (let k = 1; ; k++) {
+    const bars = Math.min(k * c.reachBars, 200);
+    ends.push(c.startTime + bars * c.stepMs);
+    if (bars === 200) return ends;
+  }
+};
+/** The venue's own bars for [start, start + 200 bars), read through its RECENT endpoint (the oracle requests, never
+ *  asked by the adapter): row for row what the walk must return. */
+const oracleBars = (c: RecordedCase): number[][] => {
+  const end = c.startTime + 200 * c.stepMs;
+  const byOpen = new Map<number, number[]>();
+  for (const r of c.requests.filter((q) => q.role === 'oracle')) {
+    for (const row of r.body.data) if (Number(row[0]) >= c.startTime && Number(row[0]) < end) byOpen.set(Number(row[0]), row.slice(0, 6).map(Number));
+  }
+  return [...byOpen.values()].sort((a, b) => a[0] - b[0]);
+};
+
+describe('SR-ZONES-W3 R8 + R9 #1 — the Bitget history fallback covers [start, start + 200 bars) from its first bar', () => {
   it.each([
     'ASTER 1D young-listing page',
     'ASTER 1Dutc young-listing page',
     'ASTER 12H page with the listing 10 bars in',
     'ASTER 12Hutc page with the listing 10 bars in',
-  ])('%s: every bar the venue holds in the page comes back, from the listing on', async (name) => {
+    'ASTER 1D page 150 days before the listing',
+    'ASTER 12H page 95 days before the listing',
+  ])('%s: every bar the venue holds in the old window comes back, walked forward in reach-sized pages', async (name) => {
     const c = caseOf(name);
     const [tf, opts] = TF[c.granularity];
-    const pageEnd = c.startTime + c.reachBars * c.stepMs;
     play(c);
-    const out = await new BitgetAdapter().getCandles('ASTER', tf, c.startTime, undefined, pageEnd - 1, opts);
-    // The venue's whole set for [start, start + reach bars): what its recent endpoint holds there (listing onward).
-    const held = opensOf(c, '/market/candles').filter((t) => t >= c.startTime && t < pageEnd);
+    const out = await new BitgetAdapter().getCandles('ASTER', tf, c.startTime, undefined, c.startTime + 200 * c.stepMs - 1, opts);
+    const held = oracleBars(c);
     expect(held.length).toBeGreaterThan(0);
-    expect(out.map((b) => b.time)).toEqual(held);
-    expect(historyEnds()).toEqual([pageEnd]); // one fallback read, anchored at start + reach bars
+    expect(out.map((b) => [b.time, b.open, b.high, b.low, b.close, b.volume])).toEqual(held);
+    expect(historyEnds()).toEqual(walkEnds(c)); // forward, reach-sized pages ending on the old window's end
+    expect(historyEnds()).toHaveLength(c.reachBars === 90 ? 3 : 2); // 1D at most 3 requests, 12H at most 2
   });
 
   it('the recorded old anchor (start + 200 bars) is what left the front uncovered (the defect the fix answers)', () => {

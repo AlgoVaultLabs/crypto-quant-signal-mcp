@@ -46,17 +46,23 @@ describe.each(CASES)('SR-ZONES-W3 AC1.7 — $venue: the UTC twin on every reques
     vi.setSystemTime(new Date(NOW));
     const urls = stubEmpty(c.envelope);
     const a = await fresh(c.module, c.className);
-    await a.getCandles('BTC', tf, NOW - 100 * D, undefined, undefined, { utcBars: true });
-    await a.getCandles('BTC', tf, NOW - 400 * D, undefined, NOW - 300 * D, { utcBars: true });
-    const withOption = urls.splice(0).map((u) => u.searchParams.get(c.param));
-    expect(withOption.length).toBeGreaterThanOrEqual(2);
-    expect(new Set(withOption)).toEqual(new Set([`${c.native[tf]}utc`]));
-    await a.getCandles('BTC', tf, NOW - 100 * D);
-    await a.getCandles('BTC', tf, NOW - 400 * D, undefined, NOW - 300 * D);
-    await a.getCandles('BTC', tf, NOW - 400 * D, undefined, NOW - 300 * D, { utcBars: false });
-    const without = urls.map((u) => u.searchParams.get(c.param));
-    expect(without.length).toBe(withOption.length + withOption.length / 2);
-    expect(new Set(without)).toEqual(new Set([c.native[tf]]));
+    /** The `c.param` value of every request one read makes. */
+    const ask = async (start: number, end?: number, opts?: { utcBars?: boolean }) => {
+      const from = urls.length;
+      await a.getCandles('BTC', tf, start, undefined, end, opts);
+      return urls.slice(from).map((u) => u.searchParams.get(c.param));
+    };
+    const servingUtc = await ask(NOW - 100 * D, undefined, { utcBars: true });
+    const historyUtc = await ask(NOW - 400 * D, NOW - 300 * D, { utcBars: true });
+    expect(servingUtc.length).toBeGreaterThanOrEqual(1);
+    expect(historyUtc.length).toBeGreaterThanOrEqual(1);
+    expect(new Set([...servingUtc, ...historyUtc])).toEqual(new Set([`${c.native[tf]}utc`]));
+    const serving = await ask(NOW - 100 * D);
+    const history = await ask(NOW - 400 * D, NOW - 300 * D);
+    const historyFalse = await ask(NOW - 400 * D, NOW - 300 * D, { utcBars: false });
+    // The same requests, read for read; only the bar token differs.
+    expect([serving.length, history.length, historyFalse.length]).toEqual([servingUtc.length, historyUtc.length, historyUtc.length]);
+    expect(new Set([...serving, ...history, ...historyFalse])).toEqual(new Set([c.native[tf]]));
   });
 
   it.each(['4h', '1h'] as const)('%s opens on UTC already: the option changes no request', async (tf) => {

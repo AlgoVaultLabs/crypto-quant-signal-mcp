@@ -356,19 +356,27 @@ export class BitgetAdapter implements ExchangeAdapter {
     }
 
     // Historical fallback: `/market/history-candles` returns bars whose candle CLOSES at or before `endTime`,
-    // ascending. Anchor the page on the served grid so it starts at `startTime` (C1). SR-ZONES-W3 R8: the endpoint
-    // answers at most 90 days of bars ending at `endTime` (1D 90, 12H 180, 4H 200; R0 P1), so the page spans
-    // historyPageBars(tf) bars — anchored at start + 200 bars, a 12H/1D page came back with its front uncovered and a
-    // young listing's walk ended short of the listing. 15m–4H (and the 1H/6H substitutes) still span 200.
-    const pageEnd = historyPageEnd({ servedStepMs, from: startTime, pageCap: historyPageBars(interval) ?? HISTORY_PAGE_CAP });
-    const hist = await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
-      productType: 'USDT-FUTURES',
-      symbol,
-      granularity,
-      endTime: pageEnd,
-      limit: HISTORY_PAGE_CAP,
-    });
-    const histAsc = (hist || []).flatMap(c => mapBitgetCandle(c) ?? []).filter(c => c.time >= startTime);
+    // ascending. Anchor the page on the served grid so it starts at `startTime` (C1). SR-ZONES-W3 R8 + R9 #1: the
+    // endpoint answers at most 90 days of bars ending at `endTime` (1D 90, 12H 180, 4H 200; R0 P1), so the page
+    // [startTime, startTime + HISTORY_PAGE_CAP served bars) is walked FORWARD in reach-sized requests ending at
+    // start + min(k·reach, HISTORY_PAGE_CAP) bars, and their union is the answer: 1D 3 requests, 12H 2, 15m–4H (and the
+    // 1H/6H substitutes) 1, byte-identical to the single page before. One page anchored at start + 200 bars left a
+    // 12H/1D front uncovered; one reach-sized page answered empty when it lay wholly before a listing, so a caller
+    // stepping 200 bars skipped the listing's first bars (R9 #1: ASTER 1D from L-150d, 12H from L-95d).
+    const reach = historyPageBars(interval) ?? HISTORY_PAGE_CAP;
+    const byOpen = new Map<number, Candle>();
+    for (let bars = Math.min(reach, HISTORY_PAGE_CAP); ; bars = Math.min(bars + reach, HISTORY_PAGE_CAP)) {
+      const hist = await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
+        productType: 'USDT-FUTURES',
+        symbol,
+        granularity,
+        endTime: historyPageEnd({ servedStepMs, from: startTime, pageCap: bars }),
+        limit: HISTORY_PAGE_CAP,
+      });
+      for (const c of (hist || []).flatMap(row => mapBitgetCandle(row) ?? [])) if (c.time >= startTime) byOpen.set(c.time, c);
+      if (bars >= HISTORY_PAGE_CAP) break;
+    }
+    const histAsc = [...byOpen.values()].sort((a, b) => a.time - b.time);
     return histAsc.length > 0
       ? withHistoryMeta(histAsc, meta('F', false))
       : withHistoryMeta(candles, meta('F', candles.length > 0));
