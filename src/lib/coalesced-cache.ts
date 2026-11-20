@@ -49,6 +49,12 @@ export interface CoalescedCacheOptions<V> {
    *  THROW — a slow NON-throwing load (e.g. an HL batch-yield WAIT ~58s) would otherwise block
    *  every caller for the full load. */
   loadTimeoutMs?: number;
+  /** OPS-PERFSTATS-SWR-W1: the oldest a STALE value may be (ms since its real success) and still be served —
+   *  by the load-timeout race, stale-if-error, the negative memo and the process gate. Older than this it is
+   *  treated as absent: a timed-out read awaits the load, a failed load serves `fallback` or rethrows. So a
+   *  refresh that keeps failing surfaces once the value ages out instead of serving it forever. undefined
+   *  (default) → unbounded, byte-identical to pre-W1 for every existing consumer. */
+  maxStaleMs?: number;
   /** ± jitter fraction on the negative TTL (default 0.2 = ±20%). */
   jitterPct?: number;
   /** Injectable clock (test seam). */
@@ -72,6 +78,7 @@ export interface CoalescedCache<V> {
 export function coalescedCache<V>(opts: CoalescedCacheOptions<V>): CoalescedCache<V> {
   const { load, ttlMs, fallback } = opts;
   const loadTimeoutMs = opts.loadTimeoutMs;
+  const maxStaleMs = opts.maxStaleMs;
   const negativeTtlMs = opts.negativeTtlMs ?? 0;
   const staleOk = opts.staleOk ?? false;
   const gate = opts.processGate ?? (() => false);
@@ -89,8 +96,14 @@ export function coalescedCache<V>(opts: CoalescedCacheOptions<V>): CoalescedCach
     return Math.max(1, Math.round(negativeTtlMs * factor));
   }
 
+  /** A cached value still young enough to serve. Fallback entries (ts=0) carry no real success, so under a
+   *  maxStaleMs bound they never qualify — `serve` then re-derives the fallback itself. */
+  function withinMaxStale(e: Entry<V>): boolean {
+    return maxStaleMs === undefined || (e.ts > 0 && now() - e.ts < maxStaleMs);
+  }
+
   function serve(key: string, e: Entry<V> | undefined): { hit: true; value: V } | { hit: false } {
-    if (e && e.value !== undefined) return { hit: true, value: e.value };
+    if (e && e.value !== undefined && withinMaxStale(e)) return { hit: true, value: e.value };
     if (fallback) return { hit: true, value: fallback(key) };
     return { hit: false };
   }
@@ -126,7 +139,7 @@ export function coalescedCache<V>(opts: CoalescedCacheOptions<V>): CoalescedCach
         } catch (err) {
           const cur = store.get(key);
           const negativeUntil = now() + negWindow();
-          if (staleOk && cur && cur.value !== undefined) {
+          if (staleOk && cur && cur.value !== undefined && withinMaxStale(cur)) {
             store.set(key, { value: cur.value, ts: cur.ts, negativeUntil });
             return cur.value;
           }
@@ -154,7 +167,7 @@ export function coalescedCache<V>(opts: CoalescedCacheOptions<V>): CoalescedCach
     // loadTimeoutMs → await `p` unbounded (byte-identical to pre-W1 for every other consumer).
     if (loadTimeoutMs !== undefined && loadTimeoutMs > 0) {
       const cur = store.get(key);
-      const hasStale = staleOk && cur !== undefined && cur.value !== undefined;
+      const hasStale = staleOk && cur !== undefined && cur.value !== undefined && withinMaxStale(cur);
       if (hasStale || fallback) {
         const timedOut = Symbol('coalesced-load-timeout');
         let timer: ReturnType<typeof setTimeout> | undefined;
