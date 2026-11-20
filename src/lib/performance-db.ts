@@ -3986,6 +3986,24 @@ function _orderByRecency(keyOf: (g: StatGroupRow) => string, gs: StatGroupRow[])
   return [...m.keys()].sort((a, b) => { const x = m.get(a)!, y = m.get(b)!; return (y.ca - x.ca) || (y.id - x.id); });
 }
 
+/**
+ * OPS-PERFSTATS-SWR-W1 — rows grouped by key in ONE pass, each bucket in input order, so
+ * `_bucketBy(gs, k).get(x)` is element-for-element `gs.filter(g => k(g) === x)` and every sum,
+ * majority and last-venue read downstream sees the identical array. The per-key `filter` it
+ * replaces made rollupStats O(keys × groups): 2,836 coins × 85,036 groups ≈ 241M predicate calls,
+ * a 4–8 s synchronous block of the serving event loop on every refresh, which held EVERY request
+ * that arrived during it (measured on signal-1 2026-11-20).
+ */
+function _bucketBy(gs: StatGroupRow[], keyOf: (g: StatGroupRow) => string): Map<string, StatGroupRow[]> {
+  const m = new Map<string, StatGroupRow[]>();
+  for (const g of gs) {
+    const k = keyOf(g);
+    const b = m.get(k);
+    if (b) b.push(g); else m.set(k, [g]);
+  }
+  return m;
+}
+
 const _byTf = (gs: StatGroupRow[]) => ({ count: _sumEval(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) });
 
 /**
@@ -4047,8 +4065,9 @@ export function rollupStats(
   // byAsset — distinct coins across ALL groups, recency-ordered (Q1); count incl HOLD, WR over nonHold
   const tierOf = makeTierOf(top20ByOI);
   const byAsset: PerformanceStats['byAsset'] = {};
+  const groupsByCoin = _bucketBy(groups, g => g.coin);
   for (const coin of _orderByRecency(g => g.coin, groups)) {
-    const all = groups.filter(g => g.coin === coin);
+    const all = groupsByCoin.get(coin) ?? [];
     byAsset[coin] = { count: _sumCnt(all), tier: headlineTier(tierOf, coin, all.map(g => ({ venue: g.exchange, n: g.cnt }))), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) };
   }
 
@@ -4061,8 +4080,9 @@ export function rollupStats(
 
   // byExchange — distinct exchange across ALL groups, recency-ordered (Q1)
   const byExchange: PerformanceStats['byExchange'] = {};
+  const groupsByExchange = _bucketBy(groups, g => g.exchange);
   for (const ex of _orderByRecency(g => g.exchange, groups)) {
-    const exAll = groups.filter(g => g.exchange === ex);
+    const exAll = groupsByExchange.get(ex) ?? [];
     const exNon = exAll.filter(g => g.signal !== 'HOLD');
     const exTf: PerformanceStats['byExchange'][string]['byTimeframe'] = {};
     for (const tf of [...new Set(exNon.map(g => g.timeframe))].sort((a, b) => PERF_TF_ORDER.indexOf(a) - PERF_TF_ORDER.indexOf(b))) exTf[tf] = _byTf(exNon.filter(g => g.timeframe === tf));
@@ -4071,7 +4091,8 @@ export function rollupStats(
     const exCall: PerformanceStats['byExchange'][string]['byCallType'] = {};
     for (const type of ['BUY', 'SELL', 'HOLD'] as const) { const gs = exAll.filter(g => g.signal === type); exCall[type] = type === 'HOLD' ? { count: _sumCnt(gs), evaluated: 0, pfeWinRate: null } : { count: _sumEval(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) }; }
     const exAsset: PerformanceStats['byExchange'][string]['byAsset'] = {};
-    for (const coin of _orderByRecency(g => g.coin, exAll)) { const all = exAll.filter(g => g.coin === coin); exAsset[coin] = { count: _sumCnt(all), tier: tierOf(coin, ex), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) }; }
+    const exByCoin = _bucketBy(exAll, g => g.coin);
+    for (const coin of _orderByRecency(g => g.coin, exAll)) { const all = exByCoin.get(coin) ?? []; exAsset[coin] = { count: _sumCnt(all), tier: tierOf(coin, ex), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) }; }
     byExchange[ex] = { exchange: ex, count: _sumCnt(exNon), evaluated: _sumEval(exNon), pfeWinRate: _wr(exNon), byTimeframe: exTf, byTier: exTier, byCallType: exCall, byAsset: exAsset };
   }
 
