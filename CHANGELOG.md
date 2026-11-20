@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2026-11-20
+
+### Added
+- `get_support_resistance_zones` (Beta) now serves Bybit, OKX and Bitget perpetuals as well as Binance, each on the 15m, 30m, 1h, 2h, 4h, 8h, 12h and 1d timeframes: `venue` accepts `BYBIT`, `OKX` and `BITGET`, and Binance stays the default. $0.02 per call over x402.
+
+### Removed
+- **BREAKING** — `pre_trade_check` no longer raises `REGIME_VOLATILE`. A VOLATILE market regime now passes `regimeCheck` at any confidence and no longer moves the decision; a regime against your side still fails it, as before. Responses carry `rule_version` 3. Shipped under a minor because the change went live on the API on 2026-11-18.
+
 ## [1.35.0] - 2026-11-16
 
 ### Added
