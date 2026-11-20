@@ -207,3 +207,19 @@ describe('SR-ZONES-W3 AC1.1 — Bybit follows nextPageCursor (the list is pagina
     expect(f.reads()).toBeLessThanOrEqual(10);
   });
 });
+
+/**
+ * SR-ZONES-W3 R9 #6 — the Bitget tick is priceEndStep × 10^−pricePlace. Every live contract carried priceEndStep "1"
+ * on 2026-11-20, so the recorded list alone could not tell a decode that ignores priceEndStep; this row can.
+ */
+describe('SR-ZONES-W3 R9 #6 — the Bitget tick carries priceEndStep', () => {
+  it('pricePlace 1 with priceEndStep 5 is a tick of 0.5; the recorded rows keep theirs', async () => {
+    const b = body('bitget') as { data: Array<Record<string, unknown>> };
+    const btc = b.data.find((r) => r.symbol === 'BTCUSDT')!;
+    b.data = [...b.data.filter((r) => r.symbol !== 'BTCUSDT'), { ...btc, pricePlace: '1', priceEndStep: '5' }];
+    stubList('/api/v2/mix/market/contracts', () => b);
+    const a = await freshAdapter(CASES[2]);
+    expect(await a.getPriceTick('BTC')).toBe(0.5);
+    expect(await a.getPriceTick('ETH')).toBe(0.01);
+  });
+});
