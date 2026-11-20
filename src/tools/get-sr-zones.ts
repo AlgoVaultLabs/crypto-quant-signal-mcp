@@ -104,6 +104,11 @@ const WINDOW_BARS = SR_ZONES_PARAMS.historyBars + 1;
 const maxPagesFor = (pageBars: number, bars: number): number => 1 + Math.ceil((bars - TRADE_CALL_CANDLE_COUNT) / pageBars) + 1;
 /** R6: the candle read option every get_support_resistance_zones read passes, and no other tool does — UTC-anchored bars. */
 const SR_CANDLE_READ: CandleReadOptions = Object.freeze({ utcBars: true });
+/**
+ * The batch class under `get_sr_zones` for history pages (fetchWindow) and the contiguity read (readSrZonesWindow): one
+ * class-setting site for both. processScopedTag, not a literal: the handler is reachable from several entrypoints.
+ */
+const inSrBatch = <T>(read: () => Promise<T>): Promise<T> => runAsBatch(read, processScopedTag('get_sr_zones'));
 /** Windows held at once (~100 KB each); past this the oldest read is dropped first. */
 const MAX_CACHED_WINDOWS = 256;
 /** A cached window whose newest page is at least this old re-reads that page before it is served (R5 Q3). */
@@ -366,10 +371,7 @@ async function fetchWindow(
     nowMs: now,
     maxPages: maxPagesFor(pageBars, Math.ceil((now - from) / s)),
     backward: async (oldestOpenMs) => {
-      const page = await runAsBatch(
-        () => deps.getCandles(coin, readTf, oldestOpenMs - pageBars * s, oldestOpenMs - 1, venue),
-        processScopedTag('get_sr_zones'),
-      );
+      const page = await inSrBatch(() => deps.getCandles(coin, readTf, oldestOpenMs - pageBars * s, oldestOpenMs - 1, venue));
       // Not `exhausted` on shortness: the assembler's own no-progress stop ends the walk when nothing older came back.
       return { bars: onUtcGrid(page, s, venue, timeframe).filter((c) => c.time < oldestOpenMs), exhausted: false };
     },
@@ -401,6 +403,25 @@ async function refreshHead(
   if (head.length === 0 || tail === undefined || head[0].time > tail.time) return cached;
   const kept = cached.candles.filter((c) => c.time < head[0].time);
   return { candles: [...kept, ...head].slice(-WINDOW_BARS), readAtMs: now, validUntilMs: cached.validUntilMs };
+}
+
+/**
+ * SR-ZONES-W3 AC2.1: one timeframe's window read exactly as a call reads it (fetchWindow: the plan, the venue's page
+ * span, the UTC guard, the build), with no cache, no memo and no billing, in the batch class — for the contiguity check
+ * (src/scripts/sr-zones-contiguity.ts). Throws what the read throws; a timeframe the venue cannot serve throws first.
+ */
+export async function readSrZonesWindow(
+  venue: SrZonesVenue,
+  coin: string,
+  timeframe: string,
+  deps: SrZonesDeps = DEFAULT_SR_ZONES_DEPS,
+): Promise<{ window: SrZonesWindow; plan: SrTimeframePlan; stepMs: number }> {
+  const stepMs = intervalMsFor(timeframe);
+  const plan = srZonesPlan(venue, timeframe);
+  const pageBars = plan === null ? null : SR_VENUE_PAGE_BARS[venue](plan.readTf);
+  if (stepMs === null || plan === null || pageBars === null || !(pageBars > 0)) throw new Error(reasonOf('timeframe', venue));
+  const window = await inSrBatch(() => fetchWindow(deps, venue, coin, timeframe, stepMs, plan, pageBars));
+  return { window, plan, stepMs };
 }
 
 /** One read per flight key at a time; later callers share the running promise. */
