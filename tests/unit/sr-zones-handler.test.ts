@@ -421,11 +421,24 @@ describe('SR-ZONES-W1 R6 #5 — overlaps reach the response', () => {
     expect(checkOverlaps(r, DATA.TWIN).pairs).toBeGreaterThan(0); // the twin series share zones, so the check is not vacuous
   });
 
-  it('SR-ZONES-W2 §0.2: with a coarse step, zones that meet only on their rounded edges are not listed', async () => {
-    // A 1000 tick makes the step 1000 at price ~60,000, so rounded edges reach where computed ones do not.
+  it('SR-ZONES-W3 §0.5 (W2 review 2 #1): with a coarse step, zones that meet only on their rounded edges ARE listed', async () => {
+    // A 1000 tick makes the step 1000 at price ~60,000, so rounded edges reach where computed ones do not. Overlaps are
+    // judged on the served edges the response carries: every zone lists exactly the other timeframe's zones whose
+    // SERVED range meets its own.
     const r = okOf(await runGetSrZones({ coin: 'BTC', timeframes: ['1d', '4h'] }, keyed(), deps({ getPriceTick: async () => 1000 })));
-    const { onlyServed } = checkOverlaps(r, DATA.BTC);
-    expect(onlyServed).toBeGreaterThan(0); // non-vacuous: an overlap judged on served edges would differ here
+    const [a, b] = r.results;
+    let onlyServed = 0;
+    for (const [self, other] of [[a, b], [b, a]] as const) {
+      for (const side of SIDES_) {
+        self[side].forEach((zone, i) => {
+          const expected = SIDES_.flatMap((os) => other[os].filter((o) => meets(zone, o)).map((o) => ({ timeframe: other.timeframe, side: os, rank: o.rank })));
+          expect(zone.overlaps).toEqual(expected);
+          const raw = computedFrame(DATA.BTC[self.timeframe], r.price)[side][i];
+          onlyServed += expected.filter((e) => !meets(raw, computedFrame(DATA.BTC[other.timeframe], r.price)[e.side][e.rank - 1])).length;
+        });
+      }
+    }
+    expect(onlyServed).toBeGreaterThan(0); // non-vacuous: on the computed edges these would not be listed
   });
 });
 

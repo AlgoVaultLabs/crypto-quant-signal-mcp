@@ -96,6 +96,19 @@ export function isTimeframeFaithful(venue: ExchangeId, tf: string): boolean {
   return servedMs < FAITHFUL_MAX_RATIO * requestedMs;
 }
 
+/**
+ * SR-ZONES-W3 §0.2 — does `venue` serve `tf` at EXACTLY the requested step? Stricter than `isTimeframeFaithful`, which
+ * keeps a finer substitute (BITGET serves 2h from 1H and 8h from 6H: faithful, not exact). Read from the adapter's own
+ * map like every predicate here; an unmapped `tf`, an unknown `tf` and an unknown venue are not exact. No kill switch:
+ * a serving tool refuses a bar size it cannot serve as asked, never serves another one (get_support_resistance_zones).
+ */
+export function isTimeframeServedExactly(venue: ExchangeId, tf: string): boolean {
+  const requestedMs = Object.hasOwn(TF_MS, tf) ? TF_MS[tf] : undefined;
+  const lookup = Object.hasOwn(SERVED_INTERVAL_MS, venue) ? SERVED_INTERVAL_MS[venue] : undefined;
+  const servedMs = lookup?.(tf);
+  return requestedMs !== undefined && servedMs != null && servedMs === requestedMs;
+}
+
 /** Does `venue`'s adapter map `tf` at all? The tools' up-front `timeframe_unserved` refusal (get_trade_call,
  *  scan_trade_calls) asks this, so a refused call makes no request and is never charged. An unknown venue is not
  *  judged here: its own gate (assertVenueNotRetired, the param schema) answers it. */

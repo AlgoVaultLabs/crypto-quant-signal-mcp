@@ -5,8 +5,9 @@
  * The served zone is the zone (R7 #3). Each zone's low and high are rounded outward to the call's step (rounding.ts),
  * and every fact relating the current price to a zone is then read from those served edges: distance_pct (0 when price
  * is at or past the near edge) and the price_inside_zone flag. The summary describes this served frame. Selection,
- * ladder order, side, rank, state, broke_at, touches, the no_zone_above / no_zone_below flags and the overlaps (zone
- * against zone, attached before serving) stay as computed: nothing is refit.
+ * ladder order, side, rank, state, broke_at, touches and the no_zone_above / no_zone_below flags stay as computed:
+ * nothing is refit. The overlaps (zone against zone) are attached AFTER serving, on these served edges (SR-ZONES-W3
+ * §0.5, get-sr-zones.ts); this projection carries the input zone's `overlaps` through unchanged.
  *
  * A served zone is built from an allow-list of fields, in served order. formed_from and formed_to are not on it (Mr.1,
  * R7): formation times stay internal to the ladder walk (zones.ts).

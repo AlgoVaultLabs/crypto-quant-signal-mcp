@@ -96,9 +96,11 @@ describe('SR-ZONES-W2 CH3 — the registry row prices get_support_resistance_zon
     expect(validate(BAZAAR_ROUTES.get_support_resistance_zones!.example)).toBe(true);
     for (const bad of [
       {}, { coin: 'BTC' }, { coin: 'BTC', timeframes: [] }, { coin: 'BTC', timeframes: ['1d', '4h', '1h', '15m'] },
-      { coin: 'BTC', timeframes: ['1w'] }, { coin: 'BTC', timeframes: ['1d'], venue: 'BYBIT' }, { coin: '', timeframes: ['1d'] },
-      { coin: 'BTC', timeframes: ['1d'], extra: 1 },
+      { coin: 'BTC', timeframes: ['1w'] }, { coin: 'BTC', timeframes: ['1d'], venue: 'HL' }, { coin: 'BTC', timeframes: ['1d'], venue: 'bybit' },
+      { coin: '', timeframes: ['1d'] }, { coin: 'BTC', timeframes: ['1d'], extra: 1 },
     ]) expect(validate(bad), JSON.stringify(bad)).toBe(false);
+    // SR-ZONES-W3: the four venues of the enum validate.
+    for (const venue of ['BINANCE', 'BYBIT', 'OKX', 'BITGET']) expect(validate({ coin: 'BTC', timeframes: ['1d'], venue }), venue).toBe(true);
   });
 
   it('the output example is a subset of the documented production response — no invented value', () => {

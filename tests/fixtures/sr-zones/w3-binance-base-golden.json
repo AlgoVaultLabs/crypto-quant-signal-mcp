@@ -1,0 +1,1968 @@
+{
+ "source": "SR-ZONES-W3 AC1.2: runGetSrZones at BASE on tests/unit/sr-zones-venue-cases.ts GOLDEN_CASES (one-off generator run, not committed)",
+ "baseSha": "87c3c335158428983102b3683a30b189661fe271",
+ "generatedAt": "2026-11-20T04:22:37.000Z",
+ "cases": [
+  {
+   "name": "real BTC 1d, tick 0.1",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "BTC",
+     "venue": "BINANCE",
+     "price": 67585.6,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480\u201363240, 6.43% below; resistance zone 1 at 75830\u201376450, 12.2% above; last closed candle volume 2.04\u00d7 its 20-candle average.",
+       "volume_vs_20": 2.04,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62480,
+         "high": 63240,
+         "distance_pct": 6.43,
+         "members": 4,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-08-17T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 57750,
+         "high": 59190,
+         "distance_pct": 12.42,
+         "members": 3,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-01T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 52510,
+         "high": 54390,
+         "distance_pct": 19.52,
+         "members": 2,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2024-09-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 75830,
+         "high": 76450,
+         "distance_pct": 12.2,
+         "members": 1,
+         "touch_bars_90": 18,
+         "tests_30": 3,
+         "last_touch": "2026-11-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 80460,
+         "high": 81190,
+         "distance_pct": 19.05,
+         "members": 1,
+         "touch_bars_90": 27,
+         "tests_30": 7,
+         "last_touch": "2026-11-05T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 83580,
+         "high": 84880,
+         "distance_pct": 23.67,
+         "members": 2,
+         "touch_bars_90": 20,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 1,
+       "total": 200,
+       "remaining": 199,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "BTC",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "BTC",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1699660800000,
+     1716940799999
+    ]
+   ]
+  },
+  {
+   "name": "real BTC 1d, venue BINANCE named, tick 0.1",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "BTC",
+     "venue": "BINANCE",
+     "price": 67585.6,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480\u201363240, 6.43% below; resistance zone 1 at 75830\u201376450, 12.2% above; last closed candle volume 2.04\u00d7 its 20-candle average.",
+       "volume_vs_20": 2.04,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62480,
+         "high": 63240,
+         "distance_pct": 6.43,
+         "members": 4,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-08-17T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 57750,
+         "high": 59190,
+         "distance_pct": 12.42,
+         "members": 3,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-01T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 52510,
+         "high": 54390,
+         "distance_pct": 19.52,
+         "members": 2,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2024-09-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 75830,
+         "high": 76450,
+         "distance_pct": 12.2,
+         "members": 1,
+         "touch_bars_90": 18,
+         "tests_30": 3,
+         "last_touch": "2026-11-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 80460,
+         "high": 81190,
+         "distance_pct": 19.05,
+         "members": 1,
+         "touch_bars_90": 27,
+         "tests_30": 7,
+         "last_touch": "2026-11-05T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 83580,
+         "high": 84880,
+         "distance_pct": 23.67,
+         "members": 2,
+         "touch_bars_90": 20,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 1,
+       "total": 200,
+       "remaining": 199,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "BTC",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "BTC",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1699660800000,
+     1716940799999
+    ]
+   ]
+  },
+  {
+   "name": "three timeframes, no tick (sig step)",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "BTC",
+     "venue": "BINANCE",
+     "price": 67585.6,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480\u201363240, 6.43% below; resistance zone 1 at 75830\u201376450, 12.2% above; last closed candle volume 2.04\u00d7 its 20-candle average.",
+       "volume_vs_20": 2.04,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62480,
+         "high": 63240,
+         "distance_pct": 6.43,
+         "members": 4,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-08-17T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 57750,
+         "high": 59190,
+         "distance_pct": 12.42,
+         "members": 3,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-01T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 52510,
+         "high": 54390,
+         "distance_pct": 19.52,
+         "members": 2,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2024-09-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 75830,
+         "high": 76450,
+         "distance_pct": 12.2,
+         "members": 1,
+         "touch_bars_90": 18,
+         "tests_30": 3,
+         "last_touch": "2026-11-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 80460,
+         "high": 81190,
+         "distance_pct": 19.05,
+         "members": 1,
+         "touch_bars_90": 27,
+         "tests_30": 7,
+         "last_touch": "2026-11-05T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 83580,
+         "high": 84880,
+         "distance_pct": 23.67,
+         "members": 2,
+         "touch_bars_90": 20,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      },
+      {
+       "timeframe": "4h",
+       "summary": "BTC 4h at 67585.6: 3 support and 0 resistance zones; support zone 1 at 40540\u201340640, 39.87% below; no resistance zone above in the loaded history; last closed candle volume 0.88\u00d7 its 20-candle average.",
+       "volume_vs_20": 0.88,
+       "flags": [
+        "no_zone_above"
+       ],
+       "support": [
+        {
+         "rank": 1,
+         "low": 40540,
+         "high": 40640,
+         "distance_pct": 39.87,
+         "members": 1,
+         "touch_bars_90": 8,
+         "tests_30": 1,
+         "last_touch": "2026-11-13T20:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 39940,
+         "high": 40040,
+         "distance_pct": 40.76,
+         "members": 1,
+         "touch_bars_90": 5,
+         "tests_30": 1,
+         "last_touch": "2026-11-13T08:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 39310,
+         "high": 39630,
+         "distance_pct": 41.36,
+         "members": 3,
+         "touch_bars_90": 17,
+         "tests_30": 5,
+         "last_touch": "2026-11-12T04:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": []
+      },
+      {
+       "timeframe": "1h",
+       "summary": "BTC 1h at 67585.6: 2 support and 3 resistance zones; support zone 1 at 66480\u201366650, 1.38% below; resistance zone 1 at 71030\u201371250, 5.1% above; last closed candle volume 1.14\u00d7 its 20-candle average.",
+       "volume_vs_20": 1.14,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 66480,
+         "high": 66650,
+         "distance_pct": 1.38,
+         "members": 1,
+         "touch_bars_90": 6,
+         "tests_30": 2,
+         "last_touch": "2026-11-14T05:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 65110,
+         "high": 65270,
+         "distance_pct": 3.43,
+         "members": 1,
+         "touch_bars_90": 4,
+         "tests_30": 1,
+         "last_touch": "2026-11-14T09:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 71030,
+         "high": 71250,
+         "distance_pct": 5.1,
+         "members": 1,
+         "touch_bars_90": 11,
+         "tests_30": 0,
+         "last_touch": "2026-11-13T05:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 72090,
+         "high": 72290,
+         "distance_pct": 6.66,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-11-09T04:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 74520,
+         "high": 74690,
+         "distance_pct": 10.26,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-11-03T21:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 3,
+       "total": 200,
+       "remaining": 197,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 3,
+        "total": 100,
+        "remaining": 97,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "BTC",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "BTC",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1699660800000,
+     1716940799999
+    ],
+    [
+     "BTC",
+     "4h",
+     1793210400000,
+     null
+    ],
+    [
+     "BTC",
+     "4h",
+     1790337600000,
+     1793217599999
+    ],
+    [
+     "BTC",
+     "4h",
+     1787457600000,
+     1790337599999
+    ],
+    [
+     "BTC",
+     "4h",
+     1784577600000,
+     1787457599999
+    ],
+    [
+     "BTC",
+     "4h",
+     1781697600000,
+     1784577599999
+    ],
+    [
+     "BTC",
+     "4h",
+     1778817600000,
+     1781697599999
+    ],
+    [
+     "BTC",
+     "1h",
+     1794290400000,
+     null
+    ],
+    [
+     "BTC",
+     "1h",
+     1793570400000,
+     1794290399999
+    ],
+    [
+     "BTC",
+     "1h",
+     1792850400000,
+     1793570399999
+    ],
+    [
+     "BTC",
+     "1h",
+     1792130400000,
+     1792850399999
+    ],
+    [
+     "BTC",
+     "1h",
+     1791410400000,
+     1792130399999
+    ],
+    [
+     "BTC",
+     "1h",
+     1790690400000,
+     1791410399999
+    ]
+   ]
+  },
+  {
+   "name": "twin series, coarse tick 1000",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "TWIN",
+     "venue": "BINANCE",
+     "price": 45908.33270592021,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "TWIN 1d at 45908.33: 3 support and 3 resistance zones; price inside support zone 1 at 45000\u201346000 (resistance until 2026-11-13); resistance zone 1 at 47000\u201348000, 2.38% above; last closed candle volume 1.12\u00d7 its 20-candle average.",
+       "volume_vs_20": 1.12,
+       "flags": [
+        "price_inside_zone"
+       ],
+       "support": [
+        {
+         "rank": 1,
+         "low": 45000,
+         "high": 46000,
+         "distance_pct": 0,
+         "members": 1,
+         "touch_bars_90": 7,
+         "tests_30": 2,
+         "last_touch": "2026-11-12T00:00:00.000Z",
+         "state": "former_resistance",
+         "broke_at": "2026-11-13T00:00:00.000Z",
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 44000,
+         "high": 45000,
+         "distance_pct": 1.98,
+         "members": 1,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-11-07T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 44000,
+         "high": 45000,
+         "distance_pct": 1.98,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-25T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 3
+          }
+         ]
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 14,
+         "tests_30": 1,
+         "last_touch": "2026-10-28T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 17,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 2,
+         "touch_bars_90": 16,
+         "tests_30": 0,
+         "last_touch": "2026-09-13T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "timeframe": "4h",
+       "summary": "TWIN 4h at 45908.33: 3 support and 3 resistance zones; price inside support zone 1 at 45000\u201346000 (resistance until 2026-11-14 04:00 UTC); resistance zone 1 at 47000\u201348000, 2.38% above; last closed candle volume 1.12\u00d7 its 20-candle average.",
+       "volume_vs_20": 1.12,
+       "flags": [
+        "price_inside_zone"
+       ],
+       "support": [
+        {
+         "rank": 1,
+         "low": 45000,
+         "high": 46000,
+         "distance_pct": 0,
+         "members": 1,
+         "touch_bars_90": 7,
+         "tests_30": 2,
+         "last_touch": "2026-11-14T00:00:00.000Z",
+         "state": "former_resistance",
+         "broke_at": "2026-11-14T04:00:00.000Z",
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 44000,
+         "high": 45000,
+         "distance_pct": 1.98,
+         "members": 1,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-11-13T04:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 44000,
+         "high": 45000,
+         "distance_pct": 1.98,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-10-26T16:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 3
+          }
+         ]
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 14,
+         "tests_30": 1,
+         "last_touch": "2026-11-11T12:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 17,
+         "tests_30": 0,
+         "last_touch": "2026-11-10T12:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 47000,
+         "high": 48000,
+         "distance_pct": 2.38,
+         "members": 2,
+         "touch_bars_90": 16,
+         "tests_30": 0,
+         "last_touch": "2026-11-04T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 2,
+       "total": 200,
+       "remaining": 198,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 2,
+        "total": 100,
+        "remaining": 98,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "TWIN",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "TWIN",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1699660800000,
+     1716940799999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1793210400000,
+     null
+    ],
+    [
+     "TWIN",
+     "4h",
+     1790337600000,
+     1793217599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1787457600000,
+     1790337599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1784577600000,
+     1787457599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1781697600000,
+     1784577599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1778817600000,
+     1781697599999
+    ]
+   ]
+  },
+  {
+   "name": "twin series, reversed order, no tick",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "TWIN",
+     "venue": "BINANCE",
+     "price": 45908.33270592021,
+     "results": [
+      {
+       "timeframe": "4h",
+       "summary": "TWIN 4h at 45908.33: 3 support and 3 resistance zones; support zone 1 at 45000\u201345130, 1.7% below (resistance until 2026-11-14 04:00 UTC); resistance zone 1 at 47000\u201347100, 2.38% above; last closed candle volume 1.12\u00d7 its 20-candle average.",
+       "volume_vs_20": 1.12,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 45000,
+         "high": 45130,
+         "distance_pct": 1.7,
+         "members": 1,
+         "touch_bars_90": 7,
+         "tests_30": 2,
+         "last_touch": "2026-11-14T00:00:00.000Z",
+         "state": "former_resistance",
+         "broke_at": "2026-11-14T04:00:00.000Z",
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 44250,
+         "high": 44370,
+         "distance_pct": 3.35,
+         "members": 1,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-11-13T04:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 44020,
+         "high": 44170,
+         "distance_pct": 3.79,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-10-26T16:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "support",
+           "rank": 3
+          }
+         ]
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 47000,
+         "high": 47100,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 14,
+         "tests_30": 1,
+         "last_touch": "2026-11-11T12:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 47380,
+         "high": 47540,
+         "distance_pct": 3.21,
+         "members": 1,
+         "touch_bars_90": 17,
+         "tests_30": 0,
+         "last_touch": "2026-11-10T12:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 47820,
+         "high": 47990,
+         "distance_pct": 4.16,
+         "members": 2,
+         "touch_bars_90": 16,
+         "tests_30": 0,
+         "last_touch": "2026-11-04T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "1d",
+           "side": "resistance",
+           "rank": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "timeframe": "1d",
+       "summary": "TWIN 1d at 45908.33: 3 support and 3 resistance zones; support zone 1 at 45000\u201345130, 1.7% below (resistance until 2026-11-13); resistance zone 1 at 47000\u201347100, 2.38% above; last closed candle volume 1.12\u00d7 its 20-candle average.",
+       "volume_vs_20": 1.12,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 45000,
+         "high": 45130,
+         "distance_pct": 1.7,
+         "members": 1,
+         "touch_bars_90": 7,
+         "tests_30": 2,
+         "last_touch": "2026-11-12T00:00:00.000Z",
+         "state": "former_resistance",
+         "broke_at": "2026-11-13T00:00:00.000Z",
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 44250,
+         "high": 44370,
+         "distance_pct": 3.35,
+         "members": 1,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-11-07T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 44020,
+         "high": 44170,
+         "distance_pct": 3.79,
+         "members": 1,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-25T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "support",
+           "rank": 3
+          }
+         ]
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 47000,
+         "high": 47100,
+         "distance_pct": 2.38,
+         "members": 1,
+         "touch_bars_90": 14,
+         "tests_30": 1,
+         "last_touch": "2026-10-28T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 1
+          }
+         ]
+        },
+        {
+         "rank": 2,
+         "low": 47380,
+         "high": 47540,
+         "distance_pct": 3.21,
+         "members": 1,
+         "touch_bars_90": 17,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 2
+          }
+         ]
+        },
+        {
+         "rank": 3,
+         "low": 47820,
+         "high": 47990,
+         "distance_pct": 4.16,
+         "members": 2,
+         "touch_bars_90": 16,
+         "tests_30": 0,
+         "last_touch": "2026-09-13T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": [
+          {
+           "timeframe": "4h",
+           "side": "resistance",
+           "rank": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 2,
+       "total": 200,
+       "remaining": 198,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 2,
+        "total": 100,
+        "remaining": 98,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "TWIN",
+     "4h",
+     1793210400000,
+     null
+    ],
+    [
+     "TWIN",
+     "4h",
+     1790337600000,
+     1793217599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1787457600000,
+     1790337599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1784577600000,
+     1787457599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1781697600000,
+     1784577599999
+    ],
+    [
+     "TWIN",
+     "4h",
+     1778817600000,
+     1781697599999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "TWIN",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "TWIN",
+     "1d",
+     1699660800000,
+     1716940799999
+    ]
+   ]
+  },
+  {
+   "name": "young listing 1d, tick 0.01",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "YOUNG",
+     "venue": "BINANCE",
+     "price": 63115.47212584668,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "YOUNG 1d at 63115.47: 2 support and 2 resistance zones; support zone 1 at 62450\u201362630, 0.77% below; resistance zone 1 at 64030\u201364180, 1.45% above; last closed candle volume 0.97\u00d7 its 20-candle average.",
+       "volume_vs_20": 0.97,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62450,
+         "high": 62630,
+         "distance_pct": 0.77,
+         "members": 1,
+         "touch_bars_90": 5,
+         "tests_30": 2,
+         "last_touch": "2026-10-23T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 60460,
+         "high": 60610,
+         "distance_pct": 3.97,
+         "members": 1,
+         "touch_bars_90": 9,
+         "tests_30": 0,
+         "last_touch": "2026-10-11T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 64030,
+         "high": 64180,
+         "distance_pct": 1.45,
+         "members": 2,
+         "touch_bars_90": 8,
+         "tests_30": 2,
+         "last_touch": "2026-11-11T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 64310,
+         "high": 64500,
+         "distance_pct": 1.89,
+         "members": 1,
+         "touch_bars_90": 3,
+         "tests_30": 1,
+         "last_touch": "2026-10-30T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 1,
+       "total": 200,
+       "remaining": 199,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "YOUNG",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "YOUNG",
+     "1d",
+     1773446400000,
+     1790726399999
+    ]
+   ]
+  },
+  {
+   "name": "newborn listing: refused by the formula",
+   "outcome": {
+    "kind": "refused",
+    "status": 422,
+    "payload": {
+     "error": "no_timeframe_served",
+     "code": "no_timeframe_served",
+     "coin": "NEWBORN",
+     "venue": "BINANCE",
+     "message": "No requested timeframe could be served for NEWBORN on BINANCE perpetuals.",
+     "unserved": [
+      {
+       "timeframe": "1d",
+       "reason": "fewer than 21 closed candles"
+      }
+     ],
+     "suggested_action": "Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.",
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "NEWBORN",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "NEWBORN",
+     "1d",
+     1776124800000,
+     1793404799999
+    ]
+   ]
+  },
+  {
+   "name": "unknown coin: refused (HTTP 400)",
+   "outcome": {
+    "kind": "refused",
+    "status": 422,
+    "payload": {
+     "error": "no_timeframe_served",
+     "code": "no_timeframe_served",
+     "coin": "NOPE",
+     "venue": "BINANCE",
+     "message": "No requested timeframe could be served for NOPE on BINANCE perpetuals.",
+     "unserved": [
+      {
+       "timeframe": "1d",
+       "reason": "BINANCE refused the candle request for NOPE (HTTP 400)"
+      },
+      {
+       "timeframe": "4h",
+       "reason": "BINANCE refused the candle request for NOPE (HTTP 400)"
+      }
+     ],
+     "suggested_action": "Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.",
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "NOPE",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "NOPE",
+     "4h",
+     1793210400000,
+     null
+    ]
+   ]
+  },
+  {
+   "name": "one timeframe the fake refuses, one served",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "BTC",
+     "venue": "BINANCE",
+     "price": 67585.6,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480\u201363240, 6.43% below; resistance zone 1 at 75830\u201376450, 12.2% above; last closed candle volume 2.04\u00d7 its 20-candle average.",
+       "volume_vs_20": 2.04,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62480,
+         "high": 63240,
+         "distance_pct": 6.43,
+         "members": 4,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-08-17T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 57750,
+         "high": 59190,
+         "distance_pct": 12.42,
+         "members": 3,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-01T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 52510,
+         "high": 54390,
+         "distance_pct": 19.52,
+         "members": 2,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2024-09-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 75830,
+         "high": 76450,
+         "distance_pct": 12.2,
+         "members": 1,
+         "touch_bars_90": 18,
+         "tests_30": 3,
+         "last_touch": "2026-11-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 80460,
+         "high": 81190,
+         "distance_pct": 19.05,
+         "members": 1,
+         "touch_bars_90": 27,
+         "tests_30": 7,
+         "last_touch": "2026-11-05T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 83580,
+         "high": 84880,
+         "distance_pct": 23.67,
+         "members": 2,
+         "touch_bars_90": 20,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [
+      {
+       "timeframe": "15m",
+       "reason": "BINANCE refused the candle request for BTC (HTTP 400)"
+      }
+     ],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 1,
+       "total": 200,
+       "remaining": 199,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "BTC",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "BTC",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1699660800000,
+     1716940799999
+    ],
+    [
+     "BTC",
+     "15m",
+     1794560400000,
+     null
+    ]
+   ]
+  },
+  {
+   "name": "duplicate timeframes",
+   "outcome": {
+    "kind": "ok",
+    "response": {
+     "coin": "BTC",
+     "venue": "BINANCE",
+     "price": 67585.6,
+     "results": [
+      {
+       "timeframe": "1d",
+       "summary": "BTC 1d at 67585.6: 3 support and 3 resistance zones; support zone 1 at 62480\u201363240, 6.43% below; resistance zone 1 at 75830\u201376450, 12.2% above; last closed candle volume 2.04\u00d7 its 20-candle average.",
+       "volume_vs_20": 2.04,
+       "flags": [],
+       "support": [
+        {
+         "rank": 1,
+         "low": 62480,
+         "high": 63240,
+         "distance_pct": 6.43,
+         "members": 4,
+         "touch_bars_90": 2,
+         "tests_30": 0,
+         "last_touch": "2026-08-17T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 57750,
+         "high": 59190,
+         "distance_pct": 12.42,
+         "members": 3,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2026-07-01T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 52510,
+         "high": 54390,
+         "distance_pct": 19.52,
+         "members": 2,
+         "touch_bars_90": 0,
+         "tests_30": 0,
+         "last_touch": "2024-09-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ],
+       "resistance": [
+        {
+         "rank": 1,
+         "low": 75830,
+         "high": 76450,
+         "distance_pct": 12.2,
+         "members": 1,
+         "touch_bars_90": 18,
+         "tests_30": 3,
+         "last_touch": "2026-11-08T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 2,
+         "low": 80460,
+         "high": 81190,
+         "distance_pct": 19.05,
+         "members": 1,
+         "touch_bars_90": 27,
+         "tests_30": 7,
+         "last_touch": "2026-11-05T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        },
+        {
+         "rank": 3,
+         "low": 83580,
+         "high": 84880,
+         "distance_pct": 23.67,
+         "members": 2,
+         "touch_bars_90": 20,
+         "tests_30": 0,
+         "last_touch": "2026-10-22T00:00:00.000Z",
+         "state": "intact",
+         "broke_at": null,
+         "overlaps": []
+        }
+       ]
+      }
+     ],
+     "unserved": [],
+     "timestamp": 1794650400,
+     "_algovault": {
+      "tool": "get_support_resistance_zones",
+      "version": "1.35.0",
+      "quota": {
+       "used": 1,
+       "total": 200,
+       "remaining": 199,
+       "resets_at": "2026-12-14T10:00:00.000Z",
+       "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-11-15T00:00:00.000Z"
+       },
+       "binding": "daily"
+      },
+      "session_id": null,
+      "auth": {
+       "outcome": "RESOLVED",
+       "presented": true,
+       "tier": "free"
+      }
+     }
+    }
+   },
+   "calls": [
+    [
+     "BTC",
+     "1d",
+     1786010400000,
+     null
+    ],
+    [
+     "BTC",
+     "1d",
+     1768780800000,
+     1786060799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1751500800000,
+     1768780799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1734220800000,
+     1751500799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1716940800000,
+     1734220799999
+    ],
+    [
+     "BTC",
+     "1d",
+     1699660800000,
+     1716940799999
+    ]
+   ]
+  }
+ ],
+ "clock": "the handler ran under a fake Date at GOLDEN_NOW 2026-11-14T10:00:00.000Z"
+}

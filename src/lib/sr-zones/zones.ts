@@ -416,11 +416,15 @@ export function computeSrZones(candles: readonly Candle[], t: number, price: num
   return { ok: true, frame: { support, resistance, flags, volume_vs_20: volumeVs20 } };
 }
 
+/** What overlap-matching reads and writes of a zone: a computed zone or a served one (served.ts). */
+type OverlapZone = Pick<SrZone, 'rank' | 'low' | 'high' | 'overlaps'>;
+
 /**
  * Fill each zone's `overlaps` with the zones of the OTHER timeframes whose price range intersects it. Mutates and
- * returns the frames.
+ * returns the frames. A response passes its SERVED frames (SR-ZONES-W3 §0.5), so the ranges compared are the edges
+ * the response carries.
  */
-export function attachSrZoneOverlaps<T extends { timeframe: string; support: SrZone[]; resistance: SrZone[] }>(
+export function attachSrZoneOverlaps<T extends { timeframe: string; support: OverlapZone[]; resistance: OverlapZone[] }>(
   frames: T[],
 ): T[] {
   const all = frames.flatMap((f) =>
