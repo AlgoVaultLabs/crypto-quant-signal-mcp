@@ -16,6 +16,7 @@ import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
 import { resolveVenueInterval } from './_interval.js';
+import { coalescedCache } from '../coalesced-cache.js';
 import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://www.okx.com';
@@ -82,6 +83,18 @@ export function servingReachBars(tf: string): number | null {
   return servedIntervalMs(tf) == null ? null : SERVING_PAGE_LIMIT;
 }
 
+/**
+ * SR-ZONES-W3 §0.3: the candles ONE `getCandles(start, end)` call returns contiguously on `tf` (a history read, `end`
+ * set): HISTORY_PAGE_CAP from `start` on. The call makes two requests: the recent page, which the routing guard rejects
+ * for a start this old, then `/market/history-candles` anchored at `start + HISTORY_PAGE_CAP` served bars, which
+ * answers `[start, start + HISTORY_PAGE_CAP·s)`. Measured on every mapped SR timeframe, BTC, 2026-11-20 (R0 P1): 100 per
+ * call, 0 holes over a 1001-bar walk; a page asked 200 bars back came back 100 from `start`, leaving a 100-bar hole.
+ * Null where OKX does not map `tf`.
+ */
+export function historyPageBars(tf: string): number | null {
+  return servedIntervalMs(tf) == null ? null : HISTORY_PAGE_CAP;
+}
+
 // REQUESTED bar duration in ms — the recent-branch ROUTING guard's unit only (byte-identical to the pre-wave
 // guard). History page spans use the SERVED step (servedIntervalMs), never this table.
 const BAR_MS: Record<string, number> = {
@@ -104,6 +117,40 @@ function mapOkxCandle(c: string[]): Candle | null {
     volume: parseFloat(c[5]),
   };
 }
+
+// ── SR-ZONES-W3: the price tick per instrument (tickSz), behind get_sr_zones's served zone edges ──
+// One /api/v5/public/instruments?instType=SWAP read (546 instruments, R0 P2 2026-11-20) answers every coin for 24 h,
+// with Binance's contract (binance.ts): a failed read, or one where no instrument carries a usable tick, answers
+// "no tick" (an empty map) for exactly 60 s and is then read again, and get_sr_zones rounds to the significant-figure
+// step. Each failed read logs one line; none while the memo answers.
+const PRICE_TICK_TTL_MS = 24 * 3_600_000;
+const PRICE_TICK_FAILURE_TTL_MS = 60_000;
+
+const priceTickCache = coalescedCache<ReadonlyMap<string, number>>({
+  load: async () => {
+    try {
+      const r = await okxGet<unknown>('/api/v5/public/instruments', { instType: 'SWAP' });
+      if (!Array.isArray(r?.data)) throw new Error('OKX /api/v5/public/instruments: no data array');
+      const byInstId = new Map<string, number>();
+      for (const s of r.data as Array<{ instId?: unknown; tickSz?: unknown }>) {
+        const tick = safeUpstreamNum(s?.tickSz);
+        if (typeof s?.instId === 'string' && tick !== null && tick > 0) byInstId.set(s.instId, tick);
+      }
+      if (byInstId.size === 0) throw new Error('OKX /api/v5/public/instruments: no instrument carries a tickSz');
+      return byInstId;
+    } catch (err) {
+      console.warn(
+        `[OKX] price-tick read failed (${err instanceof Error ? err.message : String(err)}); ` +
+          'get_sr_zones rounds to the significant-figure step until the read is retried in 60 s',
+      );
+      throw err;
+    }
+  },
+  ttlMs: PRICE_TICK_TTL_MS,
+  negativeTtlMs: PRICE_TICK_FAILURE_TTL_MS,
+  jitterPct: 0,
+  fallback: () => new Map(),
+});
 
 // ── Rate-limited HTTP client ──
 
@@ -508,5 +555,15 @@ export class OKXAdapter implements ExchangeAdapter {
         .map((t) => ({ upTo: safeUpstreamNum(t.maxSz) ?? NaN, rate: safeUpstreamNum(t.mmr) ?? NaN }))
         .sort((a, b) => a.upTo - b.upTo),
     };
+  }
+
+  /** SR-ZONES-W3: the coin's swap tickSz, from the shared 24 h instruments read; null when unknown or unread. */
+  async getPriceTick(coin: string): Promise<number | null> {
+    try {
+      const ticks = await priceTickCache.get('all');
+      return ticks.get(toOKXInstId(coin)) ?? null;
+    } catch {
+      return null;
+    }
   }
 }

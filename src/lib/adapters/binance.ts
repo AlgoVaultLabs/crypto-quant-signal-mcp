@@ -164,6 +164,19 @@ const INTERVAL_MAP: Record<string, string> = {
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Binance fetches for `tf` (fully native). */
 export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
+/** The `limit` every kline request asks (getCandles). Binance answers it with candles from `startTime` on. */
+const KLINE_PAGE_LIMIT = 200;
+
+/**
+ * SR-ZONES-W3 §0.3: the candles ONE `getCandles(start, end)` call returns contiguously on `tf`: KLINE_PAGE_LIMIT from
+ * `startTime` on, ascending (`endTime` is never sent). Measured on every SR timeframe, BTC, 2026-11-20 (R0 P1): 200
+ * per call, 0 holes over a 1001-bar walk; a page asked 300 bars back came back 200 from `startTime`, leaving a 100-bar
+ * hole. Null where Binance does not map `tf`.
+ */
+export function historyPageBars(tf: string): number | null {
+  return servedIntervalMs(tf) == null ? null : KLINE_PAGE_LIMIT;
+}
+
 // Some Binance symbols use 1000-prefix for low-price coins
 const SYMBOL_OVERRIDES: Record<string, string> = {
   'PEPE': '1000PEPE',
@@ -341,7 +354,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       symbol,
       interval: binanceInterval,
       startTime,
-      limit: 200,
+      limit: KLINE_PAGE_LIMIT,
     });
 
     // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a

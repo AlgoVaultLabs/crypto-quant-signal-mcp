@@ -16,6 +16,7 @@ import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
 import { resolveVenueInterval } from './_interval.js';
+import { coalescedCache } from '../coalesced-cache.js';
 import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://api.bitget.com';
@@ -74,6 +75,66 @@ export function servingReachBars(tf: string): number | null {
   const s = servedIntervalMs(tf);
   return s == null ? null : Math.min(RECENT_PAGE_CAP, Math.floor(RECENT_WINDOW_MS / s));
 }
+
+/**
+ * SR-ZONES-W3 §0.3: the candles ONE `getCandles(start, end)` call returns contiguously on `tf` (a history read, `end`
+ * set): servingReachBars(tf). Both candle endpoints answer at most 90 days per request (R0 P1, 2026-11-20:
+ * `/market/history-candles` 1D → 90 bars, 12H → 180, 4H → 200 at either endTime probed), so a page spans
+ * min(HISTORY_PAGE_CAP, 90 d / s) served bars. On 15m–4h the call goes to the history endpoint, `[start, start + 200·s)`,
+ * two requests; on 12h/1d the recent endpoint answers `(start, start + 90 d]`, one request: the start bar is excluded
+ * and the held oldest bar comes back, so each page moves one bar less and consecutive pages still tile with no hole.
+ * Measured over a 1001-bar BTC walk on every exact SR timeframe: 0 holes; 200 asked on 12h/1d left a 19 / 109-bar hole.
+ * Null where Bitget does not map `tf`.
+ */
+export function historyPageBars(tf: string): number | null {
+  return servingReachBars(tf);
+}
+
+// ── SR-ZONES-W3: the price tick per contract (pricePlace + priceEndStep), behind get_sr_zones's served zone edges ──
+// One /api/v2/mix/market/contracts?productType=USDT-FUTURES read (890 contracts, R0 P2 2026-11-20) answers every coin
+// for 24 h, with Binance's contract (binance.ts): a failed read, or one where no contract carries a usable tick,
+// answers "no tick" (an empty map) for exactly 60 s and is then read again, and get_sr_zones rounds to the
+// significant-figure step. Each failed read logs one line; none while the memo answers. The tick is
+// priceEndStep × 10^−pricePlace (BTCUSDT pricePlace 1, priceEndStep 1 → 0.1; every live OHLC a multiple, R0 P2).
+const PRICE_TICK_TTL_MS = 24 * 3_600_000;
+const PRICE_TICK_FAILURE_TTL_MS = 60_000;
+/** pricePlace is a count of decimals: a whole number this size or less. */
+const MAX_PRICE_PLACE = 18;
+
+/** The contract's tick from its two fields, or null when either is not a usable whole number. */
+function bitgetTick(pricePlace: unknown, priceEndStep: unknown): number | null {
+  if (typeof pricePlace !== 'string' || !/^\d{1,2}$/.test(pricePlace)) return null;
+  if (typeof priceEndStep !== 'string' || !/^[1-9]\d{0,8}$/.test(priceEndStep)) return null;
+  const place = Number(pricePlace);
+  if (place > MAX_PRICE_PLACE) return null;
+  return Number(priceEndStep) / 10 ** place;
+}
+
+const priceTickCache = coalescedCache<ReadonlyMap<string, number>>({
+  load: async () => {
+    try {
+      const rows = await bitgetGet<unknown>('/api/v2/mix/market/contracts', { productType: 'USDT-FUTURES' });
+      if (!Array.isArray(rows)) throw new Error('Bitget /api/v2/mix/market/contracts: no data array');
+      const bySymbol = new Map<string, number>();
+      for (const c of rows as Array<{ symbol?: unknown; pricePlace?: unknown; priceEndStep?: unknown }>) {
+        const tick = bitgetTick(c?.pricePlace, c?.priceEndStep);
+        if (typeof c?.symbol === 'string' && tick !== null && tick > 0) bySymbol.set(c.symbol, tick);
+      }
+      if (bySymbol.size === 0) throw new Error('Bitget /api/v2/mix/market/contracts: no contract carries a usable tick');
+      return bySymbol;
+    } catch (err) {
+      console.warn(
+        `[Bitget] price-tick read failed (${err instanceof Error ? err.message : String(err)}); ` +
+          'get_sr_zones rounds to the significant-figure step until the read is retried in 60 s',
+      );
+      throw err;
+    }
+  },
+  ttlMs: PRICE_TICK_TTL_MS,
+  negativeTtlMs: PRICE_TICK_FAILURE_TTL_MS,
+  jitterPct: 0,
+  fallback: () => new Map(),
+});
 
 // REQUESTED bar duration in ms — the recent-branch ROUTING guard's unit only (byte-identical to the pre-wave
 // guard). History page spans use the SERVED step (servedIntervalMs), never this table.
@@ -433,5 +494,15 @@ export class BitgetAdapter implements ExchangeAdapter {
         .map((r) => ({ upTo: safeUpstreamNum(r.endUnit) ?? NaN, rate: safeUpstreamNum(r.keepMarginRate) ?? NaN }))
         .sort((a, b) => a.upTo - b.upTo),
     };
+  }
+
+  /** SR-ZONES-W3: the coin's contract tick, from the shared 24 h contracts read; null when unknown or unread. */
+  async getPriceTick(coin: string): Promise<number | null> {
+    try {
+      const ticks = await priceTickCache.get('all');
+      return ticks.get(toBitgetSymbol(coin)) ?? null;
+    } catch {
+      return null;
+    }
   }
 }

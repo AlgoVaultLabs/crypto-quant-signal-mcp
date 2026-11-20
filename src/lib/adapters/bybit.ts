@@ -14,6 +14,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
+import { coalescedCache } from '../coalesced-cache.js';
 import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://api.bybit.com';
@@ -52,6 +53,63 @@ const INTERVAL_MAP: Record<string, string> = {
 
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Bybit fetches for `tf` (bare number = minutes, D = 1d; native). */
 export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
+
+/** The `limit` every kline request asks (getCandles). Bybit answers it with candles from `start` on. */
+const KLINE_PAGE_LIMIT = 200;
+
+/**
+ * SR-ZONES-W3 §0.3: the candles ONE `getCandles(start, end)` call returns contiguously on `tf`: KLINE_PAGE_LIMIT from
+ * `start` on, ascending (the request sends `start` only, so `end` bounds nothing). Measured on every mapped SR
+ * timeframe, BTC, 2026-11-20 (R0 P1): 200 per call, 0 holes over a 1001-bar walk; a page asked 300 bars back came back
+ * 200 from `start`, leaving a 100-bar hole. Null where Bybit does not map `tf`.
+ */
+export function historyPageBars(tf: string): number | null {
+  return servedIntervalMs(tf) == null ? null : KLINE_PAGE_LIMIT;
+}
+
+// ── SR-ZONES-W3: the price tick per symbol (priceFilter.tickSize), behind get_sr_zones's served zone edges ──
+// One /v5/market/instruments-info?category=linear read (limit 1000, nextPageCursor followed; 936 rows on one page,
+// R0 P2 2026-11-20) answers every coin for 24 h, with Binance's contract (binance.ts): a failed read, or one where no
+// symbol carries a usable tick, answers "no tick" (an empty map) for exactly 60 s and is then read again, and
+// get_sr_zones rounds to the significant-figure step. Each failed read logs one line; none while the memo answers.
+const PRICE_TICK_TTL_MS = 24 * 3_600_000;
+const PRICE_TICK_FAILURE_TTL_MS = 60_000;
+/** Pages one tick read follows at most (a cursor that never ends stops here, keeping what it read). */
+const PRICE_TICK_MAX_PAGES = 6;
+
+const priceTickCache = coalescedCache<ReadonlyMap<string, number>>({
+  load: async () => {
+    try {
+      const bySymbol = new Map<string, number>();
+      let cursor = '';
+      for (let page = 0; page < PRICE_TICK_MAX_PAGES; page++) {
+        const r = await bybitGet<{ list?: unknown; nextPageCursor?: unknown }>(
+          '/v5/market/instruments-info',
+          cursor ? { category: 'linear', limit: 1000, cursor } : { category: 'linear', limit: 1000 },
+        );
+        if (!Array.isArray(r?.list)) throw new Error('Bybit /v5/market/instruments-info: no list array');
+        for (const s of r.list as Array<{ symbol?: unknown; priceFilter?: { tickSize?: unknown } | null }>) {
+          const tick = safeUpstreamNum(s?.priceFilter?.tickSize);
+          if (typeof s?.symbol === 'string' && tick !== null && tick > 0) bySymbol.set(s.symbol, tick);
+        }
+        cursor = typeof r.nextPageCursor === 'string' ? r.nextPageCursor : '';
+        if (cursor === '' || r.list.length === 0) break;
+      }
+      if (bySymbol.size === 0) throw new Error('Bybit /v5/market/instruments-info: no symbol carries a priceFilter tick');
+      return bySymbol;
+    } catch (err) {
+      console.warn(
+        `[Bybit] price-tick read failed (${err instanceof Error ? err.message : String(err)}); ` +
+          'get_sr_zones rounds to the significant-figure step until the read is retried in 60 s',
+      );
+      throw err;
+    }
+  },
+  ttlMs: PRICE_TICK_TTL_MS,
+  negativeTtlMs: PRICE_TICK_FAILURE_TTL_MS,
+  jitterPct: 0,
+  fallback: () => new Map(),
+});
 
 // ── Bybit response wrapper ──
 
@@ -126,7 +184,7 @@ export class BybitAdapter implements ExchangeAdapter {
       symbol,
       interval: bybitInterval,
       start: startTime,
-      limit: 200,
+      limit: KLINE_PAGE_LIMIT,
     });
 
     // CRITICAL: Bybit returns candles in DESCENDING order (newest first). Reverse.
@@ -276,5 +334,15 @@ export class BybitAdapter implements ExchangeAdapter {
         .map((r) => ({ upTo: safeUpstreamNum(r.riskLimitValue) ?? NaN, rate: safeUpstreamNum(r.maintenanceMargin) ?? NaN }))
         .sort((a, b) => a.upTo - b.upTo),
     };
+  }
+
+  /** SR-ZONES-W3: the coin's priceFilter tick, from the shared 24 h instruments-info read; null when unknown or unread. */
+  async getPriceTick(coin: string): Promise<number | null> {
+    try {
+      const ticks = await priceTickCache.get('all');
+      return ticks.get(toBybitSymbol(coin)) ?? null;
+    } catch {
+      return null;
+    }
   }
 }
