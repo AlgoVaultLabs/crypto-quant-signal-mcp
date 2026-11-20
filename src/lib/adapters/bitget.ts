@@ -356,8 +356,11 @@ export class BitgetAdapter implements ExchangeAdapter {
     }
 
     // Historical fallback: `/market/history-candles` returns bars whose candle CLOSES at or before `endTime`,
-    // ascending. Anchor the page on the served grid so it starts at `startTime` (C1).
-    const pageEnd = historyPageEnd({ servedStepMs, from: startTime, pageCap: HISTORY_PAGE_CAP });
+    // ascending. Anchor the page on the served grid so it starts at `startTime` (C1). SR-ZONES-W3 R8: the endpoint
+    // answers at most 90 days of bars ending at `endTime` (1D 90, 12H 180, 4H 200; R0 P1), so the page spans
+    // historyPageBars(tf) bars — anchored at start + 200 bars, a 12H/1D page came back with its front uncovered and a
+    // young listing's walk ended short of the listing. 15m–4H (and the 1H/6H substitutes) still span 200.
+    const pageEnd = historyPageEnd({ servedStepMs, from: startTime, pageCap: historyPageBars(interval) ?? HISTORY_PAGE_CAP });
     const hist = await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
       productType: 'USDT-FUTURES',
       symbol,
