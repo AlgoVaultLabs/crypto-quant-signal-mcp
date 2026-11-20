@@ -18,6 +18,7 @@ import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBra
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
 import { resolveVenueInterval } from './_interval.js';
 import { coalescedCache } from '../coalesced-cache.js';
+import { VenueSymbolRefusedError } from '../errors.js';
 import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://www.okx.com';
@@ -217,7 +218,11 @@ async function okxGet<T>(path: string, params?: Record<string, string | number>,
   }
   const body = await upstreamFetch<OKXResponse<T>>({ ...VENUE_FETCH_CONFIGS.OKX, transientRetries: retries }, { url: url.toString() });
   if (body.code !== '0') {
-    throw new Error(`OKX API error code ${body.code}: ${body.msg}`);
+    const text = `OKX API error code ${body.code}: ${body.msg}`;
+    // SR-ZONES-W3 R9 #2: an unlisted instrument (code 51001, measured live 2026-11-20 on candles and history-candles)
+    // is typed, with the same text; every other code stays a plain Error.
+    if (body.code === '51001') throw new VenueSymbolRefusedError('OKX', 51001, text);
+    throw new Error(text);
   }
   return body;
 }

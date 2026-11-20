@@ -82,6 +82,7 @@ import { _resetCallTrackersForTest, resetLicenseCache } from '../../src/lib/lice
 import { currentCaller, currentWeightClass, runAsCaller } from '../../src/lib/upstream-weight-budget.js';
 import { processScopedTag } from '../../src/lib/caller-tags.js';
 import { GOLDEN_CASES, GOLDEN_NOW, goldenDeps, goldenLicense } from './sr-zones-venue-cases.js';
+import { VenueSymbolRefusedError } from '../../src/lib/errors.js';
 
 const FIX = join(__dirname, '..', 'fixtures', 'sr-zones');
 const VENUES = ['BINANCE', 'BYBIT', 'OKX', 'BITGET'] as const;
@@ -195,7 +196,25 @@ function series1h(bars: number, level: number): Candle[] {
 }
 
 type Call = [venue: string, coin: string, tf: string, start: number, end: number | null];
-/** A venue-aware fake: `series[venue][coin]` answered start-anchored, `pageBars` candles at most; anything else is HTTP 400. */
+/**
+ * SR-ZONES-W3 R9 #2: what each venue's adapter throws for a coin the venue does not list, from the venues' own recorded
+ * answers (tests/fixtures/sr-zones/w3-symbol-refusals-20261120.json; the adapter path is pinned in
+ * sr-zones-symbol-refusal.test.ts): Binance and Bitget an HTTP 400, Bybit and OKX the typed in-band refusal.
+ */
+const REFUSALS = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'sr-zones', 'w3-symbol-refusals-20261120.json'), 'utf8')) as {
+  reads: Array<{ name: string; status: number; statusText: string; body: string }>;
+};
+function unlistedRefusal(venue: string): Error {
+  const r = REFUSALS.reads.find((x) => x.name === `${venue} ${venue === 'BINANCE' ? 'klines' : venue === 'BYBIT' ? 'kline' : 'candles'}, unlisted coin`);
+  if (!r) return new Error(`${venue} API 400: Bad Request`); // a venue outside the four (HL): never served
+  const b = JSON.parse(r.body) as { retCode?: number; retMsg?: string; code?: string; msg?: string };
+  if (venue === 'BYBIT') return new VenueSymbolRefusedError('BYBIT', Number(b.retCode), `Bybit API error ${b.retCode}: ${b.retMsg}`);
+  if (venue === 'OKX') return new VenueSymbolRefusedError('OKX', Number(b.code), `OKX API error code ${b.code}: ${b.msg}`);
+  return new Error(`${venue === 'BINANCE' ? 'Binance' : 'Bitget'} API ${r.status}: ${r.statusText}`);
+}
+
+/** A venue-aware fake: `series[venue][coin]` answered start-anchored, `pageBars` candles at most; anything else is the
+ *  venue's recorded refusal of an unlisted coin. */
 function venueDeps(series: Record<string, Record<string, Candle[]>>, over2: Partial<SrZonesDeps> = {}) {
   const calls: Call[] = [];
   const ticks: Array<[string, string]> = [];
@@ -206,7 +225,7 @@ function venueDeps(series: Record<string, Record<string, Candle[]>>, over2: Part
     getCandles: async (coin, tf, startTime, endTime, venue) => {
       calls.push([venue, coin, tf, startTime, endTime ?? null]);
       const s = series[venue]?.[coin];
-      if (!s || tf !== '1h') throw new Error(`${venue} API 400: Bad Request`);
+      if (!s || tf !== '1h') throw unlistedRefusal(venue);
       return s.filter((c) => c.time >= startTime).slice(0, venue === 'OKX' ? 100 : 200);
     },
     getPriceTick: async (coin, venue) => {
@@ -263,7 +282,7 @@ describe('SR-ZONES-W3 AC1.2 — the cache, the memo, the reasons and the `venue`
       code: 'no_timeframe_served',
       venue: 'BYBIT',
       message: 'No requested timeframe could be served for BTC on BYBIT perpetuals.',
-      unserved: [{ timeframe: '1h', reason: 'BYBIT refused the candle request for BTC (HTTP 400)' }],
+      unserved: [{ timeframe: '1h', reason: 'BYBIT refused the candle request for BTC (error 10001)' }],
     });
     expect([...deps.failures.keys()]).toEqual(['BYBIT:BTC:1h']);
     const bybitCalls = calls.length;

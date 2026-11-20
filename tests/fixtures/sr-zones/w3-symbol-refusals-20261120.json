@@ -1,0 +1,70 @@
+{
+  "capturedAt": "2026-11-20T08:01:01.696Z",
+  "source": "SR-ZONES-W3 R9 #2: raw venue answers to a candle request for a coin the venue does not list, read once each with Node fetch (status and statusText as the adapters see them)",
+  "reads": [
+    {
+      "name": "BYBIT kline, unlisted coin",
+      "venue": "BYBIT",
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=ZZZNOTLISTEDUSDT&interval=60&limit=200",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"retCode\":10001,\"retMsg\":\"params error: Symbol Is Invalid\",\"result\":{},\"retExtInfo\":{},\"time\":1795161661835}\n"
+    },
+    {
+      "name": "BYBIT kline, PEPE (Bybit lists 1000PEPEUSDT)",
+      "venue": "BYBIT",
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=PEPEUSDT&interval=60&limit=200",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"retCode\":10001,\"retMsg\":\"params error: Symbol Is Invalid\",\"result\":{},\"retExtInfo\":{},\"time\":1795161662264}\n"
+    },
+    {
+      "name": "OKX candles, unlisted coin",
+      "venue": "OKX",
+      "url": "https://www.okx.com/api/v5/market/candles?instId=ZZZNOTLISTED-USDT-SWAP&bar=1H&limit=300",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"code\":\"51001\",\"data\":[],\"msg\":\"Instrument ID, Instrument ID code, or Spread ID doesn't exist.\"}"
+    },
+    {
+      "name": "OKX history-candles, unlisted coin",
+      "venue": "OKX",
+      "url": "https://www.okx.com/api/v5/market/history-candles?instId=ZZZNOTLISTED-USDT-SWAP&bar=1H&limit=100&after=1790000000000",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"code\":\"51001\",\"data\":[],\"msg\":\"Instrument ID, Instrument ID code, or Spread ID doesn't exist.\"}"
+    },
+    {
+      "name": "OKX candles, a bar it does not serve (not a symbol refusal)",
+      "venue": "OKX",
+      "url": "https://www.okx.com/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=7H&limit=3",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"code\":\"51000\",\"data\":[],\"msg\":\"Parameter bar error\"}"
+    },
+    {
+      "name": "BINANCE klines, unlisted coin",
+      "venue": "BINANCE",
+      "url": "https://fapi.binance.com/fapi/v1/klines?symbol=ZZZNOTLISTEDUSDT&interval=1h&limit=3",
+      "status": 400,
+      "statusText": "Bad Request",
+      "body": "{\"code\":-1121,\"msg\":\"Invalid symbol.\"}"
+    },
+    {
+      "name": "BITGET candles, unlisted coin",
+      "venue": "BITGET",
+      "url": "https://api.bitget.com/api/v2/mix/market/candles?productType=USDT-FUTURES&symbol=ZZZNOTLISTEDUSDT&granularity=1H&limit=200",
+      "status": 400,
+      "statusText": "Bad Request",
+      "body": "{\"code\":\"40034\",\"msg\":\"Parameter ZZZNOTLISTEDUSDT does not exist\",\"requestTime\":1795161664790,\"data\":null}"
+    },
+    {
+      "name": "BYBIT kline, rate limited (not a symbol refusal; seen live 2026-11-20 during the R9 probes)",
+      "venue": "BYBIT",
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=7&limit=3",
+      "status": 200,
+      "statusText": "OK",
+      "body": "{\"retCode\":10006,\"retMsg\":\"Too many visits. Exceeded the API Rate Limit.\",\"result\":{},\"retExtInfo\":{},\"time\":1795161636685}"
+    }
+  ]
+}

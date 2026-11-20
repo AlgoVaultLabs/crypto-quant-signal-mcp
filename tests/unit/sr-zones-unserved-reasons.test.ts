@@ -20,6 +20,7 @@ import {
   TimeframeUnservedError,
   UpstreamRateLimitError,
   VenueMarketClosedError,
+  VenueSymbolRefusedError,
 } from '../../src/lib/errors.js';
 import { WeightBudgetSkipError } from '../../src/lib/upstream-weight-budget.js';
 import { btcFixtureWithForming, DAY_MS } from './sr-zones-helpers.js';
@@ -33,8 +34,8 @@ function deps(getCandles: SrZonesDeps['getCandles']): SrZonesDeps {
   return { nowMs: () => NOW, cache: new Map(), failures: new Map(), getCandles, getPriceTick: async () => null };
 }
 
-const call = (d: SrZonesDeps, timeframes: string[] = ['1d']): Promise<GetSrZonesOutcome> =>
-  runGetSrZones({ coin: 'BTC', timeframes }, { tier: 'free', key: 'av_srz_unserved' }, d);
+const call = (d: SrZonesDeps, timeframes: string[] = ['1d'], venue?: 'BYBIT' | 'OKX'): Promise<GetSrZonesOutcome> =>
+  runGetSrZones({ coin: 'BTC', timeframes, ...(venue ? { venue } : {}) }, { tier: 'free', key: 'av_srz_unserved' }, d);
 
 function refused(o: GetSrZonesOutcome): { status: number; reasons: string[] } {
   if (o.kind !== 'refused') throw new Error(`expected a refusal, got ${o.kind}`);
@@ -58,6 +59,8 @@ const CASES: Array<[Kind, () => Promise<GetSrZonesOutcome>]> = [
   ['budgetSkipped', () => call(deps(throwing(new WeightBudgetSkipError('BINANCE', 5))))],
   ['emptyWindow', () => call(deps(async () => []))],
   ['refused400', () => call(deps(throwing(new Error('Binance API 400: {"code":-1121,"msg":"Invalid symbol."}'))))],
+  // SR-ZONES-W3 R9 #2: the adapter's typed in-band refusal (recorded texts: sr-zones-symbol-refusal.test.ts).
+  ['refusedCode', () => call(deps(throwing(new VenueSymbolRefusedError('BYBIT', 10001, 'Bybit API error 10001: params error: Symbol Is Invalid'))), ['1d'], 'BYBIT')],
   ['requestFailed', () => call(deps(throwing(new Error('socket hang up'))))],
 ];
 

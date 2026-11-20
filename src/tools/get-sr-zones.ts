@@ -63,7 +63,7 @@ import { SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES } from '../lib/tool-param-schema.j
 import { TIMEFRAMES } from '../lib/capabilities.js';
 import { intervalMsFor } from '../lib/candle-guard.js';
 import { TRADE_CALL_CANDLE_COUNT } from '../lib/serving-windows.js';
-import { StaleUpstreamWindowError, TimeframeUnservedError, UpstreamRateLimitError, VenueMarketClosedError } from '../lib/errors.js';
+import { StaleUpstreamWindowError, TimeframeUnservedError, UpstreamRateLimitError, VenueMarketClosedError, VenueSymbolRefusedError } from '../lib/errors.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import { processScopedTag } from '../lib/caller-tags.js';
 import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
@@ -511,6 +511,7 @@ export const SR_UNSERVED_REASONS = {
   emptyWindow: { template: '{venue} returned no candles for this timeframe', transient: true },
   loadTimeout: { template: '{venue} candle history did not load within {n} s; the read continues in the background', transient: true },
   refused400: { template: '{venue} refused the candle request for {coin} (HTTP 400)', transient: false },
+  refusedCode: { template: '{venue} refused the candle request for {coin} (error {n})', transient: false },
   requestFailed: { template: '{venue} candle request failed', transient: true },
 } as const satisfies Record<string, { template: string; transient: boolean }>;
 
@@ -545,6 +546,8 @@ function unservedReason(err: unknown, venue: SrZonesVenue, coin: string): string
   if (err instanceof WeightBudgetSkipError) return reasonOf('budgetSkipped', venue);
   if (err instanceof EmptyCandleWindowError) return reasonOf('emptyWindow', venue);
   if (err instanceof FullReadTimeoutError) return reasonOf('loadTimeout', venue, { n: FULL_READ_TIMEOUT_MS / 1000 });
+  // R9 #2: Bybit and OKX refuse an unlisted coin in band (HTTP 200 and a body code), typed by the adapter.
+  if (err instanceof VenueSymbolRefusedError) return reasonOf('refusedCode', venue, { coin, n: err.venueCode });
   const message = err instanceof Error ? err.message : String(err);
   if (/\bAPI 400\b/.test(message)) return reasonOf('refused400', venue, { coin });
   return reasonOf('requestFailed', venue);

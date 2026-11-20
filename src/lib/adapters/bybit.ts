@@ -15,6 +15,7 @@ import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
 import { coalescedCache } from '../coalesced-cache.js';
+import { VenueSymbolRefusedError } from '../errors.js';
 import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://api.bybit.com';
@@ -165,7 +166,11 @@ async function bybitGet<T>(path: string, params?: Record<string, string | number
   }
   const body = await upstreamFetch<BybitResponse<T>>({ ...VENUE_FETCH_CONFIGS.BYBIT, transientRetries: retries }, { url: url.toString() });
   if (body.retCode !== 0) {
-    throw new Error(`Bybit API error ${body.retCode}: ${body.retMsg}`);
+    const text = `Bybit API error ${body.retCode}: ${body.retMsg}`;
+    // SR-ZONES-W3 R9 #2: an unlisted symbol (retCode 10001 "params error: Symbol Is Invalid", measured live 2026-11-20)
+    // is typed, with the same text; every other code stays a plain Error.
+    if (body.retCode === 10001 && /Symbol Is Invalid/.test(String(body.retMsg))) throw new VenueSymbolRefusedError('BYBIT', 10001, text);
+    throw new Error(text);
   }
   return body.result;
 }

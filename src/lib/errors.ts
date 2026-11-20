@@ -600,6 +600,27 @@ export function buildVenueMarketClosedPayload(err: VenueMarketClosedError): {
 }
 
 /**
+ * SR-ZONES-W3 R9 #2. The venue refused a request because it does not list the symbol, answered in band with HTTP 200:
+ * Bybit retCode 10001 "params error: Symbol Is Invalid", OKX code 51001 (both measured live 2026-11-20). It is the
+ * venue's answer about the coin, not a transient failure. The message is the adapter's envelope text, unchanged, and
+ * the two fields are non-enumerable, so every consumer that reads, prints or serializes the error sees exactly the
+ * plain Error it saw before; only `instanceof` tells them apart (get_support_resistance_zones: a 422, not a 503).
+ */
+export class VenueSymbolRefusedError extends Error {
+  /** The venue's id (BYBIT, OKX). */
+  declare readonly exchange: string;
+  /** The venue's own refusal code (Bybit 10001, OKX 51001). */
+  declare readonly venueCode: number;
+
+  constructor(exchange: string, venueCode: number, message: string) {
+    super(message);
+    Object.defineProperty(this, 'exchange', { value: exchange, enumerable: false });
+    Object.defineProperty(this, 'venueCode', { value: venueCode, enumerable: false });
+    Object.setPrototypeOf(this, VenueSymbolRefusedError.prototype);
+  }
+}
+
+/**
  * Map of which exchanges to suggest as fallbacks when one is rate-limited.
  * Used by the MCP tool handler to populate the `suggestion` field of the
  * structured error response.
