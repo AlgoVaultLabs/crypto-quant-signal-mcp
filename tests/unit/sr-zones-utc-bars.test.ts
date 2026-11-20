@@ -4,6 +4,8 @@
  * passing `{ utcBars: true }` — get_support_resistance_zones only — asks for the twin on every request the read makes
  * (recent page, history page, history fallback); every other read, and the shared INTERVAL_MAP behind servedIntervalMs,
  * is byte-identical. Binance and Bybit bars open on UTC already: the option changes none of their requests.
+ * R7 (Q1 A): the getAdapter seam's two getCandles wrappers forward the option; a 5-argument read through the seam asks
+ * exactly what the bare adapter asks.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -73,6 +75,34 @@ describe.each(CASES)('SR-ZONES-W3 AC1.7 — $venue: the UTC twin on every reques
     vi.resetModules();
     const m = (await import(c.module)) as { servedIntervalMs: (tf: string) => number | null };
     expect([m.servedIntervalMs('12h'), m.servedIntervalMs('1d')]).toEqual([12 * 3_600_000, D]);
+  });
+});
+
+describe('SR-ZONES-W3 R7 (Q1 A) — the getAdapter seam forwards the option; a 5-argument read is byte-identical', () => {
+  const CANDLE_PATHS = /\/market\/(history-)?candles$/;
+  it.each(CASES)('$venue through getAdapter: utcBars asks 1Dutc on every candle request; 5 arguments ask exactly what the adapter asks', async (c) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(NOW));
+    const urls = stubEmpty(c.envelope);
+    vi.resetModules();
+    const { getAdapter } = (await import('../../src/lib/exchange-adapter.js')) as { getAdapter: (v: string) => Adapter };
+    const seam = getAdapter(c.venue);
+    const candles = () => urls.splice(0).filter((u) => CANDLE_PATHS.test(u.pathname)).map(String);
+    // A serving read and a history read, each through both seam wrappers.
+    await seam.getCandles('BTC', '1d', NOW - 100 * D, undefined, undefined, { utcBars: true }).catch(() => []);
+    await seam.getCandles('BTC', '1d', NOW - 400 * D, undefined, NOW - 300 * D, { utcBars: true });
+    const forwarded = candles();
+    expect(forwarded.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(forwarded.map((u) => new URL(u).searchParams.get(c.param)))).toEqual(new Set(['1Dutc']));
+    // Every existing caller passes 5 arguments: through the seam it asks exactly what the bare adapter asks.
+    await seam.getCandles('BTC', '1d', NOW - 400 * D, undefined, NOW - 300 * D);
+    await seam.getCandles('BTC', '12h', NOW - 400 * D, undefined, NOW - 300 * D);
+    const throughSeam = candles();
+    const bare = await fresh(c.module, c.className);
+    await bare.getCandles('BTC', '1d', NOW - 400 * D, undefined, NOW - 300 * D);
+    await bare.getCandles('BTC', '12h', NOW - 400 * D, undefined, NOW - 300 * D);
+    expect(throughSeam).toEqual(candles());
+    expect(throughSeam.every((u) => !/utc/.test(new URL(u).searchParams.get(c.param) ?? ''))).toBe(true);
   });
 });
 

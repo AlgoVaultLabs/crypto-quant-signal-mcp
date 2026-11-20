@@ -74,8 +74,8 @@ export function servingWindowVerdict(p: {
  */
 function guardServingReads(adapter: ExchangeAdapter, venue: ExchangeId): ExchangeAdapter {
   const read = adapter.getCandles.bind(adapter);
-  adapter.getCandles = async (coin, interval, startTime, dex, endTime): Promise<Candle[]> => {
-    const bars = await read(coin, interval, startTime, dex, endTime);
+  adapter.getCandles = async (coin, interval, startTime, dex, endTime, opts): Promise<Candle[]> => {
+    const bars = await read(coin, interval, startTime, dex, endTime, opts);
     if (endTime !== undefined) return bars;
     const v = servingWindowVerdict({ bars, servedStepMs: servedCandleStepMs(venue, interval), timeframe: interval, startTime, nowMs: Date.now() });
     if (v.stale) {
@@ -149,8 +149,8 @@ function guardClosedMarkets(adapter: ExchangeAdapter, venue: ExchangeId): Exchan
   }
 
   const readCandles = adapter.getCandles.bind(adapter);
-  adapter.getCandles = async (coin, interval, startTime, dex, endTime): Promise<Candle[]> => {
-    const run = () => readCandles(coin, interval, startTime, dex, endTime);
+  adapter.getCandles = async (coin, interval, startTime, dex, endTime, opts): Promise<Candle[]> => {
+    const run = () => readCandles(coin, interval, startTime, dex, endTime, opts);
     if (admissionMode() !== 'enforce' || servedCandleStepMs(venue, interval) === null) return run();
     await refuseIfClosed(coin);
     return read(run);
