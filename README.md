@@ -270,7 +270,13 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.35.0
+## What's new in v1.36.0
+
+- **🧱 Support and resistance zones on Bybit, OKX and Bitget.** `get_support_resistance_zones` (Beta) now serves Bybit, OKX and Bitget perpetuals as well as Binance, each on the 15m, 30m, 1h, 2h, 4h, 8h, 12h and 1d timeframes. Set `venue` to choose one; Binance stays the default. $0.02 per call over x402.
+
+**Upgrading from v1.35.x** — no tool or tool parameter was added, renamed or removed. `get_support_resistance_zones` (Beta) accepts the `venue` values `BYBIT`, `OKX` and `BITGET`.
+
+### v1.35.x highlights (recap)
 
 - **🧱 `get_support_resistance_zones` (Beta).** Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin. $0.02 per call over x402.
 
@@ -283,13 +289,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **🧾 A receipt with every answered check.** An answered `pre_trade_check` carries a `ledger` receipt. Once its root is anchored on Base, `verify://check/{id}` or `GET /api/verify-check?id=` proves the verdict your agent got was recorded unchanged.
 
 **Upgrading from v1.33.x** — additive. No tool or tool parameter was added, renamed or removed. `pre_trade_check` responses gain `saved_rules` and `ledger`, and a rule can now show `source: "saved"`. New: the resource `verify://check/{id}` and the routes `/api/pre-trade-rules` and `GET /api/verify-check`. Market regime direction follows a corrected rule, so some regimes read differently and regime ages in `scan_market_regimes` restarted.
-
-### v1.33.x highlights (recap)
-
-- **🛡️ Check an order against your own rules before you place it.** `pre_trade_check` takes the order you intend to place and your limits (maximum leverage, loss at your stop, accuracy needed to break even, funding) and returns each rule's pass or fail with its numbers, then GO, CAUTION or WAIT. It also shows where isolated liquidation sits on each venue that publishes its margin tiers, and whether it hits before your stop.
-- **🔐 Sign in from inside Claude.** Add AlgoVault as a custom connector and choose Sign in when needed. When Claude asks, click Connect and sign in with your email. On a paid plan, sign in with your subscription email and your plan applies.
-
-**Upgrading from v1.32.x** — one tool was added, `pre_trade_check`; no tool or parameter was renamed or removed. A call with an argument the tool doesn't take is now refused, unbilled, and the refusal names the valid parameters; the published schemas never allowed extra arguments. Added AlgoVault in Claude before? Remove it and add it again, choosing Sign in when needed.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
