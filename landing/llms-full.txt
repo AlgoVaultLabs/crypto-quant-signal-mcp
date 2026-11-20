@@ -136,7 +136,7 @@ Returns a pre-trade check of a crypto perpetual futures order against your own r
 
 ### 7. `get_support_resistance_zones` — Support and Resistance Zones (Beta)
 
-Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin. (Beta)
+Returns support and resistance zones for one coin on one venue's perpetuals, such as Binance, Bybit or OKX, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin. (Beta)
 
 **How to use:** https://algovault.com/docs#get-support-resistance-zones
 

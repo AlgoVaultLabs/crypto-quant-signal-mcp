@@ -118,10 +118,10 @@ export const GET_TRACK_RECORD_DESCRIPTION =
 // (Prompt/SR-ZONES-W2.md). The facts lint (tests/unit/sr-zones-facts-lint.test.ts) checks all four. Listed in Beta
 // since SR-ZONES-W2: the ` (Beta)` mark is derived from the registry flag, never part of this constant.
 export const GET_SR_ZONES_DESCRIPTION =
-  'Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin.';
+  'Returns support and resistance zones for one coin on one venue\'s perpetuals, such as Binance, Bybit or OKX, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin.';
 export const PARAM_DESC_SR_ZONES_COIN = 'Coin symbol, e.g. BTC or ETH.';
 export const PARAM_DESC_SR_ZONES_TIMEFRAMES = 'One to three candle timeframes, e.g. ["1h", "4h"]. One result per timeframe.';
-export const PARAM_DESC_SR_ZONES_VENUE = 'Venue: BINANCE, the default and the only value.';
+export const PARAM_DESC_SR_ZONES_VENUE = 'Perpetuals venue, e.g. BYBIT or OKX. Default BINANCE.';
 
 // Param describe() strings — type + units + allowed values + example; ≤80 chars
 // each for the 3 BM25-audited tools (length-locked by the keyword canary).

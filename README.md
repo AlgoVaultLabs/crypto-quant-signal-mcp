@@ -191,13 +191,13 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ## Tools & resources
 
-The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across the full supported timeframe range, on major crypto perpetual venues. `get_support_resistance_zones` (Beta) serves Binance perpetuals only, on the 15m, 30m, 1h, 2h, 4h, 8h, 12h and 1d timeframes.
+The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across the full supported timeframe range, on major crypto perpetual venues. `get_support_resistance_zones` (Beta) serves perpetuals on venues such as Binance, Bybit and OKX, each on the 15m, 30m, 1h, 2h, 4h, 8h, 12h and 1d timeframes.
 
 - **`get_trade_call`** <sub>(alias `get_trade_signal`)</sub> — composite BUY/SELL/HOLD verdict with confidence + regime, any asset, any timeframe.
 - **`scan_trade_calls`** — scans the top-N perps by open interest on a venue; returns every actionable call in one shot.
 - **`scan_market_regimes`** — screens a whole venue by market regime in one call: every coin whose regime matches your filter, with confidence and how long the regime has held. One call per returned row (at least one per request); coins that don't match are free.
 - **`pre_trade_check`** — checks an order against your own rules before you place it: each rule passes or fails with its numbers, then GO, CAUTION or WAIT, with isolated liquidation per venue against your stop. Read-only: it places no orders.
-- **`get_support_resistance_zones`** (Beta) — returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Use with get_trade_call or get_market_regime for the same coin.
+- **`get_support_resistance_zones`** (Beta) — returns support and resistance zones for one coin on one venue's perpetuals, such as Binance, Bybit or OKX, for one to three timeframes. Read-only. Use with get_trade_call or get_market_regime for the same coin.
 - **`scan_funding_arb`** — cross-venue funding-rate spreads across 7 venues (Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, OKX), ranked. The only MCP server doing multi-exchange derivatives arbitrage.
 - **`get_market_regime`** — classifies TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE for strategy selection.
 - **`search_knowledge`** + **`chat_knowledge`** — free BM25 search and grounded Q&A over the full knowledge bundle.
