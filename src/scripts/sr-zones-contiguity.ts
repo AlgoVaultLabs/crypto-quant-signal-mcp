@@ -1,8 +1,9 @@
 /**
  * sr-zones-contiguity.ts — SR-ZONES-W3 AC2.1. A wave check and T3's proof: no cron, no host install.
  *
- * For every venue × SR timeframe (srZonesTimeframes: native or built, R5), on BTC, ETH and the venue's young listing
- * (R0 P6), it runs get_support_resistance_zones's own window read — readSrZonesWindow → fetchWindow: the plan, the
+ * For every venue × SR timeframe (SR_ZONES_TIMEFRAMES, each native or built per R5; R9 #8: a pair with no plan is a
+ * FAIL row, never skipped), on BTC, ETH and the venue's young listing (R0 P6), it runs
+ * get_support_resistance_zones's own window read — readSrZonesWindow → fetchWindow: the plan, the
  * venue's page span, the UTC guard (R6), the build — through the real adapters, and judges what it would serve:
  *   - bars: WINDOW_BARS (1001), or fewer only at the listing start: one read below the oldest bar (one bucket lower for
  *     a built pair, whose first, partial bucket is left out) must return nothing older;
@@ -23,6 +24,9 @@
  * planted stale head, an off-UTC bar, a window short of the listing start — fails; the self-test takes the judge as a
  * parameter so tests/unit/sr-zones-contiguity.test.ts proves each leg can fail. Prints SR_ZONES_CONTIGUITY_SELFTEST.
  *
+ * R9 #3: readPair and main take their reads, the plan, the judge, the clock, argv and the log as one injected
+ * ContiguityDeps (DEFAULT_CONTIGUITY_DEPS: the live ones), so the INDETERMINATE-never-PASS rules are unit-tested.
+ *
  * Run: `node dist/scripts/sr-zones-contiguity.js` (local vantage reaches all four venues, R0 P5); inside the app
  * container only read-only (`docker exec … node dist/scripts/sr-zones-contiguity.js`). Reads run in the batch class
  * under get_sr_zones (readSrZonesWindow), so the check never spends a venue's interactive reserve.
@@ -30,8 +34,9 @@
 import type { Candle } from '../types.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { accountPage, HEAD_ALLOWANCE_BARS } from '../lib/adapters/_history-plan.js';
-import { SR_ZONES_VENUES } from '../lib/tool-param-schema.js';
-import { readSrZonesWindow, srZonesTimeframes, srZonesPlan, type SrZonesVenue } from '../tools/get-sr-zones.js';
+import { SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES } from '../lib/tool-param-schema.js';
+import { intervalMsFor } from '../lib/candle-guard.js';
+import { readSrZonesWindow, srZonesPlan, type SrTimeframePlan, type SrZonesVenue } from '../tools/get-sr-zones.js';
 import { SR_ZONES_PARAMS } from '../lib/sr-zones/params.js';
 import { runScript } from '../lib/script-lifecycle.js';
 
@@ -159,14 +164,43 @@ const errText = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.me
 /** A read the venue answered and the handler refused as wrong (FAIL), as opposed to one that could not be made. */
 const VERIFIED_ERRORS = new Set(['OffUtcCandleError', 'EmptyCandleWindowError']);
 
+/** What readPair and main read and print through (R9 #3); DEFAULT_CONTIGUITY_DEPS is the live set. */
+export interface ContiguityDeps {
+  /** The window get_support_resistance_zones would serve, ascending (the handler's own read). */
+  readWindow: (venue: SrZonesVenue, coin: string, tf: string) => Promise<Candle[]>;
+  /** Bars of `readTf` in [startMs, endMs] through the venue's adapter, UTC bars (the listing-start probe). */
+  readBelow: (venue: SrZonesVenue, coin: string, readTf: string, startMs: number, endMs: number) => Promise<Candle[]>;
+  /** The handler's plan for the pair; null when the venue can serve the timeframe neither natively nor built (R5). */
+  plan: (venue: SrZonesVenue, tf: string) => SrTimeframePlan | null;
+  judge: (r: PairRead) => PairResult;
+  nowMs: () => number;
+  argv: readonly string[];
+  log: (line: string) => void;
+}
+
+export const DEFAULT_CONTIGUITY_DEPS: ContiguityDeps = {
+  readWindow: async (venue, coin, tf) => (await readSrZonesWindow(venue, coin, tf)).window.candles,
+  readBelow: (venue, coin, readTf, startMs, endMs) => getAdapter(venue).getCandles(coin, readTf, startMs, undefined, endMs, { utcBars: true }),
+  plan: srZonesPlan,
+  judge: judgePair,
+  nowMs: () => Date.now(),
+  argv: process.argv,
+  log: (line) => console.log(line),
+};
+
 /** One pair: the handler's read, then (if short) one read below its floor. Never throws. */
-async function readPair(venue: SrZonesVenue, coin: string, tf: string): Promise<PairRead> {
-  const plan = srZonesPlan(venue, tf)!;
-  const nowMs = Date.now();
+export async function readPair(venue: SrZonesVenue, coin: string, tf: string, deps: ContiguityDeps = DEFAULT_CONTIGUITY_DEPS): Promise<PairRead> {
+  const plan = deps.plan(venue, tf);
+  const nowMs = deps.nowMs();
+  if (plan === null) {
+    // R9 #8: the corpus is every SR timeframe; one the venue cannot serve is a defect of the wave's coverage (FAIL).
+    const stepMs = intervalMsFor(tf) ?? 0;
+    return { venue, coin, tf, stepMs, readStepMs: stepMs, nowMs, window: null, olderBelow: null, error: { kind: 'verified', message: `${venue} has no plan for ${tf}: neither native nor built (R5)` } };
+  }
   const at = { venue, coin, tf, stepMs: plan.readStepMs * plan.k, readStepMs: plan.readStepMs, nowMs };
   let window: Candle[];
   try {
-    window = (await readSrZonesWindow(venue, coin, tf)).window.candles;
+    window = await deps.readWindow(venue, coin, tf);
   } catch (e) {
     const name = e instanceof Error ? e.name : '';
     return { ...at, window: null, olderBelow: null, error: { kind: VERIFIED_ERRORS.has(name) ? 'verified' : 'unreachable', message: errText(e) } };
@@ -175,27 +209,28 @@ async function readPair(venue: SrZonesVenue, coin: string, tf: string): Promise<
   // The listing start: nothing older than the floor (the oldest bar; one bucket lower for a built pair).
   const floor = window[0].time - (plan.k > 1 ? at.stepMs : 0);
   try {
-    const below = await getAdapter(venue).getCandles(coin, plan.readTf, floor - BELOW_BARS * plan.readStepMs, undefined, floor - 1, { utcBars: true });
+    const below = await deps.readBelow(venue, coin, plan.readTf, floor - BELOW_BARS * plan.readStepMs, floor - 1);
     return { ...at, window, olderBelow: below.filter((c) => c.time < floor).length };
   } catch {
     return { ...at, window, olderBelow: null };
   }
 }
 
-async function main(): Promise<number> {
-  if (process.argv.includes('--self-test')) {
-    const st = runSelfTest();
-    for (const l of st.legs) console.log(`${l.ok ? 'PASS' : 'FAIL'}  ${l.name}`);
-    console.log(`SR_ZONES_CONTIGUITY_SELFTEST=${st.pass ? 'PASS' : 'FAIL'}`);
+export async function main(deps: ContiguityDeps = DEFAULT_CONTIGUITY_DEPS): Promise<number> {
+  const log = deps.log;
+  if (deps.argv.includes('--self-test')) {
+    const st = runSelfTest(deps.judge);
+    for (const l of st.legs) log(`${l.ok ? 'PASS' : 'FAIL'}  ${l.name}`);
+    log(`SR_ZONES_CONTIGUITY_SELFTEST=${st.pass ? 'PASS' : 'FAIL'}`);
     return st.pass ? 0 : 1;
   }
   const results: PairResult[] = [];
   for (const venue of SR_ZONES_VENUES) {
     for (const coin of ['BTC', 'ETH', YOUNG_LISTING[venue]]) {
-      for (const tf of srZonesTimeframes(venue)) {
-        const r = judgePair(await readPair(venue, coin, tf));
+      for (const tf of SR_ZONES_TIMEFRAMES) {
+        const r = deps.judge(await readPair(venue, coin, tf, deps));
         results.push(r);
-        console.log(`${TAG} PAIR ${JSON.stringify(r)}`);
+        log(`${TAG} PAIR ${JSON.stringify(r)}`);
       }
     }
   }
@@ -207,11 +242,11 @@ async function main(): Promise<number> {
     failing: results.filter((r) => r.verdict === 'FAIL').map(id),
     indeterminate_pairs: results.filter((r) => r.verdict === 'INDETERMINATE').map(id),
   };
-  console.log(`${TAG} RESULT_JSON=${JSON.stringify(summary)}`);
-  console.log(`SR_ZONES_CONTIGUITY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate}`);
+  log(`${TAG} RESULT_JSON=${JSON.stringify(summary)}`);
+  log(`SR_ZONES_CONTIGUITY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate}`);
   return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
 }
 
 if (require.main === module) {
-  void runScript('sr-zones-contiguity', main, { watchdogMs: 30 * 60_000 });
+  void runScript('sr-zones-contiguity', () => main(), { watchdogMs: 30 * 60_000 });
 }
