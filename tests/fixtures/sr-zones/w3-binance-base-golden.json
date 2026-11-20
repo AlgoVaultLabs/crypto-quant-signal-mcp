@@ -105,7 +105,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 1,
        "total": 200,
@@ -269,7 +269,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 1,
        "total": 200,
@@ -558,7 +558,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 3,
        "total": 200,
@@ -958,7 +958,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 2,
        "total": 200,
@@ -1318,7 +1318,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 2,
        "total": 200,
@@ -1492,7 +1492,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 1,
        "total": 200,
@@ -1550,7 +1550,7 @@
      "suggested_action": "Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.",
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "session_id": null,
       "auth": {
        "outcome": "RESOLVED",
@@ -1599,7 +1599,7 @@
      "suggested_action": "Check the coin symbol (e.g. BTC or ETH), or ask for a longer-listed coin or a shorter timeframe; nothing was charged.",
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "session_id": null,
       "auth": {
        "outcome": "RESOLVED",
@@ -1731,7 +1731,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 1,
        "total": 200,
@@ -1901,7 +1901,7 @@
      "timestamp": 1794650400,
      "_algovault": {
       "tool": "get_support_resistance_zones",
-      "version": "1.35.0",
+      "version": "__PKG_VERSION__",
       "quota": {
        "used": 1,
        "total": 200,

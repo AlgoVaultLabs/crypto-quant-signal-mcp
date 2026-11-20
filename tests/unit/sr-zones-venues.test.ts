@@ -16,6 +16,10 @@
  *          Hong Kong-anchored read (the adapters' default OKX/BITGET 12H and 1D, recorded at CH0) and constituents off
  *          their UTC grid are each refused, never served; the default deps ask the adapter for UTC bars.
  *   R2     one formula: the same candles give the same zones on every venue.
+ *
+ * SR-ZONES-W4: the golden records `_algovault.version` as `__PKG_VERSION__` (the scan-funding-arb golden's rule), and
+ * the served outcome is compared with its version replaced by that placeholder only on an exact PKG_VERSION match, so
+ * a release bump cannot turn it red and any other served version still does.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -83,6 +87,7 @@ import { currentCaller, currentWeightClass, runAsCaller } from '../../src/lib/up
 import { processScopedTag } from '../../src/lib/caller-tags.js';
 import { GOLDEN_CASES, GOLDEN_NOW, goldenDeps, goldenLicense } from './sr-zones-venue-cases.js';
 import { VenueSymbolRefusedError } from '../../src/lib/errors.js';
+import { PKG_VERSION } from '../../src/lib/pkg-version.js';
 
 const FIX = join(__dirname, '..', 'fixtures', 'sr-zones');
 const VENUES = ['BINANCE', 'BYBIT', 'OKX', 'BITGET'] as const;
@@ -128,11 +133,34 @@ function zonesOf(r: GetSrZonesResponse): Array<{ timeframe: string; side: string
 }
 /** The outcome with every `overlaps` array emptied — §0.5 moves the overlaps only, and only by widening them. */
 const withoutOverlaps = (o: unknown): string => JSON.stringify(o, (k, v) => (k === 'overlaps' ? [] : v));
+/** SR-ZONES-W4: the served outcome with the release-owned `_algovault.version` replaced by the golden's placeholder —
+ *  only on an exact PKG_VERSION match. Applied to the served side only: the golden must hold the placeholder itself. */
+function placeholderize(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value), (key, v) => {
+    if (key === '_algovault' && v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (o.version === PKG_VERSION) o.version = '__PKG_VERSION__';
+    }
+    return v;
+  });
+}
 
 describe('SR-ZONES-W3 AC1.2 — an omitted venue serves exactly what BASE served (golden cases)', () => {
   it('the golden was written by BASE 87c3c335 and covers every case', () => {
     expect(GOLDEN.baseSha).toBe('87c3c335158428983102b3683a30b189661fe271');
     expect(GOLDEN.cases.map((c) => c.name)).toEqual(GOLDEN_CASES.map((c) => c.name));
+  });
+
+  it('SR-ZONES-W4: only an exact PKG_VERSION is normalised; any other served version stays a byte difference', () => {
+    const withVersion = (o: unknown, version: string): unknown =>
+      JSON.parse(JSON.stringify(o), (k, v) => (k === '_algovault' ? { ...v, version } : v));
+    for (const { name, outcome } of GOLDEN.cases) {
+      expect(JSON.stringify(outcome), name).toContain('"version":"__PKG_VERSION__"');
+      expect(withoutOverlaps(placeholderize(withVersion(outcome, PKG_VERSION))), name).toBe(withoutOverlaps(outcome));
+      for (const planted of ['0.0.0', `${PKG_VERSION}-rc.1`, `v${PKG_VERSION}`]) {
+        expect(withoutOverlaps(placeholderize(withVersion(outcome, planted))), `${name} @ ${planted}`).not.toBe(withoutOverlaps(outcome));
+      }
+    }
   });
 
   it.each(GOLDEN_CASES.map((c, i) => [c.name, i] as const))('%s: same bytes (overlaps aside), same venue requests', async (_name, i) => {
@@ -143,7 +171,7 @@ describe('SR-ZONES-W3 AC1.2 — an omitted venue serves exactly what BASE served
     const outcome = await runGetSrZones(c.params, goldenLicense(i), deps as unknown as SrZonesDeps);
     const base = GOLDEN.cases[i];
     expect(calls).toEqual(base.calls);
-    expect(withoutOverlaps(outcome)).toBe(withoutOverlaps(base.outcome));
+    expect(withoutOverlaps(placeholderize(outcome))).toBe(withoutOverlaps(base.outcome));
     if (outcome.kind !== 'ok' || base.outcome.kind !== 'ok') return;
     // §0.5: every overlap BASE listed (computed edges) is still listed (served edges reach at least as far), and the
     // listed set is exactly the zones of the other timeframes that meet this one on the SERVED edges.
