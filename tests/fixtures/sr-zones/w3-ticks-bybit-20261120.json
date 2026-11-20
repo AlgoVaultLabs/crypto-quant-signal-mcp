@@ -1,0 +1,356 @@
+{
+ "retCode": 0,
+ "retMsg": "OK",
+ "result": {
+  "category": "linear",
+  "list": [
+   {
+    "symbol": "1000PEPEUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "1000PEPE",
+    "quoteCoin": "USDT",
+    "launchTime": "1683108271000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "7",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "75.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.0000010",
+     "maxPrice": "19.9999980",
+     "tickSize": "0.0000010"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "110000000",
+     "minOrderQty": "100",
+     "qtyStep": "100",
+     "postOnlyMaxOrderQty": "110000000",
+     "maxMktOrderQty": "42000000",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT",
+    "copyTrading": "both",
+    "upperFundingRate": "0.0043",
+    "lowerFundingRate": "-0.0043",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.05",
+     "priceLimitRatioY": "0.1"
+    },
+    "displayName": "1000PEPEUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 310,
+    "fullName": "",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "ASTERUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "ASTER",
+    "quoteCoin": "USDT",
+    "launchTime": "1758267993000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "4",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "75.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.0001",
+     "maxPrice": "1999.9998",
+     "tickSize": "0.0001"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "315000",
+     "minOrderQty": "1",
+     "qtyStep": "1",
+     "postOnlyMaxOrderQty": "315000",
+     "maxMktOrderQty": "130000",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 240,
+    "settleCoin": "USDT",
+    "copyTrading": "both",
+    "upperFundingRate": "0.0033",
+    "lowerFundingRate": "-0.0033",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.15",
+     "priceLimitRatioY": "0.3"
+    },
+    "displayName": "ASTERUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 2451,
+    "fullName": "Aster",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "BTCPERP",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "BTC",
+    "quoteCoin": "USDC",
+    "launchTime": "1610604231000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "2",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "125.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.10",
+     "maxPrice": "1999999.80",
+     "tickSize": "0.10"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "1000.000",
+     "minOrderQty": "0.001",
+     "qtyStep": "0.001",
+     "postOnlyMaxOrderQty": "1000.000",
+     "maxMktOrderQty": "200.000",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDC",
+    "copyTrading": "none",
+    "upperFundingRate": "0.005",
+    "lowerFundingRate": "-0.005",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.03",
+     "priceLimitRatioY": "0.05"
+    },
+    "displayName": "BTCUSDC",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 45,
+    "fullName": "Bitcoin",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "BTCUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "BTC",
+    "quoteCoin": "USDT",
+    "launchTime": "1584230400000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "2",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "150.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.10",
+     "maxPrice": "1999999.80",
+     "tickSize": "0.10"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "1500.000",
+     "minOrderQty": "0.001",
+     "qtyStep": "0.001",
+     "postOnlyMaxOrderQty": "1500.000",
+     "maxMktOrderQty": "150.000",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT",
+    "copyTrading": "both",
+    "upperFundingRate": "0.00333",
+    "lowerFundingRate": "-0.00333",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.01",
+     "priceLimitRatioY": "0.02"
+    },
+    "displayName": "BTCUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 5,
+    "fullName": "Bitcoin",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "CTUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "CT",
+    "quoteCoin": "USDT",
+    "launchTime": "1790844328000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "4",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "20.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.0001",
+     "maxPrice": "1999.9998",
+     "tickSize": "0.0001"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "238080",
+     "minOrderQty": "1",
+     "qtyStep": "1",
+     "postOnlyMaxOrderQty": "238080",
+     "maxMktOrderQty": "59520",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 240,
+    "settleCoin": "USDT",
+    "copyTrading": "none",
+    "upperFundingRate": "0.025",
+    "lowerFundingRate": "-0.025",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.1",
+     "priceLimitRatioY": "0.2"
+    },
+    "displayName": "CTUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 2950,
+    "fullName": "Concrete",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "DOGEUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "DOGE",
+    "quoteCoin": "USDT",
+    "launchTime": "1622630640000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "5",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "75.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.00001",
+     "maxPrice": "199.99998",
+     "tickSize": "0.00001"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "43678900",
+     "minOrderQty": "1",
+     "qtyStep": "1",
+     "postOnlyMaxOrderQty": "43678900",
+     "maxMktOrderQty": "5991100",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT",
+    "copyTrading": "both",
+    "upperFundingRate": "0.0058",
+    "lowerFundingRate": "-0.0058",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.05",
+     "priceLimitRatioY": "0.1"
+    },
+    "displayName": "DOGEUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 33,
+    "fullName": "Dogecoin",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   },
+   {
+    "symbol": "ETHUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "ETH",
+    "quoteCoin": "USDT",
+    "launchTime": "1615766400000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "2",
+    "leverageFilter": {
+     "minLeverage": "1",
+     "maxLeverage": "150.00",
+     "leverageStep": "0.01"
+    },
+    "priceFilter": {
+     "minPrice": "0.01",
+     "maxPrice": "199999.98",
+     "tickSize": "0.01"
+    },
+    "lotSizeFilter": {
+     "maxOrderQty": "10000.00",
+     "minOrderQty": "0.01",
+     "qtyStep": "0.01",
+     "postOnlyMaxOrderQty": "10000.00",
+     "maxMktOrderQty": "2000.00",
+     "minNotionalValue": "5"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT",
+    "copyTrading": "both",
+    "upperFundingRate": "0.00333",
+    "lowerFundingRate": "-0.00333",
+    "isPreListing": false,
+    "preListingInfo": null,
+    "riskParameters": {
+     "priceLimitRatioX": "0.02",
+     "priceLimitRatioY": "0.04"
+    },
+    "displayName": "ETHUSDT",
+    "symbolType": "",
+    "forbidUplWithdrawal": false,
+    "symbolId": 6,
+    "fullName": "Ethereum",
+    "marketRegion": "",
+    "underlyingTicker": "",
+    "tags": []
+   }
+  ],
+  "nextPageCursor": ""
+ },
+ "retExtInfo": {},
+ "time": 1795147529539,
+ "note": "SR-ZONES-W3 P2: GET https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000, 2026-11-20T04:05Z, 936 rows trimmed to these (fields verbatim)"
+}
