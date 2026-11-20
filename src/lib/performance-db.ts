@@ -9,6 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats, ExchangeId } from '
 import { classifyAsset, majorityTier, TIER_DEFINITIONS, getTop20ByOI, type AssetTier } from './asset-tiers.js';
 import { assetClassProbedAt, warmAssetClasses } from './asset-class-detection.js';
 import { isShortLivedScript } from './runtime.js';
+import { coalescedCache } from './coalesced-cache.js';
 import { isPfeEligible, isEvaluatedRow, sqlPfeEligible, SQL_EVALUATED, SQL_PFE_ELIGIBLE, SCORING_EXCLUSIONS_RULE } from './pfe-scoring.js';
 import { EXCHANGE_COUNT } from './capabilities.js';
 // A1b: the ONE maturity derivation. `pfe-mae.ts` is a type-only-import leaf, so this cannot cycle.
@@ -3357,15 +3358,42 @@ export async function hasRecentSignalAsync(coin: string, timeframe: string, with
  *
  * Public API + response shape unchanged. No version bump.
  */
-const PERF_STATS_TTL_MS = 60 * 1000;
+/**
+ * OPS-PERFSTATS-SWR-W1 (2026-11-20) — the async perf-stats snapshot is computed OFF the request path.
+ *
+ * The compute is O(table) by design: a full-table GROUP BY (Data Integrity forbids a time window — DASH-W1-FIX
+ * above) plus an in-process rollup. Measured 2026-11-20 at 1.44M rows: 6.5–17.1 s per compute (487 server-log
+ * lines over 15 h; one fresh-process split: 0.8 s allow-list + 2.4 s SQL over 85,036 groups + 4.3 s rollup).
+ * The 60 s map that used to front it made every reader arriving more than 60 s after the last compute wait for
+ * all of it, so each fixed client budget under it failed in turn: the June monitor (15 s), the June 84 s stall,
+ * the server's own nudge warmer (5 s, fail-open) and the editorial livedata fetch (15 s, 2026-11-20T02:00:19Z
+ * against a 17,107 ms compute). OPS-PERFSTATS-SQL-PUSHDOWN-W1 (~9×, measured at 168k rows) only reset that
+ * countdown; the table has grown 8.6× since. This changes the lifecycle instead:
+ *   - fresh (< PERF_STATS_TTL_MS) → served, as before;
+ *   - stale (< PERF_STATS_MAX_STALE_MS) → served after at most PERF_STATS_STALE_WAIT_MS while ONE refresh runs
+ *     in the background (coalescedCache: single-flight + loadTimeoutMs + maxStaleMs);
+ *   - older than PERF_STATS_MAX_STALE_MS, or no snapshot yet (a cold process) → awaited, as before. A refresh
+ *     that keeps failing is logged and surfaces as an error once the snapshot ages out — never served forever;
+ *   - startPerfStatsWarmer() (long-lived server only) refreshes every PERF_STATS_WARM_MS, so a servable snapshot
+ *     exists after boot whoever calls — the property is ours, not rented from traffic.
+ * PERF_STATS_MAX_STALE_MS is the "~5-min worst-case staleness" this cache has always documented (above).
+ * The SYNC SQLite path (`getPerformanceStats`, tests/dev only) keeps its own 5-min-bucket map.
+ * Invariants pinned in tests/unit/perf-stats-swr.test.ts: TTL < WARM, and 2 × WARM < MAX_STALE (one missed
+ * warm tick still leaves a servable snapshot).
+ */
+export const PERF_STATS_TTL_MS = 60 * 1000;
+export const PERF_STATS_MAX_STALE_MS = 5 * 60 * 1000;
+export const PERF_STATS_WARM_MS = 2 * 60 * 1000;
+export const PERF_STATS_STALE_WAIT_MS = 1_000;
+const PERF_STATS_KEY = 'perf-stats';
 // OPS-PFE-METRIC-INTEGRITY-W1: mae_return_pct is REQUIRED here — the S2 frozen-book
 // predicate is `pfe = 0 AND mae = 0`, so without this column `isFrozenEvaluation` sees
 // `undefined === 0` (false) and silently excludes NOTHING. Projecting it is what makes the
 // eligibility rule real on the row-scan path.
 const STATS_COL_PROJECTION = 'id, coin, signal, timeframe, confidence, created_at, pfe_return_pct, mae_return_pct, exchange';
 
+// SYNC SQLite path only (`getPerformanceStats`). The async path is `perfStatsAsyncCache` below.
 const perfStatsCache = new Map<string, { stats: PerformanceStats; computedAt: number }>();
-const perfStatsInflight = new Map<string, Promise<PerformanceStats>>();
 
 function getPerfStatsBucket(): string {
   // 5-min buckets — cache invalidates naturally as time slides forward;
@@ -3426,77 +3454,110 @@ export function getPerformanceStats(): PerformanceStats {
   return stats;
 }
 
-export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
-  const bucket = getPerfStatsBucket();
-
-  // Cache check
-  const cached = perfStatsCache.get(bucket);
-  if (cached && (Date.now() - cached.computedAt) < PERF_STATS_TTL_MS) {
-    return cached.stats;
+/** The O(table) compute behind the async snapshot. Only `perfStatsAsyncCache` calls it — never a request path. */
+async function computePerformanceStatsAsync(): Promise<PerformanceStats> {
+  const t0 = Date.now();
+  const top20 = await getTop20ByOI().catch(() => null);
+  // OPS-ASSET-CLASS-TOTALITY-W1: tiers read the asset-class snapshot. A cold process (the first
+  // read after a deploy) waits for the boot warm — never caches STATIC-floor tiers for a TTL;
+  // a held snapshot refreshes in the background.
+  if (assetClassProbedAt() === null) await warmAssetClasses().catch(() => {});
+  else void warmAssetClasses().catch(() => {});
+  // OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2: SQL GROUP-BY pushdown (PG only, default-OFF
+  // flag PERF_STATS_SQL_PUSHDOWN). Byte-equivalent to the loadSignalsForStats +
+  // computeStats scan (CH1 oracle gate); returns in ms without holding a pool
+  // connection for the full-table load. Default-deny: any non-"1"/"true" → scan.
+  const useSql = perfStatsSqlPushdownEnabled() && isPg;
+  // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: resolve the public venue allow-list ONCE, here,
+  // and hand the SAME set to whichever branch runs. Measured 2026-08-29,
+  // PERF_STATS_SQL_PUSHDOWN=1 in prod — the SQL branch is the LIVE one, so a fix applied
+  // only to the in-memory branch below would be a no-op in production while looking green
+  // locally. That is exactly why the parameter is required rather than defaulted.
+  //
+  // Reuses the aggregate lane's resolver (fail-CLOSED, lazily imported so the DB layer
+  // gains no static edge to venue-store, which imports THIS module). ONE venue source
+  // governs aggregates and rows alike.
+  const { resolvePublicPerformanceAllowList } = await import('./public-performance-formatter.js');
+  const recentVenues = (await resolvePublicPerformanceAllowList()).venues;
+  let stats: PerformanceStats;
+  let rows: number;
+  if (useSql) {
+    const { groups, period, recentRows } = await aggregateSignalsSql(recentVenues);
+    stats = rollupStats(groups, period, top20, recentRows, recentVenues);
+    rows = period.total;
+  } else {
+    const all = await loadSignalsForStats();
+    stats = computeStats(all, top20, recentVenues);
+    rows = all.length;
   }
+  // The line keeps its pre-W1 shape ("cache miss" = one compute ran); `bucket` is now informational.
+  console.debug(`[perf-stats] cache miss bucket=${getPerfStatsBucket()} mode=${useSql ? 'sql' : 'scan'} rows=${rows} elapsedMs=${Date.now() - t0}`);
+  return stats;
+}
 
-  // Stampede protection — concurrent callers in the same bucket attach to
-  // the in-flight promise instead of firing N DB queries.
-  const existing = perfStatsInflight.get(bucket);
-  if (existing) return existing;
+let perfStatsComputeOverride: (() => Promise<PerformanceStats>) | null = null;
 
-  const promise = (async (): Promise<PerformanceStats> => {
+const perfStatsAsyncCache = coalescedCache<PerformanceStats>({
+  load: async () => {
     try {
-      const t0 = Date.now();
-      const top20 = await getTop20ByOI().catch(() => null);
-      // OPS-ASSET-CLASS-TOTALITY-W1: tiers read the asset-class snapshot. A cold process (the first
-      // read after a deploy) waits for the boot warm — never caches STATIC-floor tiers for a TTL;
-      // a held snapshot refreshes in the background.
-      if (assetClassProbedAt() === null) await warmAssetClasses().catch(() => {});
-      else void warmAssetClasses().catch(() => {});
-      // OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2: SQL GROUP-BY pushdown (PG only, default-OFF
-      // flag PERF_STATS_SQL_PUSHDOWN). Byte-equivalent to the loadSignalsForStats +
-      // computeStats scan (CH1 oracle gate); returns in ms without holding a pool
-      // connection for the full-table load. Default-deny: any non-"1"/"true" → scan.
-      const useSql = perfStatsSqlPushdownEnabled() && isPg;
-      // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: resolve the public venue allow-list ONCE, here,
-      // and hand the SAME set to whichever branch runs. Measured 2026-08-29,
-      // PERF_STATS_SQL_PUSHDOWN=1 in prod — the SQL branch is the LIVE one, so a fix applied
-      // only to the in-memory branch below would be a no-op in production while looking green
-      // locally. That is exactly why the parameter is required rather than defaulted.
-      //
-      // Reuses the aggregate lane's resolver (fail-CLOSED, lazily imported so the DB layer
-      // gains no static edge to venue-store, which imports THIS module). ONE venue source
-      // governs aggregates and rows alike.
-      const { resolvePublicPerformanceAllowList } = await import('./public-performance-formatter.js');
-      const recentVenues = (await resolvePublicPerformanceAllowList()).venues;
-      let stats: PerformanceStats;
-      let rows: number;
-      if (useSql) {
-        const { groups, period, recentRows } = await aggregateSignalsSql(recentVenues);
-        stats = rollupStats(groups, period, top20, recentRows, recentVenues);
-        rows = period.total;
-      } else {
-        const all = await loadSignalsForStats();
-        stats = computeStats(all, top20, recentVenues);
-        rows = all.length;
-      }
-      perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
-      console.debug(`[perf-stats] cache miss bucket=${bucket} mode=${useSql ? 'sql' : 'scan'} rows=${rows} elapsedMs=${Date.now() - t0}`);
-      return stats;
-    } finally {
-      perfStatsInflight.delete(bucket);
+      return await (perfStatsComputeOverride ?? computePerformanceStatsAsync)();
+    } catch (err) {
+      // Logged HERE because inside PERF_STATS_MAX_STALE_MS the cache answers with the previous snapshot: the
+      // caller never sees this error, so without this line a broken refresh stays invisible until it ages out.
+      console.error(`[perf-stats] refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
     }
-  })();
+  },
+  ttlMs: PERF_STATS_TTL_MS,
+  staleOk: true,
+  loadTimeoutMs: PERF_STATS_STALE_WAIT_MS,
+  maxStaleMs: PERF_STATS_MAX_STALE_MS,
+});
 
-  perfStatsInflight.set(bucket, promise);
-  return promise;
+export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
+  return perfStatsAsyncCache.get(PERF_STATS_KEY);
+}
+
+let perfStatsWarmTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * OPS-PERFSTATS-SWR-W1: keep a servable perf-stats snapshot in the long-lived server. Computes once at boot (the
+ * first reader after a deploy joins that compute instead of starting its own), then every PERF_STATS_WARM_MS.
+ * Each tick is an ordinary read: a fresh snapshot makes it a no-op, a stale one starts the one background
+ * refresh. Idempotent; the interval is `.unref()`'d. Call it from the server's listen callback ONLY — never
+ * from a test or a short-lived cron that merely imports this module.
+ */
+export function startPerfStatsWarmer(): void {
+  if (perfStatsWarmTimer) return;
+  const tick = (): void => {
+    // A failed refresh is already logged by the loader ('[perf-stats] refresh failed').
+    getPerformanceStatsAsync().catch(() => undefined);
+  };
+  tick();
+  perfStatsWarmTimer = setInterval(tick, PERF_STATS_WARM_MS);
+  if (typeof perfStatsWarmTimer.unref === 'function') perfStatsWarmTimer.unref();
 }
 
 // ── OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1 test seams (underscore-prefixed). ──
 
 export function _clearPerformanceStatsCache(): void {
   perfStatsCache.clear();
-  perfStatsInflight.clear();
+  perfStatsAsyncCache._clear();
 }
 
 export function _getPerformanceStatsCacheSize(): number {
-  return perfStatsCache.size;
+  return perfStatsCache.size + (perfStatsAsyncCache._getState(PERF_STATS_KEY)?.value !== undefined ? 1 : 0);
+}
+
+/** OPS-PERFSTATS-SWR-W1 test seam: replace the async compute (null restores the real one). */
+export function _setPerformanceStatsComputeForTest(fn: (() => Promise<PerformanceStats>) | null): void {
+  perfStatsComputeOverride = fn;
+}
+
+/** OPS-PERFSTATS-SWR-W1 test seam: stop the warmer `startPerfStatsWarmer()` started. */
+export function _stopPerfStatsWarmerForTest(): void {
+  if (perfStatsWarmTimer) clearInterval(perfStatsWarmTimer);
+  perfStatsWarmTimer = null;
 }
 
 /**

@@ -91,7 +91,7 @@ import { validateSignupEmail } from './lib/email-validation.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
-import { recordFunnelEvent } from './lib/performance-db.js';
+import { recordFunnelEvent, startPerfStatsWarmer } from './lib/performance-db.js';
 import { classifyCtaEventType } from './lib/cta-attribution.js';
 import { recordFirstNonHoldVerdict, shouldShowAhaReferral, ahaReferralAlreadyShown } from './lib/aha-event.js';
 import { referralCodeForKey } from './lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
@@ -4386,6 +4386,11 @@ async function startHttp() {
     // line). Sourced from the in-process performance stats (NOT an HTTP self-call);
     // long-lived process only, mirroring the nudge warmer above.
     startReceiptTrackRecordWarmer();
+
+    // OPS-PERFSTATS-SWR-W1: keep a servable perf-stats snapshot so no reader of /api/performance-public,
+    // performance://signal-performance or get_track_record waits for the O(table) compute after boot —
+    // 6.5–17.1 s at 1.44M rows on 2026-11-20, past the editorial fetch's 15 s budget. Long-lived process only.
+    startPerfStatsWarmer();
 
     // Auto-backfill: evaluate pending signals every 5 minutes
     console.log('[backfill] Auto-backfill enabled: every 5 minutes');
