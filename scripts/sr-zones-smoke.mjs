@@ -3,18 +3,22 @@
  * sr-zones-smoke.mjs — SR-ZONES-W1 AC2.4. A live smoke of get_support_resistance_zones over MCP (streamable HTTP), reused at release.
  *
  *   node scripts/sr-zones-smoke.mjs --prod                 # https://api.algovault.com/mcp, the only target
- *   node scripts/sr-zones-smoke.mjs --prod --young CT      # the young listing to probe (default CT, 1d)
+ *   node scripts/sr-zones-smoke.mjs --prod --young CT      # BINANCE's young listing to probe (default CT, 1d)
  *   node scripts/sr-zones-smoke.mjs --self-test            # the checks below over built-in bodies; no key, no network
  *
  * Checks, in order:
- *   1. tools/list lists get_support_resistance_zones, and (SR-ZONES-W2) its description ends " (Beta)";
+ *   1. tools/list lists get_support_resistance_zones, (SR-ZONES-W2) its description ends " (Beta)", and (SR-ZONES-W3)
+ *      its `venue` enum is the four venues, BINANCE first;
+ *   2-4, on every venue of SMOKE_VENUES (SR-ZONES-W3 AC2.2; BINANCE asked with no `venue`, the default, the others by
+ *      name), each answer's `venue` the one requested:
  *   2. BTC ["1d","4h"] returns 2 results, at most 3 zones a side, every §0 field, and (SR-ZONES-W2) every zone edge a
  *      multiple of 10, BTC's rounding step;
  *   3. ETH 1h is served;
- *   4. the young listing is served (a result carrying its flags), not refused;
+ *   4. the venue's young listing (BINANCE: --young; the others: YOUNG_LISTINGS) is served (a result carrying its
+ *      flags), not refused;
  *   5. (SR-ZONES-W2) https://algovault.com/tools lists "Support and Resistance Zones (Beta)";
  *   6. (SR-ZONES-W2) an unpaid POST https://api.algovault.com/x402/get_support_resistance_zones answers 402, every rail quoting $0.02;
- *   7. the facts lint passes on every string of every response.
+ *   7. the facts lint passes on every string of every response, every venue's.
  *
  * Right after a deploy the cache is cold. A timeframe can then come back unserved with the server's load-timeout reason
  * (R8: its full read goes on in the background and caches the window). Checks 2-4 treat that answer as a retry (R9 #3):
@@ -70,6 +74,10 @@ const X402_AMOUNT = '20000';
 const SITE_TOOLS_URL = 'https://algovault.com/tools';
 const X402_URL = 'https://api.algovault.com/x402/get_support_resistance_zones';
 const KEYLESS_URLS = [SITE_TOOLS_URL, X402_URL];
+/** SR-ZONES-W3 AC2.2: every venue the tool serves (the `venue` enum, BINANCE first: the default). */
+const SMOKE_VENUES = ['BINANCE', 'BYBIT', 'OKX', 'BITGET'];
+/** SR-ZONES-W3 R0 P6: each other venue's young listing (CT: about 50 daily bars on all four). BINANCE's is --young. */
+const YOUNG_LISTINGS = { BYBIT: 'CT', OKX: 'CT', BITGET: 'CT' };
 
 /** The terminal token. process.exitCode, never process.exit(): a queued pipe write would lose the token. */
 function verdict(token, code) {
@@ -201,10 +209,10 @@ function lintHits(targets) {
   return { count: all.length, hits: all.filter(([, s]) => FORBIDDEN.test(s)) };
 }
 
-function shapeProblems(body, expectedTimeframes) {
+function shapeProblems(body, expectedTimeframes, venue = 'BINANCE') {
   const p = [];
   if (!sameKeys(body, TOP_KEYS)) return [`top-level keys ${JSON.stringify(body && Object.keys(body))}`];
-  if (body.venue !== 'BINANCE') p.push(`venue ${body.venue}`);
+  if (body.venue !== venue) p.push(`venue ${body.venue}, asked ${venue}`);
   if (!(typeof body.price === 'number' && body.price > 0)) p.push('price is not a positive number');
   const tfs = body.results.map((r) => r.timeframe);
   if (JSON.stringify(tfs) !== JSON.stringify(expectedTimeframes)) p.push(`results ${JSON.stringify(tfs)}, unserved ${JSON.stringify(body.unserved)}`);
@@ -222,10 +230,17 @@ function loadingTimeframes(body) {
   return rows.filter((u) => typeof u?.reason === 'string' && LOAD_TIMEOUT.test(u.reason)).map((u) => u.timeframe);
 }
 
-/** The young listing's check: its result is served and carries flags. */
-function youngProblems(body) {
+/** The young listing's check: its result is served and carries flags, from the requested venue. */
+function youngProblems(body, venue = 'BINANCE') {
   const r = body?.results?.[0];
-  return r && Array.isArray(r.flags) ? [] : ['no result carrying flags'];
+  if (!(r && Array.isArray(r.flags))) return ['no result carrying flags'];
+  return body.venue === venue ? [] : [`venue ${body.venue}, asked ${venue}`];
+}
+
+/** SR-ZONES-W3: tools/list serves the `venue` enum as the four venues, BINANCE (the default) first. */
+function venueEnumProblems(tool) {
+  const e = tool?.inputSchema?.properties?.venue?.enum;
+  return JSON.stringify(e) === JSON.stringify(SMOKE_VENUES) ? [] : [`the venue enum is ${JSON.stringify(e)}, not ${JSON.stringify(SMOKE_VENUES)}`];
 }
 
 /** tools/list serves get_support_resistance_zones's description with the Beta mark at its end. */
@@ -244,8 +259,8 @@ function edgeProblems(body) {
   return off.length > 0 ? [`edges off the step of ${BTC_EDGE_STEP}: ${off.join(', ')}`] : [];
 }
 
-/** BTC's check: the §0 shape, then every edge on the step. */
-const btcProblems = (body, timeframes) => [...shapeProblems(body, timeframes), ...edgeProblems(body)];
+/** BTC's check: the §0 shape (the requested venue), then every edge on the step. */
+const btcProblems = (body, timeframes, venue = 'BINANCE') => [...shapeProblems(body, timeframes, venue), ...edgeProblems(body)];
 
 /** /tools answers and lists the tool under its Beta label. */
 function toolsPageProblems(page) {
@@ -337,24 +352,32 @@ async function runChecks({ rpcCall, toolCall, sleep, young, fetchToolsPage: tool
     if (tool) {
       const beta = betaDescriptionProblems(tool);
       check(beta.length === 0, `tools/list description ends " (Beta)"${beta.length ? ` — ${beta.join('; ')}` : ''}`);
+      const venues = venueEnumProblems(tool);
+      check(venues.length === 0, `tools/list venue enum ${JSON.stringify(SMOKE_VENUES)}${venues.length ? ` — ${venues.join('; ')}` : ''}`);
     }
 
-    const btc = await checkZones(toolCall, sleep, { coin: 'BTC', timeframes: ['1d', '4h'] }, btcProblems);
-    report(btc.outcome, `BTC 1d+4h: 2 results, ≤3 zones a side, §0 fields, every edge a multiple of ${BTC_EDGE_STEP}${btc.detail}`);
-    lintAll('BTC 1d+4h', btc, 'BTC');
+    // SR-ZONES-W3 AC2.2: checks 2-4 on every venue. BINANCE is asked with no `venue` (the default, as before).
+    for (const venue of SMOKE_VENUES) {
+      const at = venue === 'BINANCE' ? {} : { venue };
+      const on = venue === 'BINANCE' ? '' : `${venue} `;
+      const btc = await checkZones(toolCall, sleep, { coin: 'BTC', timeframes: ['1d', '4h'], ...at }, (b, t) => btcProblems(b, t, venue));
+      report(btc.outcome, `${on}BTC 1d+4h: 2 results, ≤3 zones a side, §0 fields, every edge a multiple of ${BTC_EDGE_STEP}${btc.detail}`);
+      lintAll(`${on}BTC 1d+4h`, btc, 'BTC');
 
-    const eth = await checkZones(toolCall, sleep, { coin: 'ETH', timeframes: ['1h'] }, shapeProblems);
-    report(eth.outcome, `ETH 1h served${eth.detail}`);
-    lintAll('ETH 1h', eth, 'ETH');
+      const eth = await checkZones(toolCall, sleep, { coin: 'ETH', timeframes: ['1h'], ...at }, (b, t) => shapeProblems(b, t, venue));
+      report(eth.outcome, `${on}ETH 1h served${eth.detail}`);
+      lintAll(`${on}ETH 1h`, eth, 'ETH');
 
-    const yl = await checkZones(toolCall, sleep, { coin: young, timeframes: ['1d'] }, youngProblems);
-    const yr = yl.outcome === 'pass' ? yl.body.results[0] : null;
-    report(
-      yl.outcome,
-      `young listing ${young} 1d served with flags` +
-        `${yr ? ` ${JSON.stringify(yr.flags)} (support ${yr.support.length}, resistance ${yr.resistance.length})` : ''}${yl.detail}`,
-    );
-    lintAll(`${young} 1d`, yl, young);
+      const coin = venue === 'BINANCE' ? young : YOUNG_LISTINGS[venue];
+      const yl = await checkZones(toolCall, sleep, { coin, timeframes: ['1d'], ...at }, (b) => youngProblems(b, venue));
+      const yr = yl.outcome === 'pass' ? yl.body.results[0] : null;
+      report(
+        yl.outcome,
+        `${on}young listing ${coin} 1d served with flags` +
+          `${yr ? ` ${JSON.stringify(yr.flags)} (support ${yr.support.length}, resistance ${yr.resistance.length})` : ''}${yl.detail}`,
+      );
+      lintAll(`${on}${coin} 1d`, yl, coin);
+    }
 
     const page = toolsPageProblems(await toolsPage());
     check(page.length === 0, `/tools lists "${BETA_LABEL}"${page.length ? ` — ${page.join('; ')}` : ''}`);
@@ -373,13 +396,13 @@ async function runChecks({ rpcCall, toolCall, sleep, young, fetchToolsPage: tool
 }
 
 /** A §0-shaped body for the self-test: one support and one resistance zone per timeframe. */
-function sampleBody(coin, timeframes) {
+function sampleBody(coin, timeframes, venue = 'BINANCE') {
   const zone = (rank, low, high) => ({
     rank, low, high, distance_pct: 1.5,
     members: 2, touch_bars_90: 4, tests_30: 1, last_touch: '2026-11-10T00:00:00.000Z', state: 'intact', broke_at: null, overlaps: [],
   });
   return {
-    coin, venue: 'BINANCE', price: 100,
+    coin, venue, price: 100,
     results: timeframes.map((timeframe) => ({
       timeframe,
       summary: `${coin} ${timeframe} at 100: 1 support and 1 resistance zones; support zone 1 at 80–90, 10% below; resistance zone 1 at 110–120, 10% above; last closed candle volume 1× its 20-candle average.`,
@@ -454,20 +477,28 @@ async function selfTest() {
     return { ...r, calls, waits: JSON.stringify(waits) };
   };
   // R9 #3 end to end: runChecks (what main() runs) over scripted answers per coin, a silent log, an instant sleep.
-  const TOOLS = { tools: [{ name: 'get_support_resistance_zones', description: 'Returns support and resistance zones for one coin. (Beta)', inputSchema: {} }] };
+  const TOOLS = { tools: [{
+    name: 'get_support_resistance_zones', description: 'Returns support and resistance zones for one coin. (Beta)',
+    inputSchema: { properties: { venue: { enum: [...SMOKE_VENUES] } } },
+  }] };
   // SR-ZONES-W2 AC5.1: the two keyless reads, as production answers them after the deploy.
   const PAGE_OK = { status: 200, text: '<h3 class="tools-card-title">Support and Resistance Zones (Beta)</h3>' };
   const quote = (...amounts) => ({ status: 402, text: JSON.stringify({ x402Version: 2, accepts: amounts.map((amount) => ({ scheme: 'exact', amount })) }) });
   const X402_OK = quote('20000', '20000');
-  const endToEnd = async (perCoin, rpcCall = async (p) => (p.method === 'tools/list' ? TOOLS : {}), keyless = {}) => {
+  // Answers per `<coin>` on BINANCE (asked with no venue) and per `<VENUE>:<coin>` elsewhere; a venue/coin not scripted
+  // answers a clean body from that venue. `asked` records every call's [venue, coin].
+  const endToEnd = async (perCoin, rpcCall = async (p) => (p.method === 'tools/list' ? TOOLS : {}), keyless = {}, asked = []) => {
     const seen = {};
     const found = await runChecks({
       fetchToolsPage: async () => (keyless.page ? keyless.page() : PAGE_OK),
       x402Unpaid: async () => (keyless.x402 ? keyless.x402() : X402_OK),
       rpcCall,
       toolCall: async (a) => {
-        seen[a.coin] = (seen[a.coin] ?? -1) + 1;
-        const next = perCoin[a.coin][Math.min(seen[a.coin], perCoin[a.coin].length - 1)];
+        asked.push([a.venue ?? null, a.coin]);
+        const key = a.venue === undefined ? a.coin : `${a.venue}:${a.coin}`;
+        const script = perCoin[key] ?? [answer(sampleBody(a.coin, a.timeframes, a.venue ?? 'BINANCE'))];
+        seen[key] = (seen[key] ?? -1) + 1;
+        const next = script[Math.min(seen[key], script.length - 1)];
         if (next instanceof Error) throw next; // a scripted unreachable call
         return next;
       },
@@ -496,6 +527,19 @@ async function selfTest() {
     ['a missing result is caught', () => shapeProblems(edit(btc, (b) => { b.results.pop(); }), ['1d', '4h']).length > 0],
     ['top-level keys out of §0 order are caught', () => shapeProblems(edit(btc, (b) => { const { coin, ...rest } = b; Object.keys(b).forEach((k) => delete b[k]); Object.assign(b, rest, { coin }); }), ['1d', '4h']).length > 0],
     ['another venue is caught', () => shapeProblems(edit(btc, (b) => { b.venue = 'BYBIT'; }), ['1d', '4h']).length > 0],
+    // SR-ZONES-W3 AC2.2: the venue check follows the requested venue, on every check that reads a body.
+    ['the venue check follows the requested venue', () =>
+      shapeProblems(sampleBody('BTC', ['1d', '4h'], 'BYBIT'), ['1d', '4h'], 'BYBIT').length === 0 &&
+      shapeProblems(btc, ['1d', '4h'], 'BYBIT').length === 1 &&
+      btcProblems(sampleBody('BTC', ['1d', '4h'], 'OKX'), ['1d', '4h'], 'OKX').length === 0 &&
+      btcProblems(btc, ['1d', '4h'], 'OKX').length === 1 &&
+      youngProblems(sampleBody('CT', ['1d'], 'BITGET'), 'BITGET').length === 0 &&
+      youngProblems(sampleBody('CT', ['1d']), 'BITGET').length === 1],
+    ['the tools/list venue enum must be the four venues, BINANCE first', () =>
+      venueEnumProblems(TOOLS.tools[0]).length === 0 &&
+      venueEnumProblems({ inputSchema: { properties: { venue: { enum: ['BINANCE'] } } } }).length === 1 &&
+      venueEnumProblems({ inputSchema: { properties: { venue: { enum: ['BYBIT', 'BINANCE', 'OKX', 'BITGET'] } } } }).length === 1 &&
+      venueEnumProblems({ inputSchema: {} }).length === 1],
     ['a zero price is caught', () => shapeProblems(edit(btc, (b) => { b.price = 0; }), ['1d', '4h']).length > 0],
     ['every POST goes to https://api.algovault.com/mcp with redirects refused', postIsPinned],
     ['a load-timeout unserved row is a retry: called again after 15 s, then served', async () => {
@@ -572,6 +616,24 @@ async function selfTest() {
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, undefined, { x402: () => Promise.reject(new Unreachable('POST failed')) })) === '["INDETERMINATE",3]'],
     ['end to end: everything clean is the run\'s PASS', async () =>
       (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk })) === '["PASS",0]'],
+    // SR-ZONES-W3 AC2.2: every venue is asked, each answer judged against the venue asked, every venue's strings linted.
+    ['end to end: every venue is asked BTC, ETH and its young listing; BINANCE with no venue', async () => {
+      const asked = [];
+      const v = await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, undefined, {}, asked);
+      return v === '["PASS",0]' && JSON.stringify(asked) === JSON.stringify(SMOKE_VENUES.flatMap((venue) => {
+        const at = venue === 'BINANCE' ? null : venue;
+        return [[at, 'BTC'], [at, 'ETH'], [at, venue === 'BINANCE' ? 'CT' : YOUNG_LISTINGS[venue]]];
+      }));
+    }],
+    ['end to end: an OKX answer served from another venue is the run\'s FAIL', async () =>
+      (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk, 'OKX:BTC': [answer(btc)] })) === '["FAIL",1]'],
+    ['end to end: a forbidden word in a BITGET summary is the run\'s FAIL', async () =>
+      (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk, 'BITGET:ETH': [answer(edit(sampleBody('ETH', ['1h'], 'BITGET'), (b) => { b.results[0].summary += ' Price will hold.'; }))] })) === '["FAIL",1]'],
+    ['end to end: a BYBIT young listing still loading after the retry is the run\'s INDETERMINATE', async () =>
+      (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk, 'BYBIT:CT': [answer(refusalBody(['1d']), true)] })) === '["INDETERMINATE",3]'],
+    ['end to end: a tools/list venue enum of one value is the run\'s FAIL', async () =>
+      (await endToEnd({ BTC: [answer(btc)], ETH: ethOk, CT: ctOk }, async (p) => (p.method === 'tools/list'
+        ? { tools: [{ ...TOOLS.tools[0], inputSchema: { properties: { venue: { enum: ['BINANCE'] } } } }] } : {}))) === '["FAIL",1]'],
     ['the keyless reads carry no key: GET /tools and POST /x402/get_support_resistance_zones only, redirects refused', () => keylessIsPinned()],
   ];
   let failed = 0;

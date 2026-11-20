@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -105,6 +106,39 @@ describe('sr-zones-smoke --self-test', () => {
     ]) expect(r.stdout, line).toContain(`PASS  ${line}`);
     expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=PASS');
     expect(r.status).toBe(0);
+  });
+});
+
+describe('sr-zones-smoke — SR-ZONES-W3 AC2.2: every venue, the key functions unchanged', () => {
+  it('every venue is checked, each answer against the venue asked, every venue linted; each leg proven to fail', { timeout: 30_000 }, () => {
+    const r = run('--self-test');
+    for (const line of [
+      'the venue check follows the requested venue',
+      'the tools/list venue enum must be the four venues, BINANCE first',
+      'end to end: every venue is asked BTC, ETH and its young listing; BINANCE with no venue',
+      'end to end: an OKX answer served from another venue is the run\'s FAIL',
+      'end to end: a forbidden word in a BITGET summary is the run\'s FAIL',
+      'end to end: a BYBIT young listing still loading after the retry is the run\'s INDETERMINATE',
+      'end to end: a tools/list venue enum of one value is the run\'s FAIL',
+    ]) expect(r.stdout, line).toContain(`PASS  ${line}`);
+    expect(r.stdout).toContain('SR_ZONES_SMOKE_SELFTEST=PASS');
+    expect(r.status).toBe(0);
+  });
+
+  it('parseArgs, readKey, rpc and callTool are sha256-identical to 4b3c3dc9 (Mr.1\'s sign-off): no CLI flag added', () => {
+    const lines = readFileSync(SMOKE, 'utf8').split('\n');
+    const hashOf = (name: string): string => {
+      const i = lines.findIndex((l) => new RegExp(`^(async )?function ${name}\\x28`).test(l));
+      const j = lines.findIndex((l, k) => k > i && l === '}');
+      expect(i, name).toBeGreaterThanOrEqual(0);
+      return createHash('sha256').update(lines.slice(i, j + 1).join('\n')).digest('hex');
+    };
+    expect(Object.fromEntries(['parseArgs', 'readKey', 'rpc', 'callTool'].map((n) => [n, hashOf(n)]))).toEqual({
+      parseArgs: '48374f2b65404da06aac8899c95d6c9f01ef0431b1d7f2d3ebf37dfdca9eff6e',
+      readKey: '07a1bdd8fd3426a863e3ad1affd88c285458e69270bfcf810884b0228da15b76',
+      rpc: 'c101a66369bfcb46f42540a43668cdae6032a9ef88044d55647c9be5778edc80',
+      callTool: 'e88f459b373fa5a5b66aa249395027de8517220357266c6dcb01d4a47cfd5d74',
+    });
   });
 });
 
