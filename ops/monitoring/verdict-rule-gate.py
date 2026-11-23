@@ -1008,7 +1008,7 @@ ISO_S = "%Y-%m-%dT%H:%M:%SZ"
 # run_gate appends a window's two cell records one after the other and canary_result_log stamps
 # `at` per record, so one run's pair can straddle a second (prod 2026-11-16, 1h w2: 12:43:02Z /
 # 12:43:03Z). The seed reads a pair at most this far apart as one run.
-SEED_RUN_SPREAD_S = 60
+SEED_RUN_SPREAD_S = 60  # threshold-exempt: a bound on one run's record-write span, not a calibration
 
 
 def _iso_s(ts: int) -> str:
