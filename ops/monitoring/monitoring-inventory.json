@@ -2642,7 +2642,7 @@
       "schedule": "43 12 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f8c6cf3d3fa30d9960e825426e431314bf33f5d53b51139a544dff8b96cb6f1e",
+      "sha256": "0cb3cd1eee0fab5067457f133542c61be56e2bb8a01a59b0a327746904ef680b",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [
         "VERDICT_RULE_SWITCH_RECOMMENDED"
@@ -3587,7 +3587,7 @@
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
       "pending_since": "2026-11-10",
-      "sha256": "145f1b02cf6dc56ceed3a17ec80ef652d80b9157b1c33badabd81abbb9041066",
+      "sha256": "6ca4af54338fd683ae7ebe9356ae51dc6273890af54c1f5ebb65e3fe46baf391",
       "alert_ids": [],
       "owner_wave": "SIGNAL-VERDICT-RULE-GATE-LIVE-RULE-W1",
       "notes": "T3's owed read (SIGNAL-VERDICT-RULE-GATE-LIVE-RULE-W1 CH2, arc ARC-VERDICT-RULE-SWITCH-30M-1H): ONE registry row, verdict-rule-3m-straddle-w2, not_before 2026-11-23T13:00Z (the first :00 after 3m window 2's scheduled look 2026-11-23T12:43Z), expires_at = not_before + 72 h. Pre-registered here: the earliest verdict-rule-gate record at/after the look for EACH 3m cell, window 2, DECIDED, reads live = live_at_look = FF, straddled true, actionable false (record leg); the alert wrapper's log holds >= 1 VERDICT_RULE_SWITCH_RECOMMENDED line at/after the look and none naming 3m:[MF]{2}:w2 (wrapper leg; SUPPRESSED_TEST_CONTEXT lines never count towards the >= 1). PASS iff both; FAIL iff contradicted; INDETERMINATE when a record or the log is absent. Reads only /var/lib/algovault-monitoring/canary-results.jsonl and /var/log/algovault-monitoring-telegram.log(.1) — no database, no network — so it detects a dark or regressed gate at its first straddled look. --self-test builds its record fixtures with the gate's own cell_record. PENDING until the wave's §9 installs it with ops/scripts/install-monitoring-artifact.sh.",

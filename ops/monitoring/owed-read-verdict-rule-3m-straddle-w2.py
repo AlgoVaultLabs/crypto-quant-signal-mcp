@@ -287,6 +287,7 @@ def _load_gate():
 
 
 def self_test():
+    import shutil
     import tempfile
     failures, ran = [], []
 
@@ -302,7 +303,6 @@ def self_test():
             failures.append(name)
         print("  [%s] %s" % ("ok" if ok else "FAIL", name))
 
-    tmp = tempfile.mkdtemp(prefix="owed-read-vr3m.")
     NOW = LOOK_EPOCH + 3600
     try:
         gate = _load_gate()
@@ -397,16 +397,21 @@ def self_test():
           lambda: v == "INDETERMINATE" and m["legs"]["wrapper"]["test_context_lines"] == 1)
 
     # ── the live run's file reads ──
-    rp, lp = os.path.join(tmp, "results.jsonl"), os.path.join(tmp, "tg.log")
-    with open(rp, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(good_rec()) + "\n")
-    with open(lp + ".1", "w", encoding="utf-8") as fh:
-        fh.write("\n".join(good_log) + "\n")
-    check("read_lines: the live file absent but `.1` present still reads the rotation",
-          lambda: read_lines([lp, lp + ".1"]) == good_log and read_lines([os.path.join(tmp, "nope")]) is None)
-    eff = dict(ANCHORS, records=rp, wrapper_log=lp)
-    v, m = evaluate(NOW, read_lines([eff["records"]]), read_lines([eff["wrapper_log"], eff["wrapper_log"] + ".1"]), eff)
-    check("end to end through the files: PASS", lambda: v == "PASS")
+    tmp = tempfile.mkdtemp(prefix="owed-read-vr3m.")
+    try:
+        rp, lp = os.path.join(tmp, "results.jsonl"), os.path.join(tmp, "tg.log")
+        with open(rp, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(good_rec()) + "\n")
+        with open(lp + ".1", "w", encoding="utf-8") as fh:
+            fh.write("\n".join(good_log) + "\n")
+        check("read_lines: the live file absent but `.1` present still reads the rotation",
+              lambda: read_lines([lp, lp + ".1"]) == good_log and read_lines([os.path.join(tmp, "nope")]) is None)
+        eff = dict(ANCHORS, records=rp, wrapper_log=lp)
+        v, m = evaluate(NOW, read_lines([eff["records"]]), read_lines([eff["wrapper_log"], eff["wrapper_log"] + ".1"]), eff)
+        check("end to end through the files: PASS", lambda: v == "PASS")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    check("the self-test's temp root is gone after the run", lambda: not os.path.exists(tmp))
 
     # ── metrics + output contract ──
     many = good_log + [log(LOOK_EPOCH + 20 + i, verb="FIRED", rest="NEW: 3m:FF:w2 " + "x" * 300) for i in range(40)]

@@ -106,6 +106,7 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1004,6 +1005,10 @@ def evaluate_run(now: int, reader, pc, cps, index_guard=None, live_reader=None,
 # ─────────────────────────────── the seed (CH1 R5) ─────────────────────────────────────────────
 
 ISO_S = "%Y-%m-%dT%H:%M:%SZ"
+# run_gate appends a window's two cell records one after the other and canary_result_log stamps
+# `at` per record, so one run's pair can straddle a second (prod 2026-11-16, 1h w2: 12:43:02Z /
+# 12:43:03Z). The seed reads a pair at most this far apart as one run.
+SEED_RUN_SPREAD_S = 60
 
 
 def _iso_s(ts: int) -> str:
@@ -1016,9 +1021,10 @@ def _parse_at(s) -> int:
 
 def seed_family(lines, now: int) -> tuple[dict[int, list[dict]], dict[int, int], dict]:
     """PURE: gate result lines -> ({look: family}, {look: earliest record epoch}, counts). Per (tf,
-    window) the EARLIEST DECIDED record wins; `rec` and `cause` are copied, never recomputed. Every
-    window the chain has decided by `now` must have both cell records at that instant — else
-    Indeterminate. Absent `diag` and per-cell `days` stay null (printed `na`)."""
+    window, cell) the EARLIEST DECIDED record wins, taken per cell independently; `rec` and `cause`
+    are copied, never recomputed. Every window the chain has decided by `now` must have both cell
+    records, at most SEED_RUN_SPREAD_S apart (one run) and agreeing — else Indeterminate. Absent
+    `diag` and per-cell `days` stay null (printed `na`)."""
     groups: dict[tuple[str, int], dict[int, dict[str, dict]]] = {}
     counts = {"lines": 0, "gate": 0, "decided": 0}
     for i, ln in enumerate(lines, 1):
@@ -1059,11 +1065,16 @@ def seed_family(lines, now: int) -> tuple[dict[int, list[dict]], dict[int, int],
             runs = groups.get((tf, w["k"]))
             if not runs:
                 raise Indeterminate(f"chain window {tf} w{w['k']} (look {_iso(w['look'])}) lacks a cell record")
-            at = min(runs)
-            cells = runs[at]
-            lacking = [r for r in REGIMES if r not in cells]
+            first = {r: min((a for a, c in runs.items() if r in c), default=None) for r in REGIMES}
+            lacking = [r for r in REGIMES if first[r] is None]
             if lacking:
-                raise Indeterminate(f"chain window {tf} w{w['k']}: its earliest record ({_iso_s(at)}) lacks cell {lacking[0]}")
+                raise Indeterminate(f"chain window {tf} w{w['k']} lacks a record of cell {lacking[0]}")
+            at = min(first.values())
+            if max(first.values()) - at > SEED_RUN_SPREAD_S:
+                raise Indeterminate(f"chain window {tf} w{w['k']}: its earliest cell records ("
+                                    + " / ".join(_iso_s(first[r]) for r in REGIMES)
+                                    + f") are more than {SEED_RUN_SPREAD_S} s apart — not one run")
+            cells = {r: runs[first[r]][r] for r in REGIMES}
             up = cells[REGIMES[0]]
             for m in cells.values():
                 if (m.get("look"), m.get("window_start"), m.get("window_end")) != (_iso(w["look"]), _day(w["start"]), _day(w["end"])):
@@ -1515,7 +1526,6 @@ def _self_test() -> int:
                                   r["verdict_f"], r["served"], str(r["decided_at"]), repr(r["r"])])
                         for r in null_rows) + "\n"
     seen: list[list[str]] = []
-    tmp = tempfile.mkdtemp(prefix="verdict-rule-gate-self-test.")
     empty_doc = {"schema_version": LEDGER_SCHEMA, "looks": {}}
 
     def _empty_ledger(name):
@@ -1552,6 +1562,7 @@ def _self_test() -> int:
         return run
 
     real_run, real_replace = _RUN, _REPLACE
+    tmp = tempfile.mkdtemp(prefix="verdict-rule-gate-self-test.")
     try:
         _RUN = _fake(lambda sql: False)
         ctl = evaluate_run(look, read_window, pc, cps, index_guard=require_hash_index, ledger=_empty_ledger("ctl.json"))
@@ -1574,6 +1585,9 @@ def _self_test() -> int:
         _self_test_live_rule(check, pc, cps, crl, tmp, _live_lines, null_rows, ok_rows)
     finally:
         _RUN, _REPLACE = real_run, real_replace
+        shutil.rmtree(tmp, ignore_errors=True)
+    check("the self-test's temp root is gone after the run (no scenario directory left behind)",
+          lambda: not os.path.exists(tmp))
 
     total = len(failures)
     ran = _CHECKS_RAN[0]
@@ -1586,7 +1600,7 @@ def _self_test() -> int:
 
 
 # The measured check count of the self-test, so removing a scenario trips it.
-SELF_TEST_MIN_CHECKS = 122
+SELF_TEST_MIN_CHECKS = 126
 _CHECKS_RAN = [0]
 
 
@@ -1900,6 +1914,38 @@ def _self_test_live_rule(check, pc, cps, crl, tmp, _live_lines, null_rows, ok_ro
     before = _read(seed_p)
     v4, _ = safe(lambda: seed_ledger(lines, now_s, seed_p))
     check("seed: an existing ledger ⇒ FAIL, untouched (create-only)", lambda: v4 == FAIL and _read(seed_p) == before)
+
+    # 19b. one run's pair across a second boundary — run_gate appends UP then DOWN and
+    #      canary_result_log stamps `at` per record (prod 2026-11-16, 1h w2: 12:43:02Z / 12:43:03Z)
+    def shifted(src, tf, k, regime, by, **override):
+        """`src` with the (tf, k, regime) record moved `by` seconds and `override` merged into its metrics."""
+        out = []
+        for ln in src:
+            d = json.loads(ln)
+            m = d.get("metrics") or {}
+            if d.get("canary") == DETECTOR and (m.get("tf"), m.get("window"), m.get("cell")) == (tf, k, f"{tf}|{regime}"):
+                ln = crl.build_record(DETECTOR, d["verdict"], d["exit_code"], {**m, **override},
+                                      at=_iso_s(_parse_at(d["at"]) + by))
+            out.append(ln)
+        return out
+
+    def seed_to(name, src):
+        p = os.path.join(tmp, name)
+        verdict_, report_ = safe(lambda: seed_ledger(src, now_s, p))
+        doc = safe(lambda: load_ledger(p)["looks"]) if os.path.exists(p) else None
+        return verdict_, report_, doc, os.path.exists(p)
+
+    v5, _, doc5, _ = seed_to("seed-split.json", shifted(lines, "5m", 1, "TRENDING_DOWN", 1))
+    check("seed: 5m w1 UP at S and DOWN at S+1 (one run across a second) ⇒ PASS, the SAME ledger as the same-second seed",
+          lambda: v5 == PASS and bool(seeded) and doc5 == seeded)
+    v6, rep6, _, made6 = seed_to("seed-split-disagree.json",
+                                 shifted(lines, "5m", 1, "TRENDING_DOWN", 1, rec="KEEP_INCUMBENT"))
+    check("seed: a split pair that disagrees on rec ⇒ INDETERMINATE (disagree on rec), no file",
+          lambda: v6 == INDET and not made6 and "disagree on rec" in rep6[0])
+    v7, _, doc7, _ = seed_to("seed-split-60.json", shifted(lines, "5m", 1, "TRENDING_DOWN", 60))
+    v8, rep8, _, made8 = seed_to("seed-split-61.json", shifted(lines, "5m", 1, "TRENDING_DOWN", 61))
+    check("seed: a pair 60 s apart is one run (PASS, same ledger); 61 s apart is not (INDETERMINATE, no file)",
+          lambda: v7 == PASS and doc7 == seeded and v8 == INDET and not made8 and "not one run" in rep8[0])
 
 
 def _raises(fn) -> bool:
