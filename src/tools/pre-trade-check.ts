@@ -134,9 +134,10 @@ import {
   PRE_TRADE_CHECK_PARAM_DECL,
   PRE_TRADE_SIDES,
   PRE_TRADE_ORDER_TYPES,
-  REGIME_TIMEFRAMES,
   PUBLIC_VENUE_ENUM,
 } from '../lib/tool-param-schema.js';
+// REGIME-TF-ADMISSION-W1: the regime leg reads the bar-close snapshot, so the timeframe enum is the sampler's set.
+import { REGIME_SNAPSHOT_TIMEFRAMES } from '../lib/regime-snapshot-timeframes.js';
 import {
   PRE_TRADE_CHECK_DESCRIPTION,
   PARAM_DESC_PRE_TRADE_COIN,
@@ -192,7 +193,7 @@ export const PRE_TRADE_CHECK_SCHEMA = {
   sizeUsd: z.number().gt(D.sizeUsd.exclusiveMinimum).max(D.sizeUsd.maximum).describe(PARAM_DESC_PRE_TRADE_SIZE_USD),
   holdHours: z.number().min(D.holdHours.minimum).max(D.holdHours.maximum).default(D.holdHours.default)
     .describe(PARAM_DESC_PRE_TRADE_HOLD_HOURS),
-  timeframe: z.enum(REGIME_TIMEFRAMES).default(D.timeframe.default).describe(PARAM_DESC_PRE_TRADE_TIMEFRAME),
+  timeframe: z.enum(REGIME_SNAPSHOT_TIMEFRAMES).default(D.timeframe.default).describe(PARAM_DESC_PRE_TRADE_TIMEFRAME),
   exchanges: z.array(z.enum(PUBLIC_VENUE_ENUM)).min(D.exchanges.minItems).max(D.exchanges.maxItems).optional()
     .describe(PARAM_DESC_PRE_TRADE_EXCHANGES),
   leverage: z.number().min(D.leverage.minimum).max(D.leverage.maximum).optional().describe(PARAM_DESC_PRE_TRADE_LEVERAGE),

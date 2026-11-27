@@ -62,6 +62,8 @@ import { x402CallerTag, processScopedTag } from './caller-tags.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './regime-request-verdict.js';
 import { TIMEFRAMES } from './capabilities.js';
 import { REGIME_TIMEFRAMES } from './tool-param-schema.js';
+// REGIME-TF-ADMISSION-W1: the snapshot-served tools admit the sampler's set; get_market_regime keeps its own.
+import { REGIME_SNAPSHOT_TIMEFRAMES } from './regime-snapshot-timeframes.js';
 import {
   UpstreamRateLimitError,
   EXCHANGE_FALLBACKS,
@@ -571,7 +573,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: REGIME_TIMEFRAMES,
+    timeframes: REGIME_SNAPSHOT_TIMEFRAMES,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -626,7 +628,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: true,
-    timeframes: REGIME_TIMEFRAMES,
+    timeframes: REGIME_SNAPSHOT_TIMEFRAMES,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',

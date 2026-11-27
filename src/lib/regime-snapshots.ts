@@ -44,9 +44,9 @@ export const REGIME_RUN_DISPOSITIONS = [
 ] as const;
 export type RegimeRunDisposition = (typeof REGIME_RUN_DISPOSITIONS)[number];
 
-/** The timeframes the sampler produces (mirrors `get_market_regime`'s own set). */
-export const REGIME_SNAPSHOT_TIMEFRAMES = ['1h', '4h', '1d'] as const;
-export type RegimeSnapshotTimeframe = (typeof REGIME_SNAPSHOT_TIMEFRAMES)[number];
+/** The timeframes the sampler produces — declared once in the leaf (REGIME-TF-ADMISSION-W1), re-exported here. */
+import { REGIME_SNAPSHOT_TIMEFRAMES, type RegimeSnapshotTimeframe } from './regime-snapshot-timeframes.js';
+export { REGIME_SNAPSHOT_TIMEFRAMES, type RegimeSnapshotTimeframe };
 
 /** Default sampled venues (V2 CH1 R3). The env may narrow, never widen past the active promoted set. */
 export const DEFAULT_REGIME_SNAPSHOT_VENUES = 'BINANCE,BYBIT,OKX,BITGET';

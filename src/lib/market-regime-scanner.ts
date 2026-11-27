@@ -29,6 +29,7 @@ import {
   latestServableGeneration,
   readGenerationRows,
   type RegimeSnapshotRow,
+  type RegimeSnapshotTimeframe,
   type ServableGeneration,
 } from './regime-snapshots.js';
 import { regimeFetchWindow } from './market-regime-core.js';
@@ -48,10 +49,10 @@ import type { RegimeType } from '../types.js';
 import type {
   REGIME_SCAN_ASSET_CLASSES,
   REGIME_SCAN_SORT_BY,
-  REGIME_TIMEFRAMES,
 } from './tool-param-schema.js';
 
-export type RegimeScanTimeframe = (typeof REGIME_TIMEFRAMES)[number];
+/** A timeframe the sampler writes — this engine serves stored snapshots only (REGIME-TF-ADMISSION-W1). */
+export type RegimeScanTimeframe = RegimeSnapshotTimeframe;
 export type RegimeScanAssetClass = (typeof REGIME_SCAN_ASSET_CLASSES)[number];
 export type RegimeScanSortBy = (typeof REGIME_SCAN_SORT_BY)[number];
 

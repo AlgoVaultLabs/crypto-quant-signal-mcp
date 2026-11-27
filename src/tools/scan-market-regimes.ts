@@ -37,10 +37,11 @@ import {
   sampledRegimeVenues,
   latestRunDisposition,
   latestServableGeneration,
-  REGIME_SNAPSHOT_TIMEFRAMES,
   type RegimeSnapshotRunRecord,
   type ServableGeneration,
 } from '../lib/regime-snapshots.js';
+// REGIME-TF-ADMISSION-W1: the timeframe enum is the sampler's set, from its leaf — this tool serves stored snapshots only.
+import { REGIME_SNAPSHOT_TIMEFRAMES } from '../lib/regime-snapshot-timeframes.js';
 import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
 import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { referralCodeForKey } from '../lib/referral-store.js';
@@ -51,7 +52,6 @@ import { PKG_VERSION } from '../lib/pkg-version.js';
 import { z } from 'zod';
 import {
   PUBLIC_VENUE_ENUM,
-  REGIME_TIMEFRAMES,
   REGIME_LABELS,
   REGIME_SCAN_ASSET_CLASSES,
   REGIME_SCAN_SORT_BY,
@@ -97,7 +97,7 @@ const E = SCAN_MARKET_REGIMES_PARAM_DECL.enums;
  */
 export const SCAN_MARKET_REGIMES_SCHEMA = {
   exchange: z.enum(PUBLIC_VENUE_ENUM).default(E.exchange.default).describe(PARAM_DESC_REGIME_SCAN_EXCHANGE),
-  timeframe: z.enum(REGIME_TIMEFRAMES).default(E.timeframe.default).describe(PARAM_DESC_REGIME_SCAN_TIMEFRAME),
+  timeframe: z.enum(REGIME_SNAPSHOT_TIMEFRAMES).default(E.timeframe.default).describe(PARAM_DESC_REGIME_SCAN_TIMEFRAME),
   regime: z.array(z.enum(REGIME_LABELS)).min(1).max(4).optional().describe(PARAM_DESC_REGIME_SCAN_REGIME),
   minConfidence: z.number().min(0).max(100).optional().describe(PARAM_DESC_REGIME_SCAN_MIN_CONFIDENCE),
   maxRegimeAgeBars: z.number().int().min(1).max(500).optional().describe(PARAM_DESC_REGIME_SCAN_MAX_REGIME_AGE_BARS),

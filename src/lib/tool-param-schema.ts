@@ -53,10 +53,23 @@
  * the full timeframe enum keeps its literal form at the `get_trade_call` Zod site, and this module
  * re-exports the SoT array for the docs projection. The 3-value regime subset had no prior home
  * and is declared here.
+ *
+ * ── ONE TIMEFRAME SOURCE PER REGIME TOOL (REGIME-TF-ADMISSION-W1) ─────────────
+ * Two regime sets, two meanings. `REGIME_TIMEFRAMES` is what `get_market_regime` computes live on
+ * request. `REGIME_SNAPSHOT_TIMEFRAMES` is what the bar-close sampler writes, and
+ * `scan_market_regimes` / `pre_trade_check` serve nothing else: their enums, their pipeline
+ * admission rows and their docs rows all project from it. They hold the same three values today and
+ * are deliberately not one symbol, so a timeframe added to the live tool cannot make the two
+ * snapshot tools advertise a value the sampler never wrote. Imported, never copied: one literal per
+ * set. The snapshot set comes from the leaf `regime-snapshot-timeframes.ts` (which regime-snapshots.ts
+ * re-exports), never from regime-snapshots.ts itself — that module loads performance-db, and this one
+ * is read by the docs builders, so its import closure stays free of the DB layer (pinned by
+ * tests/unit/serving-windows.test.ts).
  */
 
 import type { ExchangeId, RegimeType } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
+import { REGIME_SNAPSHOT_TIMEFRAMES, type RegimeSnapshotTimeframe } from './regime-snapshot-timeframes.js';
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 import type { PreTradeSide } from './pre-trade-costs.js';
 import { PRE_TRADE_RULES, type PreTradeRuleId, type PreTradeRuleParam } from './pre-trade-rules.js';
@@ -130,7 +143,10 @@ export const PUBLIC_VENUE_IDS = PROMOTED_VENUE_IDS;
  */
 export const PUBLIC_VENUE_ENUM = PUBLIC_VENUE_IDS as [PromotedVenueId, ...PromotedVenueId[]];
 
-/** `get_market_regime` classifies on the slower candles only — a deliberate subset of TIMEFRAMES. */
+/**
+ * `get_market_regime` classifies on the slower candles only — a deliberate subset of TIMEFRAMES. Its
+ * own set: the snapshot-served tools read `REGIME_SNAPSHOT_TIMEFRAMES` (see the header).
+ */
 export const REGIME_TIMEFRAMES = ['1h', '4h', '1d'] as const;
 
 /** `assetClass` forces the engine instead of letting the shared router choose from the symbol. */
@@ -154,6 +170,12 @@ export const OI_BASES = ['notional', 'contracts'] as const;
  * schema fact, and the docs row states them in authored prose instead of projecting them.
  */
 export const REGIME_TIMEFRAME_DEFAULT = '4h' as const;
+/**
+ * The snapshot tools share this default, so it must be a timeframe the sampler writes: a sampler set
+ * without it is a `tsc` error here, never a default the two tools cannot serve.
+ */
+const _regimeDefaultIsSampled: RegimeSnapshotTimeframe = REGIME_TIMEFRAME_DEFAULT;
+void _regimeDefaultIsSampled;
 export const REGIME_EXCHANGE_DEFAULT = 'HL' as const;
 export const SCAN_TIMEFRAME_DEFAULT = '15m' as const;
 export const SCAN_EXCHANGE_DEFAULT = 'BINANCE' as const;
@@ -344,7 +366,8 @@ const REGIME_SCAN_RANK_BY_SELECTS: Readonly<Record<string, string>> = Object.fre
 export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
   enums: Object.freeze({
     exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: 'BINANCE' as const }),
-    timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+    // The sampler's set, not get_market_regime's (REGIME-TF-ADMISSION-W1): this tool serves stored snapshots only.
+    timeframe: Object.freeze({ values: REGIME_SNAPSHOT_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
     regime: Object.freeze({ values: REGIME_LABELS, type: 'string[]' }),
     assetClass: Object.freeze({ values: REGIME_SCAN_ASSET_CLASSES, default: 'all' as const }),
     sortBy: Object.freeze({ values: REGIME_SCAN_SORT_BY, default: 'confidence' as const }),
@@ -420,7 +443,8 @@ export const PRE_TRADE_CHECK_PARAM_DECL = Object.freeze({
   side: Object.freeze({ type: 'string', required: true, values: PRE_TRADE_SIDES }),
   sizeUsd: Object.freeze({ type: 'number', required: true, exclusiveMinimum: 0, maximum: 100_000_000 }),
   holdHours: Object.freeze({ type: 'number', required: false, minimum: 0.25, maximum: 720, default: 8 }),
-  timeframe: Object.freeze({ type: 'string', required: false, values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+  // The sampler's set (REGIME-TF-ADMISSION-W1): the regime leg reads the bar-close snapshot, never a live compute.
+  timeframe: Object.freeze({ type: 'string', required: false, values: REGIME_SNAPSHOT_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
   exchanges: Object.freeze({ type: 'string[]', required: false, values: PUBLIC_VENUE_IDS, minItems: 1, maxItems: 15, uniqueItems: true }),
   leverage: Object.freeze({ type: 'number', required: false, minimum: 1, maximum: 200 }),
   stopPct: Object.freeze({ type: 'number', required: false, minimum: 0.01, maximum: 50 }),

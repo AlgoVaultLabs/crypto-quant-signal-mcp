@@ -8,9 +8,9 @@ import {
   PRE_TRADE_SIDES,
   PRE_TRADE_ORDER_TYPES,
   PUBLIC_VENUE_IDS,
-  REGIME_TIMEFRAMES,
   PUBLIC_TOOL_ENUM_PARAMS,
 } from '../../src/lib/tool-param-schema.js';
+import { REGIME_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshot-timeframes.js';
 import { PRE_TRADE_RULES } from '../../src/lib/pre-trade-rules.js';
 
 describe('PRE_TRADE_CHECK_PARAM_DECL — the contract, once', () => {
@@ -46,8 +46,8 @@ describe('PRE_TRADE_CHECK_PARAM_DECL — the contract, once', () => {
   it('holdHours: 0.25-720, default 8', () => {
     expect(D.holdHours).toEqual({ type: 'number', required: false, minimum: 0.25, maximum: 720, default: 8 });
   });
-  it('timeframe: the regime timeframes by reference, default 4h', () => {
-    expect(D.timeframe.values).toBe(REGIME_TIMEFRAMES);
+  it('timeframe: the sampler\'s regime timeframes by reference, default 4h (REGIME-TF-ADMISSION-W1)', () => {
+    expect(D.timeframe.values).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
     expect(D.timeframe.default).toBe('4h');
   });
   it('exchanges: 1-15 unique public venues, and NO default anywhere', () => {

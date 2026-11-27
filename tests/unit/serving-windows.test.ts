@@ -30,8 +30,15 @@ import {
 import { TIMEFRAMES } from '../../src/lib/capabilities.js';
 import { intervalMsFor } from '../../src/lib/candle-guard.js';
 import { servedCandleStepMs } from '../../src/lib/tf-support.js';
-import { REGIME_TIMEFRAMES } from '../../src/lib/tool-param-schema.js';
-import { REGIME_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshots.js';
+import {
+  REGIME_TIMEFRAMES,
+  SCAN_MARKET_REGIMES_PARAM_DECL,
+  PRE_TRADE_CHECK_PARAM_DECL,
+  PUBLIC_TOOL_ENUM_PARAMS,
+} from '../../src/lib/tool-param-schema.js';
+// REGIME-TF-ADMISSION-W1: the sampler's set lives in its leaf; regime-snapshots.ts re-exports the same object.
+import { REGIME_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshot-timeframes.js';
+import { REGIME_SNAPSHOT_TIMEFRAMES as REEXPORTED_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshots.js';
 import { CANDLE_COUNTS as CORE_CANDLE_COUNTS, regimeFetchWindow } from '../../src/lib/market-regime-core.js';
 import { CANDLE_COUNTS as TOOL_CANDLE_COUNTS } from '../../src/tools/get-market-regime.js';
 import { REGIME_REFERENCE_SHORT_BARS as SAMPLER_SHORT_BARS } from '../../src/scripts/regime-snapshot-sampler.js';
@@ -97,6 +104,102 @@ describe('the registry', () => {
       { consumer: 'labeler_probe', unit: 'served', bars: 5 },
     ]);
     expect(servingWindowsFor('15m').map((w) => w.consumer)).toEqual(['trade_call', 'atrp_lens', 'labeler_probe']);
+  });
+});
+
+/**
+ * REGIME-TF-ADMISSION-W1 CH1 — one timeframe source per regime tool. get_market_regime computes live and reads
+ * REGIME_TIMEFRAMES; scan_market_regimes and pre_trade_check serve the sampler's bar-close snapshots and read
+ * REGIME_SNAPSHOT_TIMEFRAMES. The values are equal today; the symbols are not, so a timeframe added to the live tool
+ * cannot reach the two snapshot tools. Pinned by reference where the binding is a runtime object, and by source where
+ * it is a declaration this file cannot import without the tool modules' whole dependency graph.
+ */
+describe('each regime tool reads its own timeframe symbol (REGIME-TF-ADMISSION-W1)', () => {
+  /** The `timeframes:` symbol of one TOOLS row in tool-call-pipeline.ts. */
+  const admissionSymbolOf = (tool: string): string => {
+    const s = src('src/lib/tool-call-pipeline.ts');
+    const at = s.indexOf(`\n  ${tool}: {`);
+    expect(at, `${tool} has a TOOLS row`).toBeGreaterThan(-1);
+    const m = /\n {4}timeframes: (\w+),/.exec(s.slice(at));
+    expect(m, `${tool}'s row declares timeframes`).not.toBeNull();
+    return m![1];
+  };
+  /** The enum symbol a tool's Zod `timeframe` parameter is built from. */
+  const zodTimeframeSymbolOf = (rel: string, from = 0, to?: number): string[] =>
+    [...src(rel).slice(from, to).matchAll(/\btimeframe: z\.enum\((\w+)\)/g)].map((m) => m[1]);
+
+  it('the two sets are two symbols holding the same three values today', () => {
+    expect(REGIME_SNAPSHOT_TIMEFRAMES).not.toBe(REGIME_TIMEFRAMES);
+    expect([...REGIME_SNAPSHOT_TIMEFRAMES]).toEqual([...REGIME_TIMEFRAMES]);
+  });
+
+  it('get_market_regime: REGIME_TIMEFRAMES in its Zod enum, its admission row and its docs row', () => {
+    const idx = src('src/index.ts');
+    const from = idx.indexOf("register(\n    'get_market_regime',");
+    const to = idx.indexOf("mcpHandler('get_market_regime')", from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    expect(zodTimeframeSymbolOf('src/index.ts', from, to)).toEqual(['REGIME_TIMEFRAMES']);
+    expect(admissionSymbolOf('get_market_regime')).toBe('REGIME_TIMEFRAMES');
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.timeframe.values).toBe(REGIME_TIMEFRAMES);
+  });
+
+  it('scan_market_regimes: REGIME_SNAPSHOT_TIMEFRAMES in its declaration, its Zod enum, its admission row and its docs row', () => {
+    expect(SCAN_MARKET_REGIMES_PARAM_DECL.enums.timeframe.values).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.scan_market_regimes.timeframe.values).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
+    expect(zodTimeframeSymbolOf('src/tools/scan-market-regimes.ts')).toEqual(['REGIME_SNAPSHOT_TIMEFRAMES']);
+    expect(src('src/tools/scan-market-regimes.ts')).not.toMatch(/\bREGIME_TIMEFRAMES\b/);
+    expect(admissionSymbolOf('scan_market_regimes')).toBe('REGIME_SNAPSHOT_TIMEFRAMES');
+  });
+
+  it('pre_trade_check: REGIME_SNAPSHOT_TIMEFRAMES in its declaration, its Zod enum, its admission row and its docs row', () => {
+    expect(PRE_TRADE_CHECK_PARAM_DECL.timeframe.values).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.pre_trade_check.timeframe.values).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
+    expect(zodTimeframeSymbolOf('src/tools/pre-trade-check.ts')).toEqual(['REGIME_SNAPSHOT_TIMEFRAMES']);
+    expect(src('src/tools/pre-trade-check.ts')).not.toMatch(/\bREGIME_TIMEFRAMES\b/);
+    expect(admissionSymbolOf('pre_trade_check')).toBe('REGIME_SNAPSHOT_TIMEFRAMES');
+  });
+
+  it('the scanner engine types its timeframe by the sampler\'s set', () => {
+    const s = src('src/lib/market-regime-scanner.ts');
+    expect(s).toContain('export type RegimeScanTimeframe = RegimeSnapshotTimeframe;');
+    expect(s).not.toMatch(/\bREGIME_TIMEFRAMES\b/);
+  });
+
+  it('one literal: the leaf declares the sampler\'s set, imports nothing, and regime-snapshots.ts re-exports the same object', () => {
+    expect(REEXPORTED_SNAPSHOT_TIMEFRAMES).toBe(REGIME_SNAPSHOT_TIMEFRAMES);
+    const leaf = src('src/lib/regime-snapshot-timeframes.ts');
+    expect(leaf).toContain("export const REGIME_SNAPSHOT_TIMEFRAMES = ['1h', '4h', '1d'] as const;");
+    expect(leaf).not.toMatch(/^\s*import\b/m);
+    expect(src('src/lib/regime-snapshots.ts')).not.toMatch(/REGIME_SNAPSHOT_TIMEFRAMES\s*=/);
+  });
+
+  it('tool-param-schema.ts — the module the docs builders load — has an import closure free of performance-db', () => {
+    // Static RUNTIME imports only: `import type …` and all-`type` specifier lists are erased by tsc.
+    const runtimeImports = (file: string): string[] => {
+      const s = src(file);
+      const out: string[] = [];
+      for (const m of s.matchAll(/^(?:import|export)\s+(type\s+)?([^'";]*?)\s*from\s+'(\.[^']+)'/gm)) {
+        if (m[1]) continue;
+        const braces = /\{([^}]*)\}/.exec(m[2]);
+        const onlyTypes = braces && !/\*|^\s*\w+\s*,/.test(m[2]) && braces[1].split(',').map((x) => x.trim()).filter(Boolean).every((x) => x.startsWith('type '));
+        if (onlyTypes) continue;
+        out.push(join(dirname(file), m[3]).replace(/\.js$/, '.ts'));
+      }
+      return out;
+    };
+    const seen = new Set<string>();
+    const queue = ['src/lib/tool-param-schema.ts'];
+    while (queue.length) {
+      const f = queue.shift()!;
+      if (seen.has(f)) continue;
+      seen.add(f);
+      queue.push(...runtimeImports(f));
+    }
+    const closure = [...seen].sort();
+    expect(closure).toContain('src/lib/regime-snapshot-timeframes.ts'); // the walk follows real edges
+    expect(closure.filter((f) => /performance-db|regime-snapshots\.ts$/.test(f))).toEqual([]);
+    expect(closure.length, closure.join(', ')).toBeLessThanOrEqual(6);
   });
 });
 
