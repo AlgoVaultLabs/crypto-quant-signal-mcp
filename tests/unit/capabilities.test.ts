@@ -209,3 +209,69 @@ describe('capabilities SoT — every promoted venue has a rate-limit budget', ()
     }
   });
 });
+
+/**
+ * REGIME-15M-SERVE-W1 CH2 (T3) — GET /capabilities publishes each tool's admission timeframes.
+ *
+ * ONE source: `TOOL_ADMISSION_TIMEFRAMES` (src/lib/tool-admission-timeframes.ts), one entry per canonical tool,
+ * holding the very symbols the pipeline rows held before (null where a tool has no single-timeframe admission).
+ * The pipeline rows read it (the admission and its refusal are unchanged), and `projectCapabilities()` projects
+ * it, ordered by bar duration. A leaf, because feature-registry cannot import the pipeline: the pipeline imports
+ * `getFeature` from feature-registry at runtime (a cycle), and feature-registry is data + types only.
+ */
+describe('REGIME-15M-SERVE-W1 CH2 — /capabilities timeframes, projected from the admission leaf', () => {
+  const ROW_SYMBOL: Record<string, string> = {
+    get_trade_call: 'TIMEFRAMES', get_market_regime: 'REGIME_TIMEFRAMES', scan_trade_calls: 'TIMEFRAMES',
+    get_equity_call: 'TIMEFRAMES', scan_market_regimes: 'REGIME_SNAPSHOT_TIMEFRAMES', pre_trade_check: 'REGIME_SNAPSHOT_TIMEFRAMES',
+  };
+
+  it('the leaf: one entry per canonical tool, the same objects the pipeline rows held, null elsewhere, frozen', async () => {
+    const { TOOL_ADMISSION_TIMEFRAMES } = await import('../../src/lib/tool-admission-timeframes.js');
+    const { FEATURE_REGISTRY } = await import('../../src/lib/feature-registry.js');
+    const { REGIME_TIMEFRAMES } = await import('../../src/lib/tool-param-schema.js');
+    const { REGIME_SNAPSHOT_TIMEFRAMES } = await import('../../src/lib/regime-snapshot-timeframes.js');
+    const BY_SYMBOL: Record<string, readonly string[]> = { TIMEFRAMES, REGIME_TIMEFRAMES, REGIME_SNAPSHOT_TIMEFRAMES };
+    expect(Object.keys(TOOL_ADMISSION_TIMEFRAMES).sort()).toEqual(FEATURE_REGISTRY.map((f) => f.name).sort());
+    for (const [tool, set] of Object.entries(TOOL_ADMISSION_TIMEFRAMES)) {
+      if (ROW_SYMBOL[tool]) expect(set, tool).toBe(BY_SYMBOL[ROW_SYMBOL[tool]]);
+      else expect(set, tool).toBeNull();
+    }
+    expect(Object.isFrozen(TOOL_ADMISSION_TIMEFRAMES)).toBe(true);
+  });
+
+  it('every pipeline row reads its own leaf entry, and nothing else declares an admission set', () => {
+    const s = readFileSync(join(REPO_ROOT, 'src/lib/tool-call-pipeline.ts'), 'utf8');
+    const rows = [...s.matchAll(/\n {2,4}timeframes: ([^\n]+),\n/g)].map((m) => m[1]);
+    expect(rows.length).toBe(12);
+    for (const r of rows) expect(r).toMatch(/^TOOL_ADMISSION_TIMEFRAMES\.[a-z_]+$/);
+    // each row names its OWN tool: the row key that precedes it (TRADE_CALL_ROW is get_trade_call's)
+    const tools = s.slice(s.indexOf('\nconst TOOLS: {'));
+    const own = [...tools.matchAll(/\n {2}([a-z_]+): \{[\s\S]*?\n {4}timeframes: TOOL_ADMISSION_TIMEFRAMES\.([a-z_]+),/g)];
+    for (const m of own) expect(m[2], m[1]).toBe(m[1]);
+    expect(own.length).toBe(11);
+    expect(s).toMatch(/const TRADE_CALL_ROW: ToolRow = \{[\s\S]*?\n {2}timeframes: TOOL_ADMISSION_TIMEFRAMES\.get_trade_call,/);
+  });
+
+  it('projectCapabilities: get_market_regime 15m 1h 4h 1d; the snapshot tools 1h 4h 1d; the alias its canonical\'s; none elsewhere', async () => {
+    const { projectCapabilities, getFeature } = await import('../../src/lib/feature-registry.js');
+    const { TOOL_ADMISSION_TIMEFRAMES } = await import('../../src/lib/tool-admission-timeframes.js');
+    const { intervalMsFor } = await import('../../src/lib/candle-guard.js');
+    const tools = projectCapabilities().tools;
+    const tf = (n: string) => tools.find((t) => t.name === n)!.timeframes;
+    expect(tf('get_market_regime')).toEqual(['15m', '1h', '4h', '1d']);
+    expect(tf('scan_market_regimes')).toEqual(['1h', '4h', '1d']);
+    expect(tf('pre_trade_check')).toEqual(['1h', '4h', '1d']);
+    expect(tf('get_trade_signal')).toEqual(tf('get_trade_call'));
+    expect(tf('get_trade_call')).toEqual([...TIMEFRAMES]);
+    for (const t of tools) {
+      const set = TOOL_ADMISSION_TIMEFRAMES[getFeature(t.name)!.name as keyof typeof TOOL_ADMISSION_TIMEFRAMES];
+      if (set === null) { expect(Object.hasOwn(t, 'timeframes'), t.name).toBe(false); continue; }
+      expect([...t.timeframes!].sort(), t.name).toEqual([...set].sort());
+      const ms = t.timeframes!.map((x) => intervalMsFor(x)!);
+      expect(ms, t.name).toEqual([...ms].sort((a, b) => a - b));
+    }
+    expect(tools.filter((t) => t.timeframes).map((t) => t.name).sort()).toEqual(
+      ['get_equity_call', 'get_market_regime', 'get_trade_call', 'get_trade_signal', 'pre_trade_check', 'scan_market_regimes', 'scan_trade_calls'],
+    );
+  });
+});

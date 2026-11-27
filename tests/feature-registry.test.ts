@@ -68,9 +68,9 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     const BASE = ['canonical', 'channels', 'description', 'enabled', 'name', 'quota', 'x402'];
     for (const t of proj) {
       for (const k of BASE) expect(t).toHaveProperty(k);
-      // `lenses` is the ONLY allowed additive public key (SCAN-RANKBY-W1); nothing else.
+      // `lenses` (SCAN-RANKBY-W1) and `timeframes` (REGIME-15M-SERVE-W1) are the ONLY allowed additive public keys.
       const extra = Object.keys(t).filter((k) => !BASE.includes(k));
-      expect(extra.every((k) => k === 'lenses')).toBe(true);
+      expect(extra.every((k) => k === 'lenses' || k === 'timeframes')).toBe(true);
       expect(typeof t.description).toBe('string');
       expect(t.description.length).toBeGreaterThan(0);
     }

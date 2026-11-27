@@ -118,14 +118,18 @@ describe('the registry', () => {
  * it is a declaration this file cannot import without the tool modules' whole dependency graph.
  */
 describe('each regime tool reads its own timeframe symbol (REGIME-TF-ADMISSION-W1)', () => {
-  /** The `timeframes:` symbol of one TOOLS row in tool-call-pipeline.ts. */
+  /** The admission symbol of one TOOLS row: the row reads its own entry of the admission leaf
+   *  (REGIME-15M-SERVE-W1 CH2), and the leaf entry names the set. */
   const admissionSymbolOf = (tool: string): string => {
     const s = src('src/lib/tool-call-pipeline.ts');
     const at = s.indexOf(`\n  ${tool}: {`);
     expect(at, `${tool} has a TOOLS row`).toBeGreaterThan(-1);
-    const m = /\n {4}timeframes: (\w+),/.exec(s.slice(at));
-    expect(m, `${tool}'s row declares timeframes`).not.toBeNull();
-    return m![1];
+    const m = /\n {4}timeframes: TOOL_ADMISSION_TIMEFRAMES\.(\w+),/.exec(s.slice(at));
+    expect(m, `${tool}'s row reads the admission leaf`).not.toBeNull();
+    expect(m![1], `${tool}'s row reads its own entry`).toBe(tool);
+    const leaf = new RegExp(`\\n  ${tool}: (\\w+),`).exec(src('src/lib/tool-admission-timeframes.ts'));
+    expect(leaf, `${tool} has a leaf entry`).not.toBeNull();
+    return leaf![1];
   };
   /** The enum symbol a tool's Zod `timeframe` parameter is built from. */
   const zodTimeframeSymbolOf = (rel: string, from = 0, to?: number): string[] =>

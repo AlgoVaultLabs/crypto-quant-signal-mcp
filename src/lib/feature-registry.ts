@@ -27,6 +27,11 @@ import {
 // source (rank-constants.ts) — the bot derives valid lenses, never hardcodes. Pure leaf
 // import (no runtime handler) keeps this DATA+TYPES module cycle-free.
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
+// REGIME-15M-SERVE-W1 CH2: each tool's admission timeframes, from the ONE leaf the pipeline rows read (never the
+// pipeline itself, which imports this module). Pure leaves (the set declarations + the interval table) keep this
+// DATA+TYPES module cycle-free.
+import { TOOL_ADMISSION_TIMEFRAMES } from './tool-admission-timeframes.js';
+import { intervalMsFor } from './candle-guard.js';
 
 /**
  * How a feature consumes quota:
@@ -483,7 +488,23 @@ export interface PublicCapability {
   description: string;
   /** SCAN-RANKBY-W1: selection-lens set when the tool advertises one (e.g. rankBy). */
   lenses?: CapabilityLenses;
+  /**
+   * REGIME-15M-SERVE-W1 CH2: the `timeframe` values the tool admits, ordered by bar duration — projected from
+   * `TOOL_ADMISSION_TIMEFRAMES`, the set the pipeline refuses outside of. Omitted when the tool has no
+   * single-timeframe admission. An alias carries its canonical's.
+   */
+  timeframes?: string[];
   enabled: boolean;
+}
+
+/** One admission set, ordered by bar duration (finest first). A value with no interval is a declaration bug: refuse loudly. */
+function byDuration(set: readonly string[]): string[] {
+  const ms = (tf: string): number => {
+    const v = intervalMsFor(tf);
+    if (v === null) throw new Error(`[feature-registry] admission timeframe '${tf}' has no interval (candle-guard TF_INTERVAL_MS)`);
+    return v;
+  };
+  return [...set].sort((a, b) => ms(a) - ms(b));
 }
 
 /**
@@ -496,6 +517,7 @@ export function projectCapabilities(): { tools: PublicCapability[] } {
   const tools: PublicCapability[] = [];
   for (const f of FEATURE_REGISTRY) {
     if (!f.enabled) continue;
+    const admission = TOOL_ADMISSION_TIMEFRAMES[f.name as RegistryToolName];
     const base = {
       canonical: f.name,
       channels: f.channels,
@@ -504,6 +526,7 @@ export function projectCapabilities(): { tools: PublicCapability[] } {
       description: DESCRIPTIONS[f.descriptionRef] ?? '',
       // SCAN-RANKBY-W1: surface the lens set (omitted when the tool has none).
       ...(f.lenses ? { lenses: f.lenses } : {}),
+      ...(admission ? { timeframes: byDuration(admission) } : {}),
       enabled: f.enabled,
     };
     // NPM-PUBLISH-v1.28.1-W1: the description is per-NAME, not per-feature, because an alias

@@ -60,10 +60,9 @@ import { upsertAgentSession, isPgBackend } from './performance-db.js';
 import { runAsBatch, runAsCaller } from './upstream-weight-budget.js';
 import { x402CallerTag, processScopedTag } from './caller-tags.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './regime-request-verdict.js';
-import { TIMEFRAMES } from './capabilities.js';
-import { REGIME_TIMEFRAMES } from './tool-param-schema.js';
-// REGIME-TF-ADMISSION-W1: the snapshot-served tools admit the sampler's set; get_market_regime keeps its own.
-import { REGIME_SNAPSHOT_TIMEFRAMES } from './regime-snapshot-timeframes.js';
+// REGIME-15M-SERVE-W1 CH2: each row's admission set is its entry in the ONE leaf GET /capabilities also projects
+// (the same objects the rows held: TIMEFRAMES, REGIME_TIMEFRAMES, REGIME_SNAPSHOT_TIMEFRAMES, or null).
+import { TOOL_ADMISSION_TIMEFRAMES } from './tool-admission-timeframes.js';
 import { recordRefusal } from './refusal-counter.js';
 import {
   UpstreamRateLimitError,
@@ -270,7 +269,7 @@ const TRADE_CALL_ROW: ToolRow = {
   logError: null,
   logOnRefusal: false,
   cohort: true,
-  timeframes: TIMEFRAMES,
+  timeframes: TOOL_ADMISSION_TIMEFRAMES.get_trade_call,
   enrich: async (result, license, input, served) => {
     // CONVERSION-MEASUREMENT-W1 C1 / ACTIVATION-NUDGE-W1 / REFERRAL-INPRODUCT-NUDGE-W1 — moved
     // verbatim from the MCP handler. Every predicate below is a no-op for a paid tier and for a
@@ -349,7 +348,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     }),
     logOnRefusal: false,
     cohort: true,
-    timeframes: REGIME_TIMEFRAMES,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.get_market_regime,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -363,7 +362,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: true,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.scan_funding_arb,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -401,7 +400,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: true,
-    timeframes: TIMEFRAMES,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.scan_trade_calls,
     enrich: null,
     mcpText: (result, input) => {
       const scanRes = result as { calls?: unknown[]; _receipts?: Parameters<typeof renderScanReceiptText>[0] };
@@ -433,7 +432,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: TIMEFRAMES,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.get_equity_call,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -444,7 +443,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.get_equity_regime,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -500,7 +499,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.chat_knowledge,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -519,7 +518,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.search_knowledge,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -536,7 +535,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: true,
     cohort: false,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.get_track_record,
     enrich: null,
     mcpText: null,
     refusalJson: 'pretty',
@@ -574,7 +573,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: REGIME_SNAPSHOT_TIMEFRAMES,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.scan_market_regimes,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -629,7 +628,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: true,
-    timeframes: REGIME_SNAPSHOT_TIMEFRAMES,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.pre_trade_check,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',
@@ -658,7 +657,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
-    timeframes: null,
+    timeframes: TOOL_ADMISSION_TIMEFRAMES.get_support_resistance_zones,
     enrich: null,
     mcpText: null,
     refusalJson: 'compact',

@@ -54,11 +54,11 @@ const HELD: Record<string, { surface: Surface; liveToo?: true }> = {
   'src/scripts/regime-snapshot-sampler.ts': { surface: 'sampler' },
   'src/scripts/pre-trade-health.ts': { surface: 'table-adoption' },
   'src/lib/tool-param-schema.ts': { surface: 'declaration', liveToo: true },
-  'src/lib/tool-call-pipeline.ts': { surface: 'admission', liveToo: true },
+  'src/lib/tool-admission-timeframes.ts': { surface: 'admission', liveToo: true },
 };
 
 describe('the sentinel — every snapshot reader is held and classified', () => {
-  const found = execFileSync('git', ['ls-files', 'src'], { cwd: ROOT, encoding: 'utf8' })
+  const found = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'src'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter((f) => f.endsWith('.ts')).filter((f) => SNAPSHOT_REF.test(code(src(f)))).sort();
 
   it('the corpus is non-vacuous and equals the held list exactly (a new reader must be classified here)', () => {
