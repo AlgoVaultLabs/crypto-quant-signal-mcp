@@ -372,7 +372,7 @@ export function applyCredentialRefusal(
  * object yields at most one `unrecognized_keys` issue per parse: one line per refused call.
  *
  * REGIME-TF-ADMISSION-W1 CH2 — both refusal classes also become a persistent daily count
- * (`recordRefusal`, refusal-counter.ts): the unknown key here, and an out-of-enum value through an
+ * (`recordRefusal`, refusal-counter.ts): the unknown key's name here (never its value), and an out-of-enum value through an
  * observer on each enum leaf (`observeEnumLeaves`) — the object's errorMap never sees a field's
  * `invalid_enum_value`. Both run inside the SDK's parse, inside the request scope, so the caller is the
  * request's own (`keyed`, request_log's `ip_hash`). The refusal text and tools/list bytes are unchanged.
@@ -388,9 +388,9 @@ export function strictToolInput<S extends z.ZodRawShape>(tool: string, shape: S)
       const keyed = getRequestLicense().key ? 'y' : 'n';
       console.log(`[tool-args] refused tool=${tool} unknown=${issue.keys.join(',')} keyed=${keyed}`);
       try {
-        const data = (ctx.data ?? {}) as Record<string, unknown>;
+        // The unknown key's NAME is the datum; its value is never read (a caller's own API key often sits there).
         const who = { keyed: keyed === 'y', callerKey: getRequestIpHash() };
-        for (const k of issue.keys) recordRefusal({ reason: 'unrecognized_keys', tool, parameter: k, value: data[k], ...who });
+        for (const k of issue.keys) recordRefusal({ reason: 'unrecognized_keys', tool, parameter: k, value: null, ...who });
       } catch { /* the count never breaks the refusal */ }
       return { message: `Unknown parameter(s): ${issue.keys.join(', ')}. Valid parameters: ${valid}.` };
     },

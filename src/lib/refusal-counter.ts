@@ -24,11 +24,19 @@
  * read-only role (the GRANT is guarded, so a database without that role never fails the ensure).
  *
  * BOUNDS, because every key below except `reason` is caller-influenced:
- *   - `tool`, `parameter`, `value` and `caller_key` are stored only as ≤ 32 chars of [A-Za-z0-9_.:-], else `<other>`;
- *     an absent caller key is `<none>`.
- *   - at most 10,000 distinct keys per UTC day; every later new key folds into ONE `<overflow>` row for that day. The
- *     cap counts this process's keys plus the rows the table already held for the day when this process first
- *     flushed it, so a restart does not grant a fresh 10,000.
+ *   - `value` is stored only as ≤ 16 chars of [A-Za-z0-9_.:-], else `<other>` — by STRUCTURE, not by vendor prefix:
+ *     a refused timeframe, venue or regime fits; a 32-char customer key (`av_live_`/`av_free_` + 24 hex) or any longer
+ *     secret cannot. An `unrecognized_keys` refusal never keeps the value at all: the unknown key's NAME is the demand
+ *     datum, and its value is whatever the caller put there (often its own API key).
+ *   - `tool`, `parameter` and `caller_key` are stored only as ≤ 32 chars of [A-Za-z0-9_.:-], else `<other>`; an absent
+ *     caller key is `<none>`.
+ *   - at most 10,000 distinct keys per UTC day; every later new key folds into ONE `<overflow>` row for that day.
+ *     Two checks hold it. At record time a key is admitted only while this process's keys for the day plus the day's
+ *     rows (as last read from the table) are under 10,000 — the memory bound. Before a fresh process has read the
+ *     table that count is 0, so the FLUSH first reads the day's rows and keeps only (10,000 − rows) of the keys the
+ *     process admitted, in the order they were first recorded, folding the rest (wherever they wait: this batch or
+ *     the next) into `<overflow>`. A restart therefore never grants a fresh 10,000. A day that ended before its first
+ *     flush is capped the same way against its own rows.
  *
  * CALLER KEY. request_log's own pseudonymous caller identity, `ip_hash` (`hashIp`, analytics.ts; read through
  * `getRequestIpHash()`), so the two tables join and no new hash domain exists. `keyed` = the request carried an API key.
@@ -56,6 +64,7 @@ const MAX_KEYS_PER_DAY = 10_000;
 const FLUSH_INTERVAL_MS = 60_000;
 const UPSERT_CHUNK_ROWS = 500;
 const BOUNDED = /^[A-Za-z0-9_.:-]{1,32}$/;
+const VALUE_BOUNDED = /^[A-Za-z0-9_.:-]{1,16}$/;
 const OTHER = '<other>';
 const NONE = '<none>';
 const OVERFLOW = '<overflow>';
@@ -72,19 +81,24 @@ interface Row {
 }
 
 const pending = new Map<string, Row>();
-/** The keys this process has admitted for the current UTC day, and the table's row count for that day at seed. */
+/**
+ * The keys this process has admitted for the current UTC day (in the order first recorded), the day's row count as
+ * read from the table, and whether that read has happened yet (until it has, `seeded` is 0).
+ */
 let today: { day: string; keys: Set<string>; seeded: number; seededDone: boolean } = { day: '', keys: new Set(), seeded: 0, seededDone: false };
 let timer: ReturnType<typeof setInterval> | null = null;
 let ensured: Promise<void> | null = null;
 
-function bounded(v: unknown): string {
+function bounded(v: unknown, re: RegExp = BOUNDED): string {
   const s = typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : typeof v === 'boolean' ? String(v) : null;
-  return s !== null && BOUNDED.test(s) ? s : OTHER;
+  return s !== null && re.test(s) ? s : OTHER;
 }
 
 const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 const keyOf = (r: Omit<Row, 'count'>): string =>
   JSON.stringify([r.day, r.reason, r.tool, r.parameter, r.value, r.keyed, r.callerKey]);
+const overflowOf = (day: string): Omit<Row, 'count'> =>
+  ({ day, reason: OVERFLOW, tool: OVERFLOW, parameter: OVERFLOW, value: OVERFLOW, keyed: false, callerKey: OVERFLOW });
 
 /**
  * Count one refused input. Synchronous, never throws, never awaits — safe inside zod's parse and on any serving path.
@@ -98,14 +112,14 @@ export function recordRefusal(r: RefusalRecord, nowMs: number = Date.now()): voi
       reason: bounded(r.reason),
       tool: bounded(r.tool),
       parameter: bounded(r.parameter),
-      value: bounded(r.value),
+      value: r.reason === 'unrecognized_keys' ? OTHER : bounded(r.value, VALUE_BOUNDED),
       keyed: r.keyed === true,
       callerKey: r.callerKey == null || r.callerKey === '' ? NONE : bounded(r.callerKey),
     };
     let key = keyOf(row);
     if (!today.keys.has(key)) {
       if (today.keys.size + today.seeded >= MAX_KEYS_PER_DAY) {
-        row = { day, reason: OVERFLOW, tool: OVERFLOW, parameter: OVERFLOW, value: OVERFLOW, keyed: false, callerKey: OVERFLOW };
+        row = overflowOf(day);
         key = keyOf(row);
       } else {
         today.keys.add(key);
@@ -213,19 +227,13 @@ function ensureRefusalCounts(): Promise<void> {
  */
 export async function flushRefusals(): Promise<void> {
   if (pending.size === 0) return;
-  const batch = [...pending.values()];
+  const rows = new Map(pending);
   pending.clear();
   if (!isPgBackend()) return;
   try {
     await ensureRefusalCounts();
-    if (!today.seededDone && batch.some((r) => r.day === today.day)) {
-      const day = today.day;
-      const rows = await dbQuery<{ n: number | string }>('SELECT count(*)::int AS n FROM refusal_counts WHERE day = ?', [day]);
-      if (today.day === day && !today.seededDone) {
-        today.seeded = Number(rows[0]?.n ?? 0);
-        today.seededDone = true;
-      }
-    }
+    await capAtTable(rows);
+    const batch = [...rows.values()];
     for (let i = 0; i < batch.length; i += UPSERT_CHUNK_ROWS) {
       const chunk = batch.slice(i, i + UPSERT_CHUNK_ROWS);
       const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
@@ -239,9 +247,59 @@ export async function flushRefusals(): Promise<void> {
     }
   } catch (e) {
     try {
-      console.error(`[refusal-counter] flush failed — dropped ${batch.length} key(s): ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+      console.error(`[refusal-counter] flush failed — dropped ${rows.size} key(s): ${String((e as Error)?.message ?? e).slice(0, 160)}`);
     } catch { /* never throws */ }
   }
+}
+
+/**
+ * THE DAILY CAP AT THE TABLE. For every day in this batch whose rows this process has not yet read (today before its
+ * first flush, or a day that ended before one), read that day's row count and keep only (10,000 − rows) of the keys
+ * admitted against it, in the order first recorded; fold the rest into the day's `<overflow>` row.
+ *   - today: trim `today.keys` itself (dropping the most recently admitted), and fold each dropped key in this batch
+ *     AND in `pending` (a record that arrived while the count was being read); the read is kept, so from here on the
+ *     record-time check is exact.
+ *   - an ended day: its keys in this batch are its admitted keys, so keep the first (10,000 − rows) of them.
+ * A key the table already holds is still counted as admitted, so the cap can only be reached early, never exceeded.
+ */
+async function capAtTable(rows: Map<string, Row>): Promise<void> {
+  const days = [...new Set([...rows.values()].map((r) => r.day))];
+  for (const day of days) {
+    if (day === today.day && today.seededDone) continue; // capped at record time against the read count
+    const res = await dbQuery<{ n: number | string }>('SELECT count(*)::int AS n FROM refusal_counts WHERE day = ?', [day]);
+    const held = Number(res[0]?.n ?? 0);
+    if (day === today.day && !today.seededDone) {
+      today.seeded = held;
+      today.seededDone = true;
+      const excess = today.keys.size + held - MAX_KEYS_PER_DAY;
+      if (excess > 0) {
+        for (const key of [...today.keys].slice(-excess)) {
+          today.keys.delete(key);
+          foldIntoOverflow(rows, key, day);
+          foldIntoOverflow(pending, key, day);
+        }
+      }
+    } else {
+      let room = Math.max(0, MAX_KEYS_PER_DAY - held);
+      for (const [key, r] of [...rows]) {
+        if (r.day !== day || r.reason === OVERFLOW) continue;
+        if (room > 0) room -= 1;
+        else foldIntoOverflow(rows, key, day);
+      }
+    }
+  }
+}
+
+/** Move one key's count onto its day's `<overflow>` row in `rows` (a no-op when the key is not there). */
+function foldIntoOverflow(rows: Map<string, Row>, key: string, day: string): void {
+  const r = rows.get(key);
+  if (!r) return;
+  rows.delete(key);
+  const o = overflowOf(day);
+  const ok = keyOf(o);
+  const existing = rows.get(ok);
+  if (existing) existing.count += r.count;
+  else rows.set(ok, { ...o, count: r.count });
 }
 
 /** Tests only: what is waiting for the next flush, in insertion order. */

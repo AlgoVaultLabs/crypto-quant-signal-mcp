@@ -9,8 +9,10 @@
  *     timeframe admission, a non-public venue — each with the request's own caller (keyed, request_log's ip_hash);
  *   - the record path is synchronous, never throws and makes no DB call; a failing flush never throws, never delays a
  *     response, logs ONE line and drops its batch;
- *   - the bounds: ≤ 32 chars of [A-Za-z0-9_.:-] else <other>; ≤ 10,000 distinct keys per UTC day, then <overflow>,
- *     counting the rows the table already held for the day;
+ *   - the bounds: a stored value is ≤ 16 chars of [A-Za-z0-9_.:-] else <other>, and an unknown key's value is never
+ *     kept (its NAME is the datum — a customer key passed as an argument must not land in the table); tool, parameter
+ *     and caller_key are ≤ 32 chars; ≤ 10,000 distinct keys per UTC day, then <overflow> — the flush reads the day's
+ *     rows first and admits only what is left of the 10,000, so a restart never grants a fresh 10,000;
  *   - 058 IS the ensure, applies up → down → up, its aoe_readonly GRANT is guarded, and aoe_readonly can read the table;
  *   - the refusal text and the enum leaves' behaviour are unchanged by the observer.
  *
@@ -146,6 +148,17 @@ describe('an enum refusal at the MCP seam counts — and its refusal text is byt
     ]);
   });
 
+  it('a refused enum value is kept up to 16 chars and stored as <other> from 17; a 15m refusal still stores 15m', async () => {
+    await mcpCall('scan_market_regimes', { timeframe: '15m' });
+    await mcpCall('scan_market_regimes', { timeframe: 'a'.repeat(16) });
+    await mcpCall('scan_market_regimes', { timeframe: 'b'.repeat(17) });
+    expect(pendingOf('invalid_enum_value').map((r) => [r.parameter, r.value, r.count])).toEqual([
+      ['timeframe', '15m', 1],
+      ['timeframe', 'a'.repeat(16), 1],
+      ['timeframe', '<other>', 1],
+    ]);
+  });
+
   it('a served value counts nothing', async () => {
     await mcpCall('scan_market_regimes', { timeframe: '4h' });
     expect(pendingOf('invalid_enum_value')).toEqual([]);
@@ -153,14 +166,28 @@ describe('an enum refusal at the MCP seam counts — and its refusal text is byt
 });
 
 describe('an unknown key counts — the stdout line stays', () => {
-  it('get_market_regime {venue}: one unrecognized_keys row naming the key and its value, and the [tool-args] line once', async () => {
+  it('get_market_regime {venue}: one unrecognized_keys row naming the key (value <other>), and the [tool-args] line once', async () => {
     const log = vi.spyOn(console, 'log');
     const r = await mcpCall('get_market_regime', { coin: 'BTC', venue: 'BINANCE' });
     expect(r.isError).toBe(true);
     expect(log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[tool-args]'))).toEqual(['[tool-args] refused tool=get_market_regime unknown=venue keyed=n']);
     expect(pendingOf('unrecognized_keys')).toEqual([
-      { day: DAY, reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'venue', value: 'BINANCE', keyed: false, callerKey: IP, count: 1 },
+      { day: DAY, reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'venue', value: '<other>', keyed: false, callerKey: IP, count: 1 },
     ]);
+  });
+
+  it('a customer key passed as an argument is never kept: {coin, apiKey: av_live_<24 hex>} → one row, parameter apiKey, value <other>', async () => {
+    const secret = 'av_live_' + 'a1b2c3d4e5f6a7b8c9d0e1f2'; // the minted shape: 32 chars of [A-Za-z0-9_]
+    expect(secret).toHaveLength(32);
+    const r = await mcpCall('get_market_regime', { coin: 'BTC', apiKey: secret });
+    expect(r.isError).toBe(true);
+    expect(_pendingRefusalsForTest()).toEqual([
+      { day: DAY, reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'apiKey', value: '<other>', keyed: false, callerKey: IP, count: 1 },
+    ]);
+    await flushRefusals();
+    const stored = JSON.stringify(await rowsOf());
+    expect(stored).toContain('apiKey');
+    expect(stored).not.toContain('a1b2c3d4e5f6');
   });
 });
 
@@ -310,25 +337,37 @@ describe('the daily count persists (PGlite)', () => {
 });
 
 describe('the bounds hold', () => {
-  it('value, parameter, tool and caller_key: ≤ 32 chars of [A-Za-z0-9_.:-], else <other>; an absent caller is <none>', () => {
+  it('value: ≤ 16 chars of [A-Za-z0-9_.:-], else <other>; parameter, tool and caller_key: ≤ 32; an absent caller is <none>', () => {
     const base = { reason: 'invalid_enum_value' as const, tool: 'scan_market_regimes', parameter: 'timeframe', keyed: false };
-    recordRefusal({ ...base, value: 'x'.repeat(32), callerKey: IP });
-    recordRefusal({ ...base, value: 'x'.repeat(33), callerKey: IP });
+    recordRefusal({ ...base, value: 'x'.repeat(16), callerKey: IP });
+    recordRefusal({ ...base, value: 'x'.repeat(17), callerKey: IP });
+    recordRefusal({ ...base, value: 'av_live_' + 'f'.repeat(24), callerKey: IP });
     recordRefusal({ ...base, value: 'a b', callerKey: IP });
     recordRefusal({ ...base, value: 'me@example.com', callerKey: IP });
     recordRefusal({ ...base, value: { nested: 1 }, callerKey: IP });
     recordRefusal({ ...base, value: 7, callerKey: undefined });
     recordRefusal({ ...base, parameter: '../../etc/passwd', value: '1h', callerKey: 'v2:' + 'f'.repeat(40) });
+    recordRefusal({ ...base, parameter: 'p'.repeat(32), value: '1h', callerKey: IP });
+    recordRefusal({ ...base, parameter: 'p'.repeat(33), value: '4h', callerKey: IP });
     expect(_pendingRefusalsForTest().map((r) => [r.parameter, r.value, r.callerKey, r.count])).toEqual([
-      ['timeframe', 'x'.repeat(32), IP, 1],
-      ['timeframe', '<other>', IP, 4],
+      ['timeframe', 'x'.repeat(16), IP, 1],
+      ['timeframe', '<other>', IP, 5],
       ['timeframe', '7', '<none>', 1],
       ['<other>', '1h', '<other>', 1],
+      ['p'.repeat(32), '1h', IP, 1],
+      ['<other>', '4h', IP, 1],
     ]);
+    expect(IP.length).toBeLessThanOrEqual(19); // request_log's ip_hash keeps its full form under the 32 bound
+  });
+
+  it('an unknown key\'s value is never kept, whatever the caller passes — the counter, not only its caller, drops it', () => {
+    recordRefusal({ reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'venue', value: 'BINANCE', keyed: false, callerKey: IP });
+    recordRefusal({ reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'venue', value: 'OKX', keyed: false, callerKey: IP });
+    expect(_pendingRefusalsForTest().map((r) => [r.parameter, r.value, r.count])).toEqual([['venue', '<other>', 2]]);
   });
 
   it('at most 10,000 distinct keys per UTC day; every later new key folds into one <overflow> row, an admitted key keeps counting', () => {
-    const rec = (value: string) => recordRefusal({ reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'p', value, keyed: false, callerKey: IP });
+    const rec = (value: string) => recordRefusal({ reason: 'invalid_enum_value', tool: 'get_market_regime', parameter: 'p', value, keyed: false, callerKey: IP });
     for (let i = 0; i < 10_000; i++) rec(`v${i}`);
     rec('new-a'); rec('new-b'); rec('v7');
     const rows = _pendingRefusalsForTest();
@@ -339,16 +378,47 @@ describe('the bounds hold', () => {
     expect(rows.find((r) => r.value === 'v7')!.count).toBe(2);
   });
 
-  it('the cap counts the rows the table already held for the day, so a restart does not grant a fresh 10,000', async () => {
+  it('after the first flush reads the day\'s rows, a new key is capped at record time against them', async () => {
     await db.exec(statementsOf(M058)[0]);
-    await db.query(`INSERT INTO refusal_counts SELECT $1::date, 'unrecognized_keys', 'get_market_regime', 'p', 'old' || g, false, 'v2:x', 1 FROM generate_series(1, 9999) g`, [DAY]);
-    recordRefusal({ reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'p', value: 'fresh', keyed: false, callerKey: IP });
-    await flushRefusals(); // seeds 9,999 for today, then writes the one admitted key → 10,000
-    recordRefusal({ reason: 'unrecognized_keys', tool: 'get_market_regime', parameter: 'p', value: 'one-too-many', keyed: false, callerKey: IP });
+    await db.query(`INSERT INTO refusal_counts SELECT $1::date, 'invalid_enum_value', 'get_market_regime', 'p', 'old' || g, false, 'v2:x', 1 FROM generate_series(1, 9999) g`, [DAY]);
+    recordRefusal({ reason: 'invalid_enum_value', tool: 'get_market_regime', parameter: 'p', value: 'fresh', keyed: false, callerKey: IP });
+    await flushRefusals(); // reads 9,999 for today, then writes the one admitted key → 10,000
+    recordRefusal({ reason: 'invalid_enum_value', tool: 'get_market_regime', parameter: 'p', value: 'one-too-many', keyed: false, callerKey: IP });
     await flushRefusals();
     expect(await count('SELECT count(*)::int AS n FROM refusal_counts')).toBe(10_001);
     expect(await count("SELECT count(*)::int AS n FROM refusal_counts WHERE reason = '<overflow>'")).toBe(1);
     expect(await count("SELECT count(*)::int AS n FROM refusal_counts WHERE value = 'one-too-many'")).toBe(0);
+  });
+
+  it('a restart never grants a fresh 10,000: 9,999 rows today + 10,000 new keys before any flush → the flush admits 1, folds 9,999', async () => {
+    await db.exec(statementsOf(M058)[0]);
+    await db.query(`INSERT INTO refusal_counts SELECT $1::date, 'invalid_enum_value', 'get_market_regime', 'p', 'old' || g, false, 'v2:x', 1 FROM generate_series(1, 9999) g`, [DAY]);
+    const rec = (value: string) => recordRefusal({ reason: 'invalid_enum_value', tool: 'scan_market_regimes', parameter: 'timeframe', value, keyed: false, callerKey: IP });
+    for (let i = 0; i < 10_000; i++) rec(`n${i}`); // a fresh process: admitted in memory against 0 rows (the memory bound)
+    await flushRefusals();
+    const today = `SELECT count(*)::int AS n FROM refusal_counts WHERE day = '${DAY}'`;
+    expect(await count(today)).toBe(10_001);
+    expect(await count(`${today} AND value = 'n0'`)).toBe(1); // the first-recorded key is the one admitted
+    expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE reason = '<overflow>'`)).toBe(9_999);
+    rec('n0'); rec('n5'); rec('later');
+    await flushRefusals();
+    expect(await count(today)).toBe(10_001);
+    expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE value = 'n0'`)).toBe(2);
+    expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE reason = '<overflow>'`)).toBe(10_001);
+  });
+
+  it('a day that ended before its first flush is capped against its own rows too', async () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const lateYesterday = Date.parse(`${yesterday}T23:59:59.000Z`);
+    await db.exec(statementsOf(M058)[0]);
+    await db.query(`INSERT INTO refusal_counts SELECT $1::date, 'invalid_enum_value', 'get_market_regime', 'p', 'old' || g, false, 'v2:x', 1 FROM generate_series(1, 10000) g`, [yesterday]);
+    const rec = (value: string, at?: number) => recordRefusal({ reason: 'invalid_enum_value', tool: 'scan_market_regimes', parameter: 'timeframe', value, keyed: false, callerKey: IP }, at);
+    rec('y1', lateYesterday); rec('y2', lateYesterday);
+    rec('t1');
+    await flushRefusals();
+    expect(await count(`SELECT count(*)::int AS n FROM refusal_counts WHERE day = '${yesterday}'`)).toBe(10_001);
+    expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE day = '${yesterday}' AND reason = '<overflow>'`)).toBe(2);
+    expect(await count(`SELECT count(*)::int AS n FROM refusal_counts WHERE day = '${DAY}'`)).toBe(1);
   });
 });
 
