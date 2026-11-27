@@ -88,6 +88,8 @@ const pending = new Map<string, Row>();
 let today: { day: string; keys: Set<string>; seeded: number; seededDone: boolean } = { day: '', keys: new Set(), seeded: 0, seededDone: false };
 let timer: ReturnType<typeof setInterval> | null = null;
 let ensured: Promise<void> | null = null;
+/** The flush in progress (or the last one): every flush chains on it, so two flushes never overlap. */
+let inFlight: Promise<void> = Promise.resolve();
 
 function bounded(v: unknown, re: RegExp = BOUNDED): string {
   const s = typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : typeof v === 'boolean' ? String(v) : null;
@@ -224,8 +226,19 @@ function ensureRefusalCounts(): Promise<void> {
 /**
  * Upsert everything counted since the last flush. Called on the interval and at shutdown. Never rejects: a failure
  * logs one line and drops that batch (the counts are telemetry; a retry queue would grow without bound on an outage).
+ *
+ * SINGLE-FLIGHT. Each call chains on the flush in progress and takes its own snapshot of `pending` only when that one
+ * has finished. Two overlapping flushes (the interval and SIGTERM, or a flush slower than the interval) would each read
+ * the day's row count before the other's upsert landed and each keep (10,000 − rows) keys, passing the cap. The
+ * SIGTERM flush chains the same way, inside its own 2 s race in src/index.ts.
  */
 export async function flushRefusals(): Promise<void> {
+  const run = inFlight.then(flushOnce, flushOnce);
+  inFlight = run;
+  return run;
+}
+
+async function flushOnce(): Promise<void> {
   if (pending.size === 0) return;
   const rows = new Map(pending);
   pending.clear();
@@ -314,4 +327,5 @@ export function _resetRefusalCounterForTest(): void {
   if (timer) clearInterval(timer);
   timer = null;
   ensured = null;
+  inFlight = Promise.resolve();
 }

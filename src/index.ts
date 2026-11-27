@@ -4473,6 +4473,7 @@ async function startHttp() {
     statefulLastActivity?.clear();
     // REGIME-TF-ADMISSION-W1 CH2: flush the refusal counts before the pool closes. Bounded at 2 s, inside the 5 s exit
     // below, and flushRefusals never rejects (a failure logs one line and drops the batch), so it cannot hold the exit.
+    // It chains on any flush already in flight (single-flight), so it never overlaps the interval's flush.
     const closeAndExit = (): void => {
       closeDb();
       httpServer.close(() => process.exit(0));

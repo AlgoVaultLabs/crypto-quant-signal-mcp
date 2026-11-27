@@ -29,6 +29,8 @@ const pg = vi.hoisted(() => ({
   statements: [] as string[],
   fail: null as null | Error,
   isPg: true,
+  /** Runs after a statement executed and before its rows return — a test holds a result here to interleave flushes. */
+  afterQuery: null as null | ((sql: string) => Promise<void>),
 }));
 
 vi.mock('../../src/lib/performance-db.js', async (orig) => ({
@@ -40,7 +42,9 @@ vi.mock('../../src/lib/performance-db.js', async (orig) => ({
     // The production PgBackend's own placeholder rewrite (`?` → `$n`).
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    return (await pg.db!.query(pgSql, params)).rows;
+    const rows = (await pg.db!.query(pgSql, params)).rows;
+    if (pg.afterQuery) await pg.afterQuery(sql);
+    return rows;
   },
 }));
 
@@ -113,6 +117,7 @@ beforeEach(async () => {
   pg.statements = [];
   pg.fail = null;
   pg.isPg = true;
+  pg.afterQuery = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -405,6 +410,31 @@ describe('the bounds hold', () => {
     expect(await count(today)).toBe(10_001);
     expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE value = 'n0'`)).toBe(2);
     expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE reason = '<overflow>'`)).toBe(10_001);
+  });
+
+  it('two overlapping first-of-day flushes (the interval + SIGTERM) still hold the cap: 9,999 rows + 10,000 pending keys → 10,001', async () => {
+    await db.exec(statementsOf(M058)[0]);
+    await db.query(`INSERT INTO refusal_counts SELECT $1::date, 'invalid_enum_value', 'get_market_regime', 'p', 'old' || g, false, 'v2:x', 1 FROM generate_series(1, 9999) g`, [DAY]);
+    // Hold every day-count read after it has run and before it returns, until the test opens the gate.
+    const held: Array<() => void> = [];
+    let open = false;
+    pg.afterQuery = (sql) => (open || !sql.startsWith('SELECT count(*)') ? Promise.resolve() : new Promise<void>((r) => held.push(r)));
+    const rec = (value: string) => recordRefusal({ reason: 'invalid_enum_value', tool: 'scan_market_regimes', parameter: 'timeframe', value, keyed: false, callerKey: IP });
+    // Two flushes overlap only when the second has keys of its own: 5,000 keys are pending when the first starts, and
+    // 5,000 more (still admitted in memory against 0 rows) arrive before the second — 10,000 pending keys in all.
+    for (let i = 0; i < 5_000; i++) rec(`n${i}`);
+    const first = flushRefusals();
+    for (let i = 5_000; i < 10_000; i++) rec(`n${i}`);
+    const second = flushRefusals();
+    await vi.waitFor(() => expect(held.length).toBeGreaterThanOrEqual(1));
+    await new Promise((r) => setTimeout(r, 100)); // room for a second, concurrent day-count read to run and be held
+    open = true;
+    held.splice(0).forEach((r) => r());
+    await Promise.all([first, second]);
+    const today = `SELECT count(*)::int AS n FROM refusal_counts WHERE day = '${DAY}'`;
+    expect(await count(today)).toBe(10_001);
+    expect(await count(`SELECT count::int AS n FROM refusal_counts WHERE reason = '<overflow>'`)).toBe(9_999);
+    expect(await count(`${today} AND value = 'n0'`)).toBe(1);
   });
 
   it('a day that ended before its first flush is capped against its own rows too', async () => {

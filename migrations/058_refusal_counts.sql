@@ -6,7 +6,8 @@
 --   reason      invalid_enum_value | unrecognized_keys | timeframe_admission | non_public_venue | <overflow>
 --   tool        the served tool name
 --   parameter   the refused parameter (for unrecognized_keys, the unknown key itself)
---   value       the refused value: <= 32 chars of [A-Za-z0-9_.:-], else <other>
+--   value       the refused value: <= 16 chars of [A-Za-z0-9_.:-], else <other>; always <other> for unrecognized_keys
+--               (the unknown key's name is the datum, never its value)
 --   keyed       the request carried an API key
 --   caller_key  request_log's ip_hash for the request (no new hash domain), or <none>
 --   count       refusals counted under this key that day
