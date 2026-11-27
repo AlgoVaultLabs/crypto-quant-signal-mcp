@@ -283,3 +283,12 @@ sha256 of the file bytes at the commit that adds this file. The read's `pinsOf` 
 | tests/unit/preregistration-support-stress-test.test.ts | sha256 `86b1aa502488ac1a10808f54558b3c96aa77392c8de1337cc799e2429b43c512` | the gate this file passes |
 
 **Who enforces what.** The read's guard (`src/scripts/regime-15m/r15-guard.ts`) enforces every row of the pin table, the sibling directory's listing, the four inputs and the seal; the sibling spec registers the census, archive-store and fit-result shas a second time, so a registration row alone cannot move them.
+
+## Amendment 1 — 2026-11-27, before the read
+
+Appended under §7 ("A defect found before the seal is fixed, and recorded as an appended amendment, before the read") and §8 (a deviation known before the read is recorded here). Nothing above this heading changes: no statistic, row set, margin, comparator, weight, cluster definition, constant, guard leg or pin.
+
+- **Attempt 1 threw before the seal.** The first invocation, against registration commit `36f10d14`, passed legs 1 to 10 of §1 and threw before leg 11, while writing its run log: the log file carried a second name, which the guard refuses on every write target (`src/scripts/regime-15m/r15-guard.ts`). It built no frame, wrote no floor record, claimed no seal and computed no outcome, so the read is not spent: only the seal spends it (§1).
+- **Cause.** The vault is a Google Drive volume. While it syncs a file it gives that file a second hard link within about a second of each write, so no output the guard checks can be written there.
+- **The out directory.** The read's `--out` is `~/.local/state/algovault-reads/regime-15m-read-<date>/` in the home of the account that runs it: local APFS, outside the repository and outside `~/.cache/algovault`. Leg 1 of §1 applies to it unchanged.
+- **The copy into the vault.** After the read, every output is copied byte for byte into vault `audits/regime-15m-read-<date>/`. Each copy's sha256 must equal its staging file's, the result JSON is checked against its `.sha256` file, and the staging copy is kept. The figures stay vault-only (§8): this repository receives none.
