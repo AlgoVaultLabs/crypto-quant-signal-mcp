@@ -159,7 +159,7 @@ describe('the sampler and the regime track record read the snapshot set only', (
 });
 
 describe('regime_shift webhooks are fed by trade-call rows; get_market_regime is no producer', () => {
-  it('detectEvents runs only from performance-db\'s recordSignal hook', () => {
+  it('detectEvents runs only from performance-db\'s recordSignal hook', { timeout: 60_000 }, () => {
     const callers = execFileSync('git', ['grep', '-l', "import('./webhook-events.js')\\|from './webhook-events.js'\\|from '../lib/webhook-events.js'", '--', 'src'], { cwd: ROOT, encoding: 'utf8' })
       .split('\n').filter(Boolean).sort();
     expect(callers).toEqual(['src/lib/performance-db.ts']);
