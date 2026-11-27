@@ -27,7 +27,7 @@ export interface Criterion {
   /** The 1h edge δ is half of (A4, Δ1); null for FF. */
   reference: number | null;
   holds: boolean;
-  /** Descriptive: the interval's lower half is at least δ wide, so an arm equal to 1h would fail too. Never a state. */
+  /** The interval's lower half is at least δ wide, so an arm equal to 1h would fail too. Never a state: a FAIL whose every failing criterion carries it reads `FAIL (underpowered)`. */
   underpowered: boolean | null;
 }
 export interface MapRow { slice: string; dial: string; criterion: Criterion['id']; state: 'works' | 'broken' | 'too little data' }
@@ -40,9 +40,13 @@ const tf = (m: Measures, k: string): TfMeasures => {
 };
 const finite = (...xs: Array<number | null | undefined>): boolean => xs.every((x) => typeof x === 'number' && Number.isFinite(x));
 
-/** The token line: `REGIME_15M_BACKTEST=PASS`, `=FAIL` or `=INDETERMINATE (<cause>[, <cause>])`. */
-export const lineOf = (state: State, causes: readonly Cause[]): string =>
-  `REGIME_15M_BACKTEST=${state}${state === 'INDETERMINATE' ? ` (${causes.join(', ')})` : ''}`;
+/**
+ * The token line: `REGIME_15M_BACKTEST=PASS`, `=FAIL`, `=FAIL (underpowered)` or `=INDETERMINATE (<cause>[, <cause>])`.
+ * `underpowered` annotates a FAIL only (the lead's rulings of 2026-11-27: option (a), then R2-F1): a FAIL whose every
+ * failing criterion's interval could not resolve its δ — PROCEDURE §6's null rule, reported. It is never a state.
+ */
+export const lineOf = (state: State, causes: readonly Cause[], underpowered = false): string =>
+  `REGIME_15M_BACKTEST=${state}${state === 'INDETERMINATE' ? ` (${causes.join(', ')})` : state === 'FAIL' && underpowered ? ' (underpowered)' : ''}`;
 
 /**
  * Bar A on one run's measures. `parity` is null on a check row (only the Binance read has a parity reference).
@@ -71,7 +75,10 @@ export function decide(m: Measures, pre: Pre, parity: boolean | null): Decision 
   if (!finite(...inputs)) causes.add('non_finite');
   const ordered = CAUSES.filter((c) => causes.has(c));
   const state: State = ordered.length ? 'INDETERMINATE' : criteria.every((c) => c.holds) ? 'PASS' : 'FAIL';
-  return { state, causes: ordered, criteria, map: mapOf(criteria, pre, causes), line: lineOf(state, ordered) };
+  // "could not tell" only when no failure was resolved: flip-flops carry no interval (null), so a flip-flop failure blocks it
+  const failing = criteria.filter((c) => !c.holds);
+  const blind = state === 'FAIL' && failing.length > 0 && failing.every((c) => c.underpowered === true);
+  return { state, causes: ordered, criteria, map: mapOf(criteria, pre, causes), line: lineOf(state, ordered, blind) };
 }
 
 /** The component map (PROCEDURE §4d): one row per criterion, each read on its own floor and its own δ. */

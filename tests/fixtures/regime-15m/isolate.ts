@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { afterAll, expect } from 'vitest';
 
 /** The home this process had before the stub. */
@@ -42,6 +43,16 @@ export const TEST_HOMEDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'regime-15m-ho
 const realUserInfo = os.userInfo.bind(os);
 os.userInfo = ((o?: { encoding: BufferEncoding }) => ({ ...realUserInfo(o as { encoding: BufferEncoding }), homedir: TEST_HOMEDIR })) as typeof os.userInfo;
 os.homedir = (): string => TEST_HOMEDIR;
+
+/**
+ * vitest's worker reports to its main process over an RPC whose every call times out 60 s after it is sent (vitest
+ * 3.2.4, birpc's DEFAULT_TIMEOUT). A synchronous step that starts while a call is in flight and blocks past that window
+ * reds the run with `Timeout calling "onTaskUpdate"` although every test passed; the sandbox read's setup did under
+ * load. `settle()` yields to the event loop for a second: the hook's start update is sent (the runner throttles it by
+ * 100 ms) and answered, so no call is in flight while the next step blocks. Await it before every synchronous step
+ * that can run for tens of seconds.
+ */
+export const settle = async (): Promise<void> => { for (let i = 0; i < 10; i++) await sleep(100); };
 
 let fetchCalls = 0;
 /** The only `fetch` a regime-15m suite has: it counts and throws. */

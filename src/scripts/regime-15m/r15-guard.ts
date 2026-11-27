@@ -19,7 +19,7 @@ import { N_CS, type Span } from '../regime-diag/diag-spec.js';
 import { N_TF, diffSkeleton, registeredSkeleton, skeletonOf, type Frame, type Loaded, type Skeleton } from '../regime-diag/frame.js';
 import { MUTATE as T3_MUTATE } from '../regime-diag/mutate.js';
 import {
-  CHECK_RESOLUTION_MIN, CHECK_VENUES, INPUT_PINS, LOG_FILE, MEMORY_GROWTH, MEMORY_OVERHEAD, MUTATE, OUT_FILES, PINNED_REPO_FILES, REGISTRATION_RE, RERUN_LINE_RE, RERUN_SEAL_FILE,
+  CHECK_BUDGET_MS, CHECK_RESOLUTION_MIN, CHECK_VENUES, INPUT_PINS, LOG_FILE, MEMORY_GROWTH, MEMORY_OVERHEAD, MUTATE, MUTATIONS, OUT_FILES, PINNED_REPO_FILES, REGISTRATION_RE, RERUN_LINE_RE, RERUN_SEAL_FILE,
   SEAL_FILE, SIBLING_FILES, WAVE,
 } from './r15-spec.js';
 import { sealDirOf, sha256, type CheckManifest } from './r15-venues.js';
@@ -28,8 +28,12 @@ const git = (repo: string, args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }).trim();
 
 /** This study's lever and T3's (its modules read REGIME_DIAG_MUTATE): either set refuses the read. */
-export const leverRefusal = (lever: string = MUTATE, t3Lever: string = T3_MUTATE): string | null =>
-  lever !== '' ? `the test-only lever REGIME_15M_MUTATE=${lever} is set` : t3Lever !== '' ? `T3's test-only lever REGIME_DIAG_MUTATE=${t3Lever} is set` : null;
+export const leverRefusal = (lever: string = MUTATE, t3Lever: string = T3_MUTATE): string | null => {
+  // any value refuses; the reason says whether it is one of the registered mutation proofs or a stray setting
+  const kind = (MUTATIONS as readonly string[]).includes(lever) ? 'one of the registered mutation proofs' : 'not a registered mutation proof';
+  if (lever !== '') return `the test-only lever REGIME_15M_MUTATE=${lever} is set (${kind})`;
+  return t3Lever !== '' ? `T3's test-only lever REGIME_DIAG_MUTATE=${t3Lever} is set` : null;
+};
 
 /** The commit the read runs from: HEAD, an ancestor of origin/main, with no tracked change. */
 export function sourceRefusal(repo: string): { commit: string | null; reason: string | null } {
@@ -196,6 +200,7 @@ export function checkRefusal(m: CheckManifest, dir: string, panel: readonly stri
     const rec = m.venues.find((x) => x.venue === v);
     if (!rec) return `the check manifest has no ${v} record`;
     if (rec.resolution_min !== CHECK_RESOLUTION_MIN[v]) return `${v} was fetched at ${rec.resolution_min} m, not the registered ${CHECK_RESOLUTION_MIN[v]} m`;
+    if (!(Number.isFinite(rec.seconds) && rec.seconds * 1000 <= CHECK_BUDGET_MS)) return `${v} took ${rec.seconds} s to fetch, over the 2 h budget of item 6`;
     if (rec.coins.length !== panel.length || panel.some((coin, i) => rec.coins[i]?.coin !== coin)) return `${v}'s records are not the panel, in its order`;
     for (const c of rec.coins) {
       if (c.status !== 'bars') continue;

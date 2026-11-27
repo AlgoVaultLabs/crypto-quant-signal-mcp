@@ -109,10 +109,30 @@ describe('regime-15m: Bar A', () => {
     expect([lineOf('PASS', []), lineOf('FAIL', [])]).toEqual(['REGIME_15M_BACKTEST=PASS', 'REGIME_15M_BACKTEST=FAIL']);
   });
 
-  it('the underpowered note is descriptive: it never changes a state', () => {
+  it('the underpowered note never changes a state; a FAIL whose every failing criterion carries it reads FAIL (underpowered)', () => {
     const wide = state({ a4Theta: { point: 3, lb: -2 } });
-    expect([wide.state, wide.criteria[0].underpowered]).toEqual(['PASS', true]);
+    expect([wide.state, wide.criteria[0].underpowered, wide.line]).toEqual(['PASS', true, 'REGIME_15M_BACKTEST=PASS']);
     expect(state({ a4Theta: { point: 0, lb: -1 } }).criteria[0].underpowered).toBe(false);
+    // δ_A4 = 5: an interval whose lower half is at least 5 wide cannot resolve δ — 15m equal to 1h would fail too
+    const blind = state({ a4Theta: { point: 0, lb: -6 } });
+    expect([blind.state, blind.causes, blind.criteria[0].underpowered, blind.line]).toEqual(['FAIL', [], true, 'REGIME_15M_BACKTEST=FAIL (underpowered)']);
+    // a FAIL resolved at δ (the interval is narrower than δ and still below −δ) carries no annotation
+    const worse = state({ a4Theta: { point: -8, lb: -9 } });
+    expect([worse.state, worse.criteria[0].underpowered, worse.line]).toEqual(['FAIL', false, 'REGIME_15M_BACKTEST=FAIL']);
+    // the annotation follows a FAILING criterion only: an underpowered criterion that holds beside a flip-flop failure does not carry it
+    const ff = state({ a4Theta: { point: 3, lb: -2 }, ff: { '15m': 31, '1h': 12, '4h': 30, '1d': 10 } });
+    expect([ff.state, ff.criteria[0].holds, ff.criteria[0].underpowered, ff.line]).toEqual(['FAIL', true, true, 'REGIME_15M_BACKTEST=FAIL']);
+    // every failing criterion must carry it (ruling R2-F1): both A4 and Δ1 failing, both unresolved at δ
+    const both = state({ a4Theta: { point: 0, lb: -6 }, d1Theta: { point: 0, lb: -5 } });
+    expect([both.state, both.criteria.map((c) => [c.holds, c.underpowered]), both.line]).toEqual(['FAIL', [[false, true], [false, true], [true, null]], 'REGIME_15M_BACKTEST=FAIL (underpowered)']);
+    // mixed: an unresolved A4 failure beside a flip-flop failure (no interval, so never underpowered) is plain FAIL
+    const withFf = state({ a4Theta: { point: 0, lb: -6 }, ff: { '15m': 31, '1h': 12, '4h': 30, '1d': 10 } });
+    expect([withFf.state, withFf.criteria.map((c) => [c.holds, c.underpowered]), withFf.line]).toEqual(['FAIL', [[false, true], [true, false], [false, null]], 'REGIME_15M_BACKTEST=FAIL']);
+    // mixed: an unresolved A4 failure beside a Δ1 failure resolved at δ (δ_Δ1 = 4, interval 1 wide, LB −9) is plain FAIL
+    const withD1 = state({ a4Theta: { point: 0, lb: -6 }, d1Theta: { point: -8, lb: -9 } });
+    expect([withD1.state, withD1.criteria.map((c) => [c.holds, c.underpowered]), withD1.line]).toEqual(['FAIL', [[false, true], [false, false], [true, null]], 'REGIME_15M_BACKTEST=FAIL']);
+    expect([lineOf('FAIL', [], true), lineOf('PASS', [], true), lineOf('INDETERMINATE', ['floor'], true)])
+      .toEqual(['REGIME_15M_BACKTEST=FAIL (underpowered)', 'REGIME_15M_BACKTEST=PASS', 'REGIME_15M_BACKTEST=INDETERMINATE (floor)']);
   });
 
   it('the component map: one row per criterion, its dial, read on its own floor and its own δ', () => {

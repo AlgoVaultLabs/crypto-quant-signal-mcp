@@ -74,7 +74,6 @@ export function recomputeT3Outcomes(f: Frame, F: number, B: number = B_BOOT): T3
 }
 
 /** Every figure the leg compares, from a fit frame with outcomes. */
-export const recomputeT3 = (f: Frame, F: number, B: number = B_BOOT): T3Figures => ({ ...recomputeT3Labels(f, B), ...recomputeT3Outcomes(f, F, B) });
 
 /** The same figures, read from T3's fit result (its JSON). Throws when the result lacks one. */
 export function t3FiguresOf(json: unknown): T3Figures {

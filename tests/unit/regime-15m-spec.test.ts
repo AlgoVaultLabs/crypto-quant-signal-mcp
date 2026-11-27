@@ -6,7 +6,7 @@ import '../fixtures/regime-15m/isolate.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ALPHA, B_BOOT, FIT, REGIME_AGAINST_MIN_CONFIDENCE, SEED, SPAN, TFS } from '../../src/scripts/regime-diag/diag-spec.js';
+import { ALPHA, FIT, REGIME_AGAINST_MIN_CONFIDENCE, SEED, SPAN, TFS } from '../../src/scripts/regime-diag/diag-spec.js';
 import * as spec from '../../src/scripts/regime-15m/r15-spec.js';
 import { RUN_STATS } from '../../src/scripts/regime-15m/r15-stats.js';
 import { runtimeClosure } from '../fixtures/regime-15m/closure.js';
@@ -34,8 +34,9 @@ describe('regime-15m: the registered constants', () => {
     expect([spec.FIRST_MONTH, spec.LAST_MONTH]).toEqual(['2024-01', '2025-12']);
   });
 
-  it('inherits T3\'s seed, resample count, alpha and confidence line by name', () => {
-    expect([spec.STUDY_SEED, spec.BOOT, spec.STUDY_ALPHA, spec.D1_MIN_CONFIDENCE]).toEqual([SEED, B_BOOT, ALPHA, REGIME_AGAINST_MIN_CONFIDENCE]);
+  it('inherits T3\'s seed, alpha and confidence line by name', () => {
+    expect([spec.STUDY_SEED, spec.STUDY_ALPHA, spec.D1_MIN_CONFIDENCE]).toEqual([SEED, ALPHA, REGIME_AGAINST_MIN_CONFIDENCE]);
+    expect(Object.keys(spec)).not.toContain('BOOT');
     expect([spec.RETENTION, spec.KEY_FLOOR_PP]).toEqual([0.5, 3.0]);
   });
 

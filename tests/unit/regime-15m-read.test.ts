@@ -3,7 +3,7 @@
 // (test a): T3's own `outcomeRun` reads the synthetic panel's fit, and the sibling's parity leg must reproduce its
 // output byte for byte from a different construction of the same rows. Then the guard, leg by leg. Synthetic data
 // only; every seal lives in the sandbox.
-import '../fixtures/regime-15m/isolate.js';
+import { settle } from '../fixtures/regime-15m/isolate.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,7 +14,7 @@ import { N_TF } from '../../src/scripts/regime-diag/frame.js';
 import {
   archivesRefusal, checkRefusal, claimSeal, harnessRefusal, leverRefusal, memoryPlan, memoryRefusal, monthRefusal, outRefusal, pinsOf, pinsRefusal, rehearse, sealState, skeletonRefusal, targetRefusal, within,
 } from '../../src/scripts/regime-15m/r15-guard.js';
-import { parityOf, recomputeT3, t3FiguresOf } from '../../src/scripts/regime-15m/r15-parity.js';
+import { parityOf, recomputeT3Labels, recomputeT3Outcomes, t3FiguresOf, type T3Figures } from '../../src/scripts/regime-15m/r15-parity.js';
 import { readRun, type ReadInput, type ReadResult } from '../../src/scripts/regime-15m/r15-run.js';
 import {
   ARCHIVES_PIN, CENSUS_PIN, CHECK_MANIFEST, CHECK_PIN, LOG_FILE, OUT_FILES, PRE_FILE, RERUN_SEAL_FILE, RESULT_FILE, RESULT_SHA_FILE, SEAL_DIR, SEAL_FILE, T3_FIT_PIN, T3_REGISTRATION, TF_KEYS,
@@ -29,6 +29,8 @@ const sha = (s: string | Buffer): string => crypto.createHash('sha256').update(s
 const B = 100, F = 5;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const readJson = (file: string): any => JSON.parse(fs.readFileSync(file, 'utf8'));
+/** T3's figures recomputed whole: the label-only leg and the path-label leg together, as the differential compares them. */
+const recomputeT3 = (f: Parameters<typeof recomputeT3Labels>[0], F_: number, B_: number): T3Figures => ({ ...recomputeT3Labels(f, B_), ...recomputeT3Outcomes(f, F_, B_) });
 
 describe('regime-15m: the read in a sandbox repository', () => {
   let sb: Sandbox;
@@ -40,11 +42,13 @@ describe('regime-15m: the read in a sandbox repository', () => {
     repo: sb.repo, censusFile: sb.censusFile, archives: sb.archives, archiveManifest: sb.archiveManifest, t3Fit: sb.t3Fit, out, home: sb.home, log: (l) => lines.push(l), ...more,
   });
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    await settle();
     sb = makeSandbox({ B, F });
     unlandedOut = sb.out('unlanded');
     unlanded = readRun(inp(unlandedOut), sb.seam);
     sb.push();
+    await settle();
     firstOut = sb.out('first');
     first = readRun(inp(firstOut), sb.seam);
     secondOut = sb.out('second');
@@ -64,7 +68,7 @@ describe('regime-15m: the read in a sandbox repository', () => {
 
   it('reads once: the outputs record the registration commit, which landed before every output', () => {
     expect([first.verdict, first.reason]).toEqual(['PASS', '']);
-    expect(first.line).toMatch(/^REGIME_15M_BACKTEST=(PASS|FAIL|INDETERMINATE \([a-z_, ]+\))$/);
+    expect(first.line).toMatch(/^REGIME_15M_BACKTEST=(PASS|FAIL|FAIL \(underpowered\)|INDETERMINATE \([a-z_, ]+\))$/);
     const commit = git(sb.repo, 'log', '--diff-filter=A', '--format=%H', 'origin/main', '--', REGISTRATION_PATH);
     expect(result.registration).toMatchObject({ path: REGISTRATION_PATH, commit, origin_main: git(sb.repo, 'rev-parse', 'origin/main') });
     const text = fs.readFileSync(path.join(firstOut, RESULT_FILE), 'utf8');
@@ -207,6 +211,12 @@ describe('regime-15m: the read in a sandbox repository', () => {
     expect(checkRefusal(m, dir, W_CENSUS.panel, m.census_sha256, window)).toBeNull();
     expect(checkRefusal(m, dir, W_CENSUS.panel, 'd'.repeat(64), window)).toMatch(/another census/);
     expect(checkRefusal(m, dir, W_CENSUS.panel, m.census_sha256, { ...window, to: '2030-01-01T00:00:00.000Z' })).toMatch(/not the window/);
+    const slow = { ...m, venues: m.venues.map((v) => (v.venue === 'BITGET' ? { ...v, seconds: 7_200.5 } : v)) };
+    expect(checkRefusal(slow, dir, W_CENSUS.panel, m.census_sha256, window)).toMatch(/BITGET took 7200\.5 s to fetch, over the 2 h budget/);
+    const edge = { ...m, venues: m.venues.map((v) => (v.venue === 'BITGET' ? { ...v, seconds: 7_200 } : v)) };
+    expect(checkRefusal(edge, dir, W_CENSUS.panel, m.census_sha256, window)).toBeNull();
+    const unknown = { ...m, venues: m.venues.map((v) => (v.venue === 'BYBIT' ? { ...v, seconds: Number.NaN } : v)) };
+    expect(checkRefusal(unknown, dir, W_CENSUS.panel, m.census_sha256, window)).toMatch(/BYBIT took NaN s/);
     const coarse = { ...m, venues: m.venues.map((v) => (v.venue === 'OKX' ? { ...v, resolution_min: 5 } : v)) };
     expect(checkRefusal(coarse, dir, W_CENSUS.panel, m.census_sha256, window)).toMatch(/OKX was fetched at 5 m/);
     const escape = { ...m, venues: m.venues.map((v) => (v.venue === 'OKX' ? { ...v, coins: v.coins.map((c) => (c.status === 'bars' ? { ...c, file: 'OKX/../BYBIT/x.csv' } : c)) } : v)) };
@@ -223,7 +233,8 @@ describe('regime-15m: the guard\'s own pieces', () => {
 
   it('the test-only levers refuse a read: this study\'s and T3\'s', () => {
     expect(leverRefusal('', '')).toBeNull();
-    expect(leverRefusal('swap', '')).toMatch(/REGIME_15M_MUTATE=swap/);
+    expect(leverRefusal('swap', '')).toMatch(/REGIME_15M_MUTATE=swap is set \(one of the registered mutation proofs\)/);
+    expect(leverRefusal('bogus', '')).toMatch(/REGIME_15M_MUTATE=bogus is set \(not a registered mutation proof\)/);
     expect(leverRefusal('', 'replay')).toMatch(/REGIME_DIAG_MUTATE=replay/);
   });
 

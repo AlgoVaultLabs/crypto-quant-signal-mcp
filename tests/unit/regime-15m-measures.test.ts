@@ -2,7 +2,7 @@
 // on synthetic bars (test b), the function-level differential against T3's statistics, and the mutation proofs
 // (test c): a 99-bar 15m window, swapped timeframe keys, pooled rows instead of day clusters, a flipped margin sign
 // and a dropped baseline each turn a check red. Synthetic data only.
-import '../fixtures/regime-15m/isolate.js';
+import { settle } from '../fixtures/regime-15m/isolate.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { aggregate, noGap } from '../../src/scripts/regime-diag/archive.js';
 import { a5, flipFlops } from '../../src/scripts/regime-diag/bars.js';
@@ -46,7 +46,7 @@ const opts = (m: Mods, run = 'main') => ({ B, alpha: ALPHA, seeds: m.stats.seeds
 const json = (x: unknown): string => JSON.stringify(x);
 
 let w: Built;
-beforeAll(() => { w = world(); }, 300_000);
+beforeAll(async () => { await settle(); w = world(); }, 300_000);
 
 // ── the checks the mutation proofs break, each green on the sibling as written ─────────────────────────────────
 

@@ -13,7 +13,7 @@
 //
 // Callers gate on the token, never on the exit code alone:
 //   REGIME_15M_RUN_VERDICT=PASS | REFUSED — <reason> | INDETERMINATE — <reason>        exit 0 | 1 | 3
-// and, when the read ran, the backtest's line before it: REGIME_15M_BACKTEST=PASS | FAIL | INDETERMINATE (<causes>).
+// and, when the read ran, the backtest's line before it: REGIME_15M_BACKTEST=PASS | FAIL | FAIL (underpowered) | INDETERMINATE (<causes>).
 // Only `main()` prints them, and `main()` never passes a seam: a test's world cannot print a registered read.
 import fs from 'node:fs';
 import path from 'node:path';

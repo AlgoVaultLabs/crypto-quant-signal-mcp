@@ -9,7 +9,7 @@
 //
 // T3's harness (src/scripts/regime-diag/**, scripts/regime-diag/**) is import-only: nothing here edits it.
 // The file is not called spec.ts: the caller-tag gate names every file under src/scripts by its basename.
-import { ALPHA, B_BOOT, FIT, MIN_MS, REGIME_AGAINST_MIN_CONFIDENCE, SEED, SPAN, TFS, type Span, type Tf, type Win } from '../regime-diag/diag-spec.js';
+import { ALPHA, FIT, MIN_MS, REGIME_AGAINST_MIN_CONFIDENCE, SEED, SPAN, TFS, type Span, type Tf, type Win } from '../regime-diag/diag-spec.js';
 
 export const WAVE = 'EDGE-REGIME-15M-BACKTEST-W1';
 /** The registration: the one file of this name on origin/main (its date is its landing date). */
@@ -48,7 +48,6 @@ export const WINDOW_END_MS = STUDY_SPAN.t0Ms + STUDY_SPAN.n * MIN_MS;
 
 /** T3's constants the study inherits by name (item 2). */
 export const STUDY_SEED = SEED;
-export const BOOT = B_BOOT;
 export const STUDY_ALPHA = ALPHA;
 /** Δ1's rows: TRENDING at confidence ≥ 60, as T3's primary and its label-timeframe map row read them. */
 export const D1_MIN_CONFIDENCE = REGIME_AGAINST_MIN_CONFIDENCE;
@@ -77,7 +76,7 @@ export const CHECK_RESOLUTION_MIN: Readonly<Record<CheckVenue, number>> = Object
 export const CHECK_PACE_MS: Readonly<Record<CheckVenue, number>> = Object.freeze({ BYBIT: 120, OKX: 120, BITGET: 250 });
 /** The most bars one request returns: Bybit kline 1,000, OKX history-candles 100, Bitget history-candles 200. */
 export const CHECK_PAGE_MAX: Readonly<Record<CheckVenue, number>> = Object.freeze({ BYBIT: 1000, OKX: 100, BITGET: 200 });
-/** The fetching budget per venue (item 6). */
+/** The fetching budget per venue (item 6): the guard refuses check bars whose venue took longer to fetch. */
 export const CHECK_BUDGET_MS = 2 * 3_600_000;
 
 // ── the read's home ──────────────────────────────────────────────────────────────────────────────────────────
