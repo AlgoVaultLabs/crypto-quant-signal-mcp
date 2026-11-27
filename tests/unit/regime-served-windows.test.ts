@@ -8,7 +8,8 @@
  * `regimeFetchWindow` for every timeframe it declares, so 1h, 4h and 1d are identical by construction; 15m is the
  * same formula on `intervalMsFor('15m')` and 100 bars.
  *
- * Sections: the registry · the fetch · the 15m window is a span contract-suite S already serves · every channel's
+ * Sections: the registry · the fetch · the 15m window is a span contract-suite S already serves · it is the window
+ * T0 registered (`REGIME_15M_WINDOW_BARS`, src/scripts/regime-15m/r15-spec.ts) · every channel's
  * admission (zod via the declaration, the pipeline row, the x402 Bazaar schema + AJV) · the tool asks every
  * promoted venue for exactly that window · a paid x402 15m call that errors is never settled.
  */
@@ -26,6 +27,7 @@ import { REGIME_TIMEFRAMES, REGIME_TIMEFRAME_DEFAULT, PUBLIC_TOOL_ENUM_PARAMS, P
 import { BAZAAR_ROUTES } from '../../src/lib/x402-bazaar.js';
 import { validateToolInput } from '../../src/lib/x402-http-routes.js';
 import type { Candle, ExchangeAdapter } from '../../src/types.js';
+import { REGIME_15M_WINDOW_BARS } from '../../src/scripts/regime-15m/r15-spec.js';
 
 const MIN15 = 900_000;
 /** Several instants: the epoch, a real capture clock (the parity fixture's), a non-aligned ms, a far future. */
@@ -95,6 +97,20 @@ describe('the 15m window spans exactly a window the product already serves (trad
     const hit = servingSpans('15m', null, step).find((s) => s.spanMs === regimeSpan);
     expect(hit, 'no served 15m span equals the regime window — contract suite S does not cover it').toBeDefined();
     expect(hit!.label.split('+')).toContain('trade_call@100');
+  });
+});
+
+// ─────────────────────────────── the window T0 scored ───────────────────────────────
+
+describe('the served 15m window is the window EDGE-REGIME-15M-BACKTEST-W1 registered (T0)', () => {
+  it('REGIME_SERVED_WINDOWS[15m] and the fetch both equal T0\'s REGIME_15M_WINDOW_BARS', () => {
+    expect(REGIME_15M_WINDOW_BARS).toBeGreaterThan(0);
+    expect(REGIME_SERVED_WINDOWS['15m']).toBe(REGIME_15M_WINDOW_BARS);
+    for (const now of NOWS) {
+      const w = regimeServedFetchWindow('15m', now);
+      expect(w.candleCount).toBe(REGIME_15M_WINDOW_BARS);
+      expect(w.startTime).toBe(now - REGIME_15M_WINDOW_BARS * MIN15);
+    }
   });
 });
 

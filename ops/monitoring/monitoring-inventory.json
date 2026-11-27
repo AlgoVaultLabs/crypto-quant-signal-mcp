@@ -2198,7 +2198,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "a997887f91192cb70e7ed98f7e3e12916e7549cdd68b15c3cd76a2fdf32fa84a",
+      "sha256": "5d51cdbdb1e09c5c019fb201b767ffb7f74d8d3678bbb3bb43d6659f847c4809",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
@@ -3810,6 +3810,28 @@
         "at": "20261118T165033Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "owed-read-regime-15m-sampler-trigger",
+      "artifact": "ops/monitoring/owed-read-regime-15m-sampler-trigger.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-regime-15m-sampler-trigger.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-regime-15m-sampler-trigger.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "pending_since": "2026-11-27",
+      "sha256": "bf5f6f41626dcf347349db3c485cc1523ad5c633fb26046d958453120a145d62",
+      "alert_ids": [],
+      "owner_wave": "REGIME-15M-SERVE-W1",
+      "notes": "The 15m snapshot-demand trigger (REGIME-15M-SERVE-W1 CH3(b), ARC-REGIME-15M T6; G2 = Mr.1 decides 15m snapshots from data). ONE registry row, regime-15m-sampler-trigger, anchors {since, callers_min 5}; the bar lives HERE and the read refuses a different one. Each runner tick prints REGIME_15M_SAMPLER_TRIGGER=FIRED|PENDING|INDETERMINATE (<cause>): FIRED (>= 5 distinct external get_market_regime 15m callers in request_log under the census caller identity, or 15m refusals on scan_market_regimes / pre_trade_check from >= 5 caller_keys) -> runner FAIL -> OWED_READ_FAIL pages once; PENDING and any read failure -> INDETERMINATE (retried hourly); expiry after a PENDING last record = NOT_FIRED. One REPEATABLE READ READ ONLY bundle as aoe_readonly (request_log + refusal_counts; 278 ms over 30 d, measured 2026-11-27). Self-test floor 38; the SQL's counts are pinned on PGlite (tests/unit/owed-read-regime-15m-sampler-trigger-pglite.test.ts). Stdlib only."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

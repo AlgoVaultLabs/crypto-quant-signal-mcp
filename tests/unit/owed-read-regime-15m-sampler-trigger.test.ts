@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +41,7 @@ const canonicalRow = (notBefore: number, since: number) => ({
   timeout_s: 300,
   anchors: { since, callers_min: 5 },
   criteria:
-    'FIRED — 15m snapshot demand met; Mr.1 decides 15m snapshots (G2). Bar: >= 5 distinct external callers of get_market_regime at 15m (request_log, census caller identity), or 15m refusals on scan_market_regimes/pre_trade_check from >= 5 caller_keys. PENDING retries hourly; expiry = NOT_FIRED.',
+    'FIRED — 15m snapshot demand met; Mr.1 decides 15m snapshots (G2). Bar: >= 5 distinct external callers of get_market_regime at 15m (request_log, census caller identity), or 15m refusals on scan_market_regimes/pre_trade_check from >= 5 caller_keys. PENDING retries hourly; at expiry NOT_FIRED only if the last record is PENDING, else INDETERMINATE and re-run.',
 });
 
 const selfTest = (script: string) => spawnSync('python3', [script, '--self-test'], { cwd: ROOT, encoding: 'utf8', timeout: 50_000 });
@@ -55,6 +56,41 @@ describe('the read\'s self-test — judged by its token, counted against its own
     expect(tokens, `${r.stdout}\n${r.stderr}`.slice(-3000)).toHaveLength(1);
     expect(Number(tokens[0].match(/^SELF_TEST_VERDICT=PASS — (\d+) checks /)?.[1])).toBe(floor);
     expect(r.status).toBe(0);
+  });
+});
+
+describe('the registry row and the inventory rows (land delta)', () => {
+  const sha256 = (rel: string) => createHash('sha256').update(readFileSync(join(ROOT, rel))).digest('hex');
+  const epoch = (ts: string) => Date.parse(ts) / 1000;
+  const reads = JSON.parse(read('ops/monitoring/owed-reads.json')).reads as Array<Record<string, any>>;
+  const inventory = JSON.parse(read('ops/monitoring/monitoring-inventory.json')).artifacts as Array<Record<string, any>>;
+
+  it('ONE registry row, the canonical row for its own clock: since on/after day 0 and before not_before, not_before on the hour, 30 days', () => {
+    const rows = reads.filter((r) => r.id === READ_ID);
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    const own = Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_')));
+    expect(own).toEqual(canonicalRow(epoch(r.not_before), r.anchors.since));
+    expect(Number.isInteger(r.anchors.since) && r.anchors.since >= 1_795_737_600).toBe(true);
+    expect(r.anchors.since).toBeLessThan(epoch(r.not_before));
+    expect(epoch(r.not_before) % 3600).toBe(0);
+  });
+
+  it('the read\'s inventory row is the committed bytes, called by the runner, pending its install', () => {
+    const r = inventory.find((x) => x.id === 'owed-read-regime-15m-sampler-trigger')!;
+    expect(r).toBeDefined();
+    expect([r.artifact, r.kind, r.host, r.host_path, r.invoked_by, r.schedule, r.criticality, r.owner_wave]).toEqual(
+      [SCRIPT, 'executable', 'signal-1', '/opt/algovault-monitoring/owed-read-regime-15m-sampler-trigger.py', 'called-by:owed-read-runner', null, 'load-bearing', WAVE]);
+    expect(r.installed_at).toEqual([{ host: 'signal-1', path: r.host_path }]);
+    expect(['pending', 'installed']).toContain(r.install_state);
+    expect(r.pending_since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    if (r.install_state === 'installed') expect(r.first_install?.by).toBe('ops/scripts/install-monitoring-artifact.sh');
+    expect(r.alert_ids).toEqual([]);
+    expect(r.sha256, 'inventory sha256 is stale — re-stamp it in the same commit as the edit').toBe(sha256(SCRIPT));
+  });
+
+  it('the registry\'s own inventory row carries the registry\'s bytes', () => {
+    expect(inventory.find((x) => x.id === 'owed-reads-registry')!.sha256).toBe(sha256('ops/monitoring/owed-reads.json'));
   });
 });
 

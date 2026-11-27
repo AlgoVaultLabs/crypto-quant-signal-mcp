@@ -454,6 +454,20 @@
       },
       "criteria": "Did the served regime labels of [2026-11-16T08Z, 2026-12-16T08Z) plus each timeframe's 14-bar look-ahead reach the vault whole? PASS = one REPEATABLE READ READ ONLY pass as aoe_readonly wrote every counted row to regime-forward-30d/ with each file's sha256; FAIL = a rule-2 regime_since break; anything unread = INDETERMINATE. Scoring is the Mac read's.",
       "_expires_at_rule": "Registration audits/regime-forward-preregistration-2026-11-18.md §1 (ruling Q2 = A, 2026-11-18): the window is [W0, W1) = [2026-11-16T08:00:00Z, 2026-12-16T08:00:00Z); not_before = W1 + 14 days, when the 1d look-ahead's last bar has closed; expires_at = not_before + 14 days. timeout_s 1700 > the read's own psql bound (1400 s), under the runner's 1800."
+    },
+    {
+      "id": "regime-15m-sampler-trigger",
+      "wave": "REGIME-15M-SERVE-W1",
+      "not_before": "2026-11-27T16:00:00Z",
+      "expires_at": "2026-12-27T16:00:00Z",
+      "script": "owed-read-regime-15m-sampler-trigger.py",
+      "timeout_s": 300,
+      "anchors": {
+        "since": 1795784158,
+        "callers_min": 5
+      },
+      "criteria": "FIRED — 15m snapshot demand met; Mr.1 decides 15m snapshots (G2). Bar: >= 5 distinct external callers of get_market_regime at 15m (request_log, census caller identity), or 15m refusals on scan_market_regimes/pre_trade_check from >= 5 caller_keys. PENDING retries hourly; at expiry NOT_FIRED only if the last record is PENDING, else INDETERMINATE and re-run.",
+      "_expires_at_rule": "Spec REGIME-15M-SERVE-W1 CH3(b) + ruling Q4 = A (2026-11-27): anchors.since = this edit's UTC time (2026-11-27T12:55:58Z, the post-rebase registry edit); not_before = the next full UTC hour after the planned land (14:30Z) + 1 h; expires_at = not_before + 30 d. The read counts from since, so a later first tick loses no demand. timeout_s 300 > the read's own psql bound (120 s), under the runner's 1800."
     }
   ]
 }
