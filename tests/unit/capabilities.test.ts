@@ -87,6 +87,32 @@ describe('ONE perp default + ONE timeframe set across the public schemas (ARCH-M
     expect(tf.enum).toEqual([...REGIME_TIMEFRAMES]);
     expect(tf.default).toBe(REGIME_TIMEFRAME_DEFAULT);
   });
+  it('REGIME-15M-SERVE-W1: that enum is the only Bazaar byte that moved — every route equals 481675f6 with it set back', async () => {
+    // sha256 of JSON.stringify(route), each recorded from the 481675f6 tree (the wave's BASE) with get_market_regime's
+    // timeframe enum set to the literal it held there. A later wave that edits a route re-records its hash here.
+    const { createHash } = await import('node:crypto');
+    const { BAZAAR_ROUTES } = await import('../../src/lib/x402-bazaar.js');
+    const AT_BASE: Record<string, string> = {
+      get_trade_signal: '6f5332b6f18ee170c83d000d25b9d1f3202540041f2fb7df8fa2c4ab024bd890',
+      scan_funding_arb: '98de612c859785f5c06ceb728fc71495eb4f9db2ea332a301f2b274f580e723a',
+      get_market_regime: 'ad78cb480158b9df3daf9ba9a629ed21b11da376125e9920d66af02a1cac4f3c',
+      scan_trade_calls: '4267e376d152ac4c374b8f9229603d07cf5603e9132699dc687870c927d6de07',
+      get_equity_call: '17024d6b869616e5002d5a1d44c5d6749fd6f4713075337b4f90219d2025a2a0',
+      get_equity_regime: '633939660fa036c06ecd03c35d579afedaa114299210feab6c71043c903dd6d5',
+      pre_trade_check: 'cf2ff340b498e4471d5209784bb4346b173a3870743bfadabc75bb66359e9aff',
+      get_support_resistance_zones: 'b114bbf1e5da46753c77ded095ff74b7f52aaacef70c5dd83338bd1bd5592c5e',
+    };
+    const now: Record<string, string> = {};
+    for (const [name, route] of Object.entries(BAZAAR_ROUTES as Record<string, unknown>)) {
+      const r = JSON.parse(JSON.stringify(route)) as { inputSchema: { properties: { timeframe: { enum: string[] } } } };
+      if (name === 'get_market_regime') {
+        expect(r.inputSchema.properties.timeframe.enum).toEqual(['15m', '1h', '4h', '1d']);
+        r.inputSchema.properties.timeframe.enum = ['1h', '4h', '1d'];
+      }
+      now[name] = createHash('sha256').update(JSON.stringify(r)).digest('hex');
+    }
+    expect(now).toEqual(AT_BASE);
+  });
 });
 
 describe('capabilities SoT — floorRoundTo10', () => {

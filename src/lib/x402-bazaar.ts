@@ -31,7 +31,7 @@
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
-import { PUBLIC_VENUE_IDS, PRE_TRADE_CHECK_PARAM_DECL, SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES } from './tool-param-schema.js';
+import { PUBLIC_VENUE_IDS, PRE_TRADE_CHECK_PARAM_DECL, SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES, REGIME_TIMEFRAMES } from './tool-param-schema.js';
 import { servedDescription } from './feature-registry.js';
 import {
   PARAM_DESC_PRE_TRADE_COIN,
@@ -262,7 +262,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         coin: { type: 'string', maxLength: 20, description: 'Asset symbol, e.g. BTC, ETH, SOL.' },
         timeframe: {
           type: 'string',
-          enum: ['1h', '4h', '1d'],
+          enum: [...REGIME_TIMEFRAMES],
           default: '4h',
           description: 'Candle timeframe for regime classification.',
         },

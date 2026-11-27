@@ -58,6 +58,7 @@ import {
 import { recordNonPublicVenue } from '../../src/lib/non-public-venue-counter.js';
 import { requestContext } from '../../src/lib/license.js';
 import { callTool, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
+import { REGIME_TIMEFRAMES } from '../../src/lib/tool-param-schema.js'; // REGIME-15M-SERVE-W1: line 203's valid_timeframes
 
 const ROOT = resolve(__dirname, '../..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
@@ -200,7 +201,7 @@ describe('the pipeline\'s timeframe admission refusal counts', () => {
   it('get_market_regime 2h through callTool: refused INVALID_TIMEFRAME and one timeframe_admission row with the ctx caller', async () => {
     const out = await callTool({ tool: 'get_market_regime', input: { coin: 'BTC', timeframe: '2h' } as unknown as ValidatedToolInput, license: KEYED as never, channel: 'mcp', ctx: { sessionId: 's', ipHash: IP, isAutomated: false } as never });
     expect(out.ok).toBe(false);
-    expect((out as { payload: { code: string; valid_timeframes: string[] } }).payload).toMatchObject({ code: 'INVALID_TIMEFRAME', valid_timeframes: ['1h', '4h', '1d'] });
+    expect((out as { payload: { code: string; valid_timeframes: string[] } }).payload).toMatchObject({ code: 'INVALID_TIMEFRAME', valid_timeframes: [...REGIME_TIMEFRAMES] });
     expect(pendingOf('timeframe_admission')).toEqual([
       { day: DAY, reason: 'timeframe_admission', tool: 'get_market_regime', parameter: 'timeframe', value: '2h', keyed: true, callerKey: IP, count: 1 },
     ]);

@@ -38,6 +38,8 @@ import {
 } from '../../src/lib/tool-param-schema.js';
 // REGIME-TF-ADMISSION-W1: the sampler's set lives in its leaf; regime-snapshots.ts re-exports the same object.
 import { REGIME_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshot-timeframes.js';
+// REGIME-15M-SERVE-W1: get_market_regime's served set — this registry's market_regime row plus 15m.
+import { REGIME_SERVED_TIMEFRAMES } from '../../src/lib/regime-served-windows.js';
 import { REGIME_SNAPSHOT_TIMEFRAMES as REEXPORTED_SNAPSHOT_TIMEFRAMES } from '../../src/lib/regime-snapshots.js';
 import { CANDLE_COUNTS as CORE_CANDLE_COUNTS, regimeFetchWindow } from '../../src/lib/market-regime-core.js';
 import { CANDLE_COUNTS as TOOL_CANDLE_COUNTS } from '../../src/tools/get-market-regime.js';
@@ -74,9 +76,10 @@ describe('the registry', () => {
     for (const r of SERVING_WINDOWS) for (const tf of Object.keys(r.bars)) expect(TIMEFRAMES, `${r.consumer} ${tf}`).toContain(tf);
   });
 
-  it('the regime rows equal the tool\'s admitted timeframes and the sampler\'s, exactly', () => {
+  it('the regime rows: market_regime plus 15m is the tool\'s served set (REGIME-15M-SERVE-W1); the reference row is the sampler\'s', () => {
     const tfsOf = (c: string) => Object.keys(SERVING_WINDOWS.find((r) => r.consumer === c)!.bars).sort();
-    expect(tfsOf('market_regime')).toEqual([...REGIME_TIMEFRAMES].sort());
+    expect([...tfsOf('market_regime'), '15m'].sort()).toEqual([...REGIME_SERVED_TIMEFRAMES].sort());
+    expect(REGIME_TIMEFRAMES).toBe(REGIME_SERVED_TIMEFRAMES);
     expect(tfsOf('regime_reference')).toEqual([...REGIME_SNAPSHOT_TIMEFRAMES].sort());
   });
 
@@ -128,9 +131,10 @@ describe('each regime tool reads its own timeframe symbol (REGIME-TF-ADMISSION-W
   const zodTimeframeSymbolOf = (rel: string, from = 0, to?: number): string[] =>
     [...src(rel).slice(from, to).matchAll(/\btimeframe: z\.enum\((\w+)\)/g)].map((m) => m[1]);
 
-  it('the two sets are two symbols holding the same three values today', () => {
+  it('the two sets are two symbols; the snapshot set is a strict subset of the live set (REGIME-15M-SERVE-W1: 15m is live only)', () => {
     expect(REGIME_SNAPSHOT_TIMEFRAMES).not.toBe(REGIME_TIMEFRAMES);
-    expect([...REGIME_SNAPSHOT_TIMEFRAMES]).toEqual([...REGIME_TIMEFRAMES]);
+    for (const tf of REGIME_SNAPSHOT_TIMEFRAMES) expect(REGIME_TIMEFRAMES).toContain(tf);
+    expect(REGIME_TIMEFRAMES.length).toBeGreaterThan(REGIME_SNAPSHOT_TIMEFRAMES.length);
   });
 
   it('get_market_regime: REGIME_TIMEFRAMES in its Zod enum, its admission row and its docs row', () => {
@@ -198,8 +202,9 @@ describe('each regime tool reads its own timeframe symbol (REGIME-TF-ADMISSION-W
     }
     const closure = [...seen].sort();
     expect(closure).toContain('src/lib/regime-snapshot-timeframes.ts'); // the walk follows real edges
-    expect(closure.filter((f) => /performance-db|regime-snapshots\.ts$/.test(f))).toEqual([]);
-    expect(closure.length, closure.join(', ')).toBeLessThanOrEqual(6);
+    expect(closure.filter((f) => /performance-db|regime-snapshots\.ts$|market-regime-core\.ts$/.test(f))).toEqual([]);
+    // REGIME-15M-SERVE-W1: 5 -> 7, measured (+ regime-served-windows.ts, serving-windows.ts); the classifier stays out.
+    expect(closure.length, closure.join(', ')).toBeLessThanOrEqual(7);
   });
 });
 

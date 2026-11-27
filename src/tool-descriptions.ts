@@ -145,7 +145,7 @@ export const PARAM_DESC_FUNDING_LIMIT =
 export const PARAM_DESC_REGIME_COIN =
   'Base asset crypto signal, e.g. BTC ETH SOL signal. Crypto quant regime.';
 export const PARAM_DESC_REGIME_TIMEFRAME =
-  'Candle timeframe, e.g. 1h 4h 1d. Buy sell hold AI trading signal context.';
+  'Candle timeframe, e.g. 15m 1h 4h 1d. Buy sell hold AI trading signal context.';
 export const PARAM_DESC_REGIME_EXCHANGE =
   'Crypto venue, e.g. Binance Bybit OKX Bitget Hyperliquid. Multi-exchange.';
 // scan_trade_calls param describe() strings.
@@ -307,7 +307,7 @@ const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
   [PARAM_DESC_FUNDING_MIN_SPREAD_BPS, 'Minimum funding rate spread between venues, in basis points (default 5).'],
   [PARAM_DESC_FUNDING_LIMIT, 'Maximum ranked results to return, 1 to 200 (default 10).'],
   [PARAM_DESC_REGIME_COIN, 'Base asset, e.g. BTC, ETH or SOL (no USDT suffix).'],
-  [PARAM_DESC_REGIME_TIMEFRAME, 'Candle timeframe, e.g. 1h, 4h or 1d.'],
+  [PARAM_DESC_REGIME_TIMEFRAME, 'Candle timeframe, e.g. 15m, 1h, 4h or 1d.'],
   [PARAM_DESC_REGIME_EXCHANGE, 'Crypto venue, e.g. Binance Bybit OKX Bitget Hyperliquid.'],
   [PARAM_DESC_REGIME_SCAN_COINS, 'Restrict to these symbols, e.g. ["BTC","ETH"]. Symbols not on the venue are listed in not_found.'],
   [PARAM_DESC_PRE_TRADE_HOLD_HOURS, 'Expected holding time in hours (default 8); sets the funding window.'],

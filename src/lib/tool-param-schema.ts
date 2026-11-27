@@ -70,6 +70,7 @@
 import type { ExchangeId, RegimeType } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { REGIME_SNAPSHOT_TIMEFRAMES, type RegimeSnapshotTimeframe } from './regime-snapshot-timeframes.js';
+import { REGIME_SERVED_TIMEFRAMES } from './regime-served-windows.js';
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 import type { PreTradeSide } from './pre-trade-costs.js';
 import { PRE_TRADE_RULES, type PreTradeRuleId, type PreTradeRuleParam } from './pre-trade-rules.js';
@@ -144,10 +145,15 @@ export const PUBLIC_VENUE_IDS = PROMOTED_VENUE_IDS;
 export const PUBLIC_VENUE_ENUM = PUBLIC_VENUE_IDS as [PromotedVenueId, ...PromotedVenueId[]];
 
 /**
- * `get_market_regime` classifies on the slower candles only — a deliberate subset of TIMEFRAMES. Its
- * own set: the snapshot-served tools read `REGIME_SNAPSHOT_TIMEFRAMES` (see the header).
+ * The timeframes `get_market_regime` serves live — a deliberate subset of TIMEFRAMES. Its own set: the
+ * snapshot-served tools read `REGIME_SNAPSHOT_TIMEFRAMES` (see the header).
+ *
+ * REGIME-15M-SERVE-W1: DERIVED, never typed. It IS `REGIME_SERVED_TIMEFRAMES` (regime-served-windows.ts — the
+ * windows the tool serves: `CANDLE_COUNTS` plus 15m), so the Zod enum, the pipeline admission row, the docs row
+ * and the x402 Bazaar schema list exactly the timeframes that have a served window. The cast is `z.enum`'s
+ * non-empty tuple, made HERE once, as `PUBLIC_VENUE_ENUM` does; the values are the registry's own array.
  */
-export const REGIME_TIMEFRAMES = ['1h', '4h', '1d'] as const;
+export const REGIME_TIMEFRAMES = REGIME_SERVED_TIMEFRAMES as readonly [string, ...string[]];
 
 /** `assetClass` forces the engine instead of letting the shared router choose from the symbol. */
 export const ASSET_CLASSES = ['perp', 'equity'] as const;

@@ -8,7 +8,8 @@ import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
 import { assetClassTraits } from '../lib/market-sessions-constants.js';
 import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
-import { computeMarketRegimeCore, regimeFetchWindow } from '../lib/market-regime-core.js';
+import { computeMarketRegimeCore } from '../lib/market-regime-core.js';
+import { regimeServedFetchWindow } from '../lib/regime-served-fetch.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs, setRequestRegimeFundingDegraded } from '../lib/license.js';
@@ -79,12 +80,13 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   }
   const quota = trackCall(license);
 
-  // The fetch window (lookback bars × interval, the serving-window registry's market_regime row) is
-  // the core's: the sampler asks for exactly the same window, so a snapshot row and this response
-  // are computed from the same bars. A window the venue serves stale is refused inside getCandles
-  // below (StaleUpstreamWindowError, the getAdapter seam) and reaches the caller as its structured
-  // payload through the pipeline's toolErrorContent.
-  const { intervalMs, startTime } = regimeFetchWindow(timeframe, Date.now());
+  // The fetch window (lookback bars × interval). For 1h/4h/1d it IS the core's `regimeFetchWindow`
+  // (regimeServedFetchWindow returns it), so the sampler asks for exactly the same window and a snapshot
+  // row and this response are computed from the same bars. 15m (REGIME-15M-SERVE-W1) is served from
+  // REGIME_SERVED_WINDOWS, 100 × 15m — a window no snapshot carries. A window the venue serves stale is
+  // refused inside getCandles below (StaleUpstreamWindowError, the getAdapter seam) and reaches the
+  // caller as its structured payload through the pipeline's toolErrorContent.
+  const { intervalMs, startTime } = regimeServedFetchWindow(timeframe, Date.now());
 
   const exchange = input.exchange || 'HL';
 
