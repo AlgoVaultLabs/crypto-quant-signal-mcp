@@ -28,6 +28,8 @@
  */
 
 import { PUBLIC_VENUE_IDS, VENUE_IDS_ALL } from './tool-param-schema.js';
+import { recordRefusal } from './refusal-counter.js';
+import { requestContext } from './license.js';
 
 export interface NonPublicVenueSnapshot {
   /** Attempts since process start, keyed `<venue>:<tool>`. */
@@ -58,6 +60,11 @@ export function isNonPublicVenue(venue: unknown): boolean {
  *
  * NEVER THROWS and never blocks: this sits on the live serving path, and an instrument that can
  * break the thing it measures is worse than no instrument.
+ *
+ * REGIME-TF-ADMISSION-W1 CH2: a thin caller of the persistent daily count (`recordRefusal`,
+ * reason `non_public_venue`); the stdout line and the in-process snapshot stay. The caller is read
+ * from the request scope the /mcp route now calls this inside — `keyed` and request_log's `ip_hash`;
+ * outside a request scope (a test, a script) it is recorded as keyless with no caller key.
  */
 export function recordNonPublicVenue(venue: string, tool: string, licenseTier: string): void {
   try {
@@ -70,6 +77,8 @@ export function recordNonPublicVenue(venue: string, tool: string, licenseTier: s
     console.log(
       `[non_public_venue_rejected] venue=${venue} tool=${tool} tier=${licenseTier} total=${counts.get(key)}`,
     );
+    const scope = requestContext.getStore();
+    recordRefusal({ reason: 'non_public_venue', tool, parameter: 'exchange', value: venue, keyed: !!scope?.license.key, callerKey: scope?.ipHash });
   } catch {
     // An instrument must never break the path it instruments.
   }

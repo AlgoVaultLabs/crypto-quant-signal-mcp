@@ -64,6 +64,7 @@ import { TIMEFRAMES } from './capabilities.js';
 import { REGIME_TIMEFRAMES } from './tool-param-schema.js';
 // REGIME-TF-ADMISSION-W1: the snapshot-served tools admit the sampler's set; get_market_regime keeps its own.
 import { REGIME_SNAPSHOT_TIMEFRAMES } from './regime-snapshot-timeframes.js';
+import { recordRefusal } from './refusal-counter.js';
 import {
   UpstreamRateLimitError,
   EXCHANGE_FALLBACKS,
@@ -706,6 +707,9 @@ export async function callTool(req: ToolCallRequest): Promise<ToolCallOutcome> {
     // Admission (Q-PIPE-2 row 12): a DEFINED timeframe the tool's enum does not serve is refused here.
     const tf = input.timeframe;
     if (row.timeframes && typeof tf === 'string' && !row.timeframes.includes(tf)) {
+      // REGIME-TF-ADMISSION-W1 CH2: the refusal is a daily count (synchronous, never throws, never awaits). Inside the
+      // request scope, so the caller is this request's own: request_log's ip_hash, and whether it carried a key.
+      recordRefusal({ reason: 'timeframe_admission', tool: req.tool, parameter: 'timeframe', value: tf, keyed: !!license.key, callerKey: getRequestIpHash() });
       return {
         outcome: {
           ok: false, kind: 'refused', tool: req.tool, input, mcpIsError: true, http: { status: 400 },

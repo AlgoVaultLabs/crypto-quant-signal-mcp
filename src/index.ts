@@ -64,6 +64,7 @@ import {
   REGIME_TIMEFRAME_DEFAULT, REGIME_EXCHANGE_DEFAULT, SR_ZONES_TIMEFRAMES, SR_ZONES_VENUES,
 } from './lib/tool-param-schema.js';
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
+import { recordRefusal, observeEnumLeaves, flushRefusals } from './lib/refusal-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, resolvePayerWallet, getRequestIsBackground, getRequestRegimeFundingDegraded, getRequestToolOutcome, requestClientProfile } from './lib/license.js';
@@ -369,14 +370,28 @@ export function applyCredentialRefusal(
  * The errorMap is also the refusal's only observation point in our code (the handler never runs),
  * so it writes the detection line. zod calls a schema's errorMap exactly once per issue, and an
  * object yields at most one `unrecognized_keys` issue per parse: one line per refused call.
+ *
+ * REGIME-TF-ADMISSION-W1 CH2 — both refusal classes also become a persistent daily count
+ * (`recordRefusal`, refusal-counter.ts): the unknown key here, and an out-of-enum value through an
+ * observer on each enum leaf (`observeEnumLeaves`) — the object's errorMap never sees a field's
+ * `invalid_enum_value`. Both run inside the SDK's parse, inside the request scope, so the caller is the
+ * request's own (`keyed`, request_log's `ip_hash`). The refusal text and tools/list bytes are unchanged.
  */
 export function strictToolInput<S extends z.ZodRawShape>(tool: string, shape: S) {
   const valid = Object.keys(shape).join(', ');
-  return z.object(shape, {
+  const caller = () => ({ keyed: !!getRequestLicense().key, callerKey: getRequestIpHash() });
+  const observed = observeEnumLeaves(shape, (parameter, value) =>
+    recordRefusal({ reason: 'invalid_enum_value', tool, parameter, value, ...caller() }));
+  return z.object(observed, {
     errorMap: (issue, ctx) => {
       if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
       const keyed = getRequestLicense().key ? 'y' : 'n';
       console.log(`[tool-args] refused tool=${tool} unknown=${issue.keys.join(',')} keyed=${keyed}`);
+      try {
+        const data = (ctx.data ?? {}) as Record<string, unknown>;
+        const who = { keyed: keyed === 'y', callerKey: getRequestIpHash() };
+        for (const k of issue.keys) recordRefusal({ reason: 'unrecognized_keys', tool, parameter: k, value: data[k], ...who });
+      } catch { /* the count never breaks the refusal */ }
       return { message: `Unknown parameter(s): ${issue.keys.join(', ')}. Valid parameters: ${valid}.` };
     },
   }).strict();
@@ -3977,22 +3992,6 @@ async function startHttp() {
     // wall's quota peek must key the caller's real free bucket. Off (`MCP_OAUTH` unset) never answers.
     if (await applyChallenge(req, res, license, x402Downgrade, { ipHash, sessionId })) return;
 
-    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
-    //
-    // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
-    // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
-    // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
-    // never executes on a rejected call and cannot report it. The request body is already parsed
-    // here (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
-    //
-    // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
-    // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
-    // still owns the actual rejection.
-    if (callTool) {
-      const venueArg = mcpBody?.params?.arguments?.exchange;
-      if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
-    }
-
     // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: classify THIS request ONCE
     // (single-derivation — the ONE authoritative automated-vs-human verdict). Pure fn
     // of (UA, IP, tier, is-this-a-real-call). Stored in the requestContext ALS below so
@@ -4166,6 +4165,24 @@ async function startHttp() {
     // one value. Previously the UA was read here and discarded, leaving a heavy caller
     // classifiable but unnameable (30 candidate hashes missed in OPS-TOP-IP-FORENSICS-W1).
     await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority, payerWallet }, async () => {
+      // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
+      //
+      // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
+      // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
+      // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
+      // never executes on a rejected call and cannot report it. The request body is already parsed
+      // (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
+      //
+      // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
+      // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
+      // still owns the actual rejection.
+      // REGIME-TF-ADMISSION-W1 CH2: moved here unchanged from just below the challenge seam (nothing
+      // between the two points returns early), so the count also carries the request's own caller —
+      // `recordNonPublicVenue` reads `keyed` and request_log's `ip_hash` from this scope.
+      if (callTool) {
+        const venueArg = mcpBody?.params?.arguments?.exchange;
+        if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
+      }
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
@@ -4454,8 +4471,13 @@ async function startHttp() {
       statefulTransports.clear();
     }
     statefulLastActivity?.clear();
-    closeDb();
-    httpServer.close(() => process.exit(0));
+    // REGIME-TF-ADMISSION-W1 CH2: flush the refusal counts before the pool closes. Bounded at 2 s, inside the 5 s exit
+    // below, and flushRefusals never rejects (a failure logs one line and drops the batch), so it cannot hold the exit.
+    const closeAndExit = (): void => {
+      closeDb();
+      httpServer.close(() => process.exit(0));
+    };
+    void Promise.race([flushRefusals(), new Promise<void>((r) => setTimeout(r, 2_000))]).then(closeAndExit, closeAndExit);
     setTimeout(() => process.exit(0), 5000);
   };
   process.on('SIGINT', shutdown);
