@@ -5,6 +5,12 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0] - 2026-11-28
+
+### Added
+- `get_market_regime` accepts the `timeframe` value `15m`, so it now takes 15m, 1h, 4h and 1d. `scan_market_regimes` and `pre_trade_check` keep 1h, 4h and 1d.
+- `GET /capabilities` gains a `timeframes` field: each tool that takes a `timeframe` lists the timeframes it accepts.
+
 ## [1.36.0] - 2026-11-20
 
 ### Added
