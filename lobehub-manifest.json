@@ -143,12 +143,13 @@
           "timeframe": {
             "type": "string",
             "enum": [
+              "15m",
               "1h",
               "4h",
               "1d"
             ],
             "default": "4h",
-            "description": "Candle timeframe — 1h 4h 1d. Buy sell hold regime context for AI trading signal."
+            "description": "Candle timeframe — 15m 1h 4h 1d. Buy sell hold regime context for AI trading signal."
           },
           "exchange": {
             "type": "string",
@@ -678,5 +679,5 @@
     "title": "Crypto Quant Signal MCP",
     "description": "Composite BUY/SELL/HOLD trade calls across leading crypto perp venues. Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI. Ask-AlgoVault-anything via search_knowledge + chat_knowledge tools."
   },
-  "version": "38"
+  "version": "39"
 }
