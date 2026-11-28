@@ -270,7 +270,14 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.36.0
+## What's new in v1.37.0
+
+- **⏱️ Market regime on 15m.** `get_market_regime` now accepts the `timeframe` values 15m, 1h, 4h and 1d. `scan_market_regimes` and `pre_trade_check` keep 1h, 4h and 1d. In the Telegram bot, `/regime` and regime watches read 15m too.
+- **🧭 Timeframes in `GET /capabilities`.** A new `timeframes` field lists the timeframes each tool accepts, on every tool that takes a `timeframe`.
+
+**Upgrading from v1.36.x** — additive. No tool or tool parameter was added, renamed or removed. `get_market_regime` accepts the `timeframe` value `15m`, and `GET /capabilities` gains the field `timeframes`.
+
+### v1.36.x highlights (recap)
 
 - **🧱 Support and resistance zones on Bybit, OKX and Bitget.** `get_support_resistance_zones` (Beta) now serves Bybit, OKX and Bitget perpetuals as well as Binance, each on the 15m, 30m, 1h, 2h, 4h, 8h, 12h and 1d timeframes. Set `venue` to choose one; Binance stays the default. $0.02 per call over x402.
 
@@ -281,14 +288,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **🧱 `get_support_resistance_zones` (Beta).** Returns support and resistance zones for one coin on Binance perpetuals, for one to three timeframes. Read-only. Per timeframe: up to 3 support and 3 resistance zones, ranked outward from price, each with its low and high, distance from price, bars touched in the last 90, tests in the last 30, last touch, and whether it flipped between support and resistance after two closes through it. Also returns volume against its 20-bar average and flags such as no zone above (price above every zone in its history). Use with get_trade_call or get_market_regime for the same coin. $0.02 per call over x402.
 
 **Upgrading from v1.34.x** — additive. One tool was added, `get_support_resistance_zones` (Beta), with the route `POST /x402/get_support_resistance_zones`; no tool or tool parameter was renamed or removed. On 30m and 1h, `get_trade_call` now follows the same rule as 3m, so a call there can take the opposite side of the raw reading; `_receipts.rule_variant` reads `"fade"` when it does.
-
-### v1.34.x highlights (recap)
-
-- **📌 Save your rules once.** Save your `pre_trade_check` rules with `PUT /api/pre-trade-rules` and your API key, and every check that key makes applies them. Rules you send with a call still win. A rule from your saved profile shows `source: "saved"`, and `saved_rules` says whether a profile applied.
-- **🚧 Make the check a step your agent cannot skip.** In Claude Code and Codex, the AlgoVault pre-trade gate blocks an order tool call until `pre_trade_check` has recently checked that coin and side, and blocks it when the check returns WAIT. In LangChain and Freqtrade, a recipe runs the check before the order.
-- **🧾 A receipt with every answered check.** An answered `pre_trade_check` carries a `ledger` receipt. Once its root is anchored on Base, `verify://check/{id}` or `GET /api/verify-check?id=` proves the verdict your agent got was recorded unchanged.
-
-**Upgrading from v1.33.x** — additive. No tool or tool parameter was added, renamed or removed. `pre_trade_check` responses gain `saved_rules` and `ledger`, and a rule can now show `source: "saved"`. New: the resource `verify://check/{id}` and the routes `/api/pre-trade-rules` and `GET /api/verify-check`. Market regime direction follows a corrected rule, so some regimes read differently and regime ages in `scan_market_regimes` restarted.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
